@@ -1,4 +1,4 @@
-use crate::syntax::{Operator,DataType,Param,KeywordArg,Expr}
+use crate::syntax::{Operator,DataType,Param,KeywordArg,Expr};
 grammar;
 
 pub Expr: Expr = {
@@ -39,20 +39,20 @@ LiteralData: LiteralData = {
 };
 
 flt: f64 = {
-  <s:r"[0-9]+(\.[0-9]+)?"> => s.parse().unwrap(),
+  <s:r"[0-9]+\.[0-9]+"> => s.parse().unwrap(),
 };
 
 int: i64 = {
-  <s:r"[0-9][0-9]+)?"> => s.parse().unwrap(),
+  <s:r"[0-9]+"> => s.parse().unwrap(),
 };
 
 str: String= {
-  <i:r"\"*\""> => i.to_string(),  
+  <i:r#"[\"*\"]"#> => i.to_string(),  
 }
 
 bool: Bool = {
-    r"true": true,
-    r"false": false,
+  "true" => true,
+  "false" => false,
 }
 
 ident: String = {
