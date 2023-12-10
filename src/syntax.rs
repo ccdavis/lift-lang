@@ -17,18 +17,18 @@ arg-list := EPSILON
           | <expr> ("," <expr
 */
 #![allow(unused_variables)]
-#[Derive(Clone,Debug,PartialEq)]
+#[derive(Clone,Debug,PartialEq)]
 pub enum Operator {
     Div, Mul, Add, Sub, Gt, Lt, Gte, Lte, Eq, Neq, And, Or, Not
 }
 
-#[Derive(Clone,Debug,PartialEq)]
+#[derive(Clone,Debug,PartialEq)]
 pub struct Param {
-    name: String,
-    data_type: DataType,
+    pub name: String,
+    pub data_type: DataType,
 }
 
-#[Derive(Clone,Debug,PartialEq)]
+#[derive(Clone,Debug,PartialEq)]
 pub enum DataType {
     Str, Int, Flt, Bool,  Any, None,
     Map { key_type: Box<DataType>, value_type: Box<DataType>}, 
@@ -37,47 +37,54 @@ pub enum DataType {
     Struct(Vec<Param>),    
 }
 
-#[Derive(Clone,Debug,PartialEq)]
+#[derive(Clone,Debug,PartialEq)]
 pub struct KeywordArg {
-    name: String,
-    value: Expr,
+    pub name: String,
+    pub value: Expr,
 }
 
-#[Derive(Clone,Debug,PartialEq)]
+#[derive(Clone,Debug,PartialEq)]
 pub enum LiteralData {
     Int(i64),
-    Float(f64),
+    Flt(f64),
     Str(String),
     Bool(bool),    
 }
 
-impl from<&'a str> for LiteralData {
-    fn from(data: &'a str) -> LiteralData {
-        LiteralData(data.to_string())
+impl From<&str> for LiteralData {
+    fn from(data: &str) -> LiteralData {
+        LiteralData::Str(data.to_string())
     }
 }
 
-impl from<i64> for LiteralData {
+impl From<String> for LiteralData {
+    fn from(data: String) -> LiteralData {
+        LiteralData::Str(data.clone())
+    }
+}
+
+
+impl From<i64> for LiteralData {
     fn from(data: i64) -> LiteralData {
-        LiteralData(data)
+        LiteralData::Int(data)
     }
 }
 
-impl from<f64> for LiteralData {
+impl From<f64> for LiteralData {
     fn from(data: f64) -> LiteralData {
-        LiteralData(data)
+        LiteralData::Flt(data)
     }
 }
 
-impl from<bool> for LiteralData {
+impl From<bool> for LiteralData {
     fn from(data: bool) -> LiteralData {
-        LiteralData(data)
+        LiteralData::Bool(data)
     }
 }
 
 
 
-#[Derive(Clone,Debug,PartialEq)]
+#[derive(Clone,Debug,PartialEq)]
 pub enum Expr {
     Literal(LiteralData),    
     ListLiteral(Vec<Expr>),    
@@ -98,17 +105,17 @@ pub enum Expr {
 }
 
 impl Expr {
-    fn add(l: Expr, r: Expr) -> Expr {
-        Expr::BinaryExpr{left: l, right: r, op: Operator::Add}
+    pub fn add(l: Expr, r: Expr) -> Expr {
+        Expr::BinaryExpr{left: Box::new(l), right: Box::new(r), op: Operator::Add}
     }
-    fn sub(l: Expr, r: Expr) -> Expr {
-        Expr::BinaryExpr{left: l, right: r, op: Operator::Sub}
+    pub fn sub(l: Expr, r: Expr) -> Expr {
+        Expr::BinaryExpr{left: Box::new(l), right: Box::new(r), op: Operator::Sub}
     }
-    fn mul(l: Expr, r: Expr) -> Expr {
-        Expr::BinaryExpr{left: l, right: r, op: Operator::Mul}
+    pub fn mul(l: Expr, r: Expr) -> Expr {
+        Expr::BinaryExpr{left: Box::new(l), right: Box::new(r), op: Operator::Mul}
     }
-    fn div(l: Expr, r: Expr) -> Expr {
-        Expr::BinaryExpr{left: l, right: r, op: Operator::Div}
+    pub fn div(l: Expr, r: Expr) -> Expr {
+        Expr::BinaryExpr{left: Box::new(l), right: Box::new(r), op: Operator::Div}
     }
 
 
