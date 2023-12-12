@@ -1,5 +1,5 @@
 // auto-generated: "lalrpop 0.20.0"
-// sha3: 550165dc8c3f187f437bd714d86434e0c1db0e0d5e7e972e234c1681f6e9c842
+// sha3: 555c67cf6703f100c92c7b07788850d7f3dc74307b05ec06909d2a47bf191e47
 use crate::syntax::{Operator,DataType,Param,KeywordArg,Expr, LiteralData};
 #[allow(unused_extern_crates)]
 extern crate lalrpop_util as __lalrpop_util;
@@ -37,81 +37,81 @@ mod __parse__Expr {
     }
     const __ACTION: &[i8] = &[
         // State 0
-        2, 0, 0, 0, 0, 0, 0, 0, 19, 20, 21, 22, 23, 24,
+        19, 2, 0, 0, 0, 0, 0, 0, 0, 20, 21, 22, 23, 24,
         // State 1
-        2, 0, 0, 0, 0, 0, 0, 0, 19, 20, 21, 22, 23, 24,
+        19, 2, 0, 0, 0, 0, 0, 0, 0, 20, 21, 22, 23, 24,
         // State 2
-        2, 0, 0, 0, 0, 0, 0, 0, 19, 20, 21, 22, 23, 24,
+        19, 2, 0, 0, 0, 0, 0, 0, 0, 20, 21, 22, 23, 24,
         // State 3
-        2, 0, 0, 0, 0, 0, 0, 0, 19, 20, 21, 22, 23, 24,
+        19, 2, 0, 0, 0, 0, 0, 0, 0, 20, 21, 22, 23, 24,
         // State 4
-        2, 0, 0, 0, 0, 0, 0, 0, 19, 20, 21, 22, 23, 24,
+        19, 2, 0, 0, 0, 0, 0, 0, 0, 20, 21, 22, 23, 24,
         // State 5
-        2, 0, 0, 0, 0, 0, 0, 0, 19, 20, 21, 22, 23, 24,
+        19, 2, 0, 0, 0, 0, 0, 0, 0, 20, 21, 22, 23, 24,
         // State 6
-        0, -7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 24,
+        0, 0, -7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 24,
         // State 7
-        0, -9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 24,
+        0, 0, -9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 24,
         // State 8
-        2, 0, 0, 0, 0, 0, 0, 0, 19, 20, 21, 22, 23, 24,
+        19, 2, 0, 0, 0, 0, 0, 0, 0, 20, 21, 22, 23, 24,
         // State 9
-        0, 0, 0, 3, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 3, 0, 4, 0, 0, 0, 0, 0, 0, 0,
         // State 10
-        0, -12, 5, -12, -12, -12, 6, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, -12, 5, -12, -12, -12, 6, 0, 0, 0, 0, 0, 0,
         // State 11
-        0, -24, -24, -24, -24, -24, -24, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, -24, -24, -24, -24, -24, -24, 0, 0, 0, 0, 0, 0,
         // State 12
-        0, -15, -15, -15, -15, -15, -15, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, -15, -15, -15, -15, -15, -15, 0, 0, 0, 0, 0, 0,
         // State 13
-        0, -22, -22, -22, -22, -22, -22, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, -22, -22, -22, -22, -22, -22, 0, 0, 0, 0, 0, 0,
         // State 14
-        0, -20, -20, -20, -20, -20, -20, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, -20, -20, -20, -20, -20, -20, 0, 0, 0, 0, 0, 0,
         // State 15
-        7, -26, -26, -26, -26, -26, -26, 0, 0, 0, 0, 0, 0, 0,
+        0, 7, -26, -26, -26, -26, -26, -26, 0, 0, 0, 0, 0, 0,
         // State 16
-        0, -19, -19, -19, -19, -19, -19, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, -19, -19, -19, -19, -19, -19, 0, 0, 0, 0, 0, 0,
         // State 17
-        0, -21, -21, -21, -21, -21, -21, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, -21, -21, -21, -21, -21, -21, 0, 0, 0, 0, 0, 0,
         // State 18
-        0, -30, -30, -30, -30, -30, -30, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, -34, -34, -34, -34, -34, -34, 0, 0, 0, 0, 0, 0,
         // State 19
-        0, -29, -29, -29, -29, -29, -29, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, -30, -30, -30, -30, -30, -30, 0, 0, 0, 0, 0, 0,
         // State 20
-        0, -33, -33, -33, -33, -33, -33, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, -29, -29, -29, -29, -29, -29, 0, 0, 0, 0, 0, 0,
         // State 21
-        0, -31, -31, -31, -31, -31, -31, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, -33, -33, -33, -33, -33, -33, 0, 0, 0, 0, 0, 0,
         // State 22
-        0, -34, -34, -34, -34, -34, -34, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, -31, -31, -31, -31, -31, -31, 0, 0, 0, 0, 0, 0,
         // State 23
-        -32, -32, -32, -32, -32, -32, -32, -32, 0, 0, 0, 0, 0, 0,
+        0, -32, -32, -32, -32, -32, -32, -32, -32, 0, 0, 0, 0, 0,
         // State 24
-        0, 33, 0, 3, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 33, 0, 3, 0, 4, 0, 0, 0, 0, 0, 0, 0,
         // State 25
-        0, -10, 5, -10, -10, -10, 6, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, -10, 5, -10, -10, -10, 6, 0, 0, 0, 0, 0, 0,
         // State 26
-        0, -11, 5, -11, -11, -11, 6, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, -11, 5, -11, -11, -11, 6, 0, 0, 0, 0, 0, 0,
         // State 27
-        0, -13, -13, -13, -13, -13, -13, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, -13, -13, -13, -13, -13, -13, 0, 0, 0, 0, 0, 0,
         // State 28
-        0, -14, -14, -14, -14, -14, -14, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, -14, -14, -14, -14, -14, -14, 0, 0, 0, 0, 0, 0,
         // State 29
-        0, 35, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 35, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         // State 30
-        0, -6, 0, 0, 36, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, -6, 0, 0, 36, 0, 0, 0, 0, 0, 0, 0, 0,
         // State 31
-        0, 0, 0, 0, 0, 0, 0, 9, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 9, 0, 0, 0, 0, 0,
         // State 32
-        0, -23, -23, -23, -23, -23, -23, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, -23, -23, -23, -23, -23, -23, 0, 0, 0, 0, 0, 0,
         // State 33
-        0, -8, 0, 0, 37, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, -8, 0, 0, 37, 0, 0, 0, 0, 0, 0, 0, 0,
         // State 34
-        0, -25, -25, -25, -25, -25, -25, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, -25, -25, -25, -25, -25, -25, 0, 0, 0, 0, 0, 0,
         // State 35
-        0, -4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -4,
+        0, 0, -4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -4,
         // State 36
-        0, -5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -5,
+        0, 0, -5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -5,
         // State 37
-        0, -16, 0, 3, -16, 4, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, -16, 0, 3, -16, 4, 0, 0, 0, 0, 0, 0, 0,
     ];
     fn __action(state: i8, integer: usize) -> i8 {
         __ACTION[(state as usize) * 14 + integer]
@@ -154,15 +154,15 @@ mod __parse__Expr {
         // State 17
         -21,
         // State 18
-        -30,
-        // State 19
-        -29,
-        // State 20
-        -33,
-        // State 21
-        -31,
-        // State 22
         -34,
+        // State 19
+        -30,
+        // State 20
+        -29,
+        // State 21
+        -33,
+        // State 22
+        -31,
         // State 23
         -32,
         // State 24
@@ -230,6 +230,7 @@ mod __parse__Expr {
         }
     }
     const __TERMINAL: &[&str] = &[
+        r###""\"([^\"])*\"""###,
         r###""(""###,
         r###"")""###,
         r###""*""###,
@@ -242,7 +243,6 @@ mod __parse__Expr {
         r###""true""###,
         r###"r#"[0-9]+"#"###,
         r###"r#"[0-9]+\\.[0-9]+"#"###,
-        r###"r#"[\\\"*\\\"]"#"###,
         r###"r#"[a-zA-Z][a-zA-Z0-9_-]*"#"###,
     ];
     fn __expected_tokens(__state: i8) -> alloc::vec::Vec<alloc::string::String> {
@@ -379,20 +379,20 @@ mod __parse__Expr {
     ) -> Option<usize>
     {
         match *__token {
-            Token(4, _) if true => Some(0),
-            Token(5, _) if true => Some(1),
-            Token(6, _) if true => Some(2),
-            Token(7, _) if true => Some(3),
-            Token(8, _) if true => Some(4),
-            Token(9, _) if true => Some(5),
-            Token(10, _) if true => Some(6),
-            Token(11, _) if true => Some(7),
-            Token(12, _) if true => Some(8),
-            Token(13, _) if true => Some(9),
-            Token(0, _) if true => Some(10),
-            Token(1, _) if true => Some(11),
-            Token(2, _) if true => Some(12),
-            Token(3, _) if true => Some(13),
+            Token(3, _) if true => Some(0),
+            Token(4, _) if true => Some(1),
+            Token(5, _) if true => Some(2),
+            Token(6, _) if true => Some(3),
+            Token(7, _) if true => Some(4),
+            Token(8, _) if true => Some(5),
+            Token(9, _) if true => Some(6),
+            Token(10, _) if true => Some(7),
+            Token(11, _) if true => Some(8),
+            Token(12, _) if true => Some(9),
+            Token(13, _) if true => Some(10),
+            Token(0, _) if true => Some(11),
+            Token(1, _) if true => Some(12),
+            Token(2, _) if true => Some(13),
             _ => None,
         }
     }
@@ -406,7 +406,7 @@ mod __parse__Expr {
     {
         match __token_index {
             0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 => match __token {
-                Token(4, __tok0) | Token(5, __tok0) | Token(6, __tok0) | Token(7, __tok0) | Token(8, __tok0) | Token(9, __tok0) | Token(10, __tok0) | Token(11, __tok0) | Token(12, __tok0) | Token(13, __tok0) | Token(0, __tok0) | Token(1, __tok0) | Token(2, __tok0) | Token(3, __tok0) if true => __Symbol::Variant0(__tok0),
+                Token(3, __tok0) | Token(4, __tok0) | Token(5, __tok0) | Token(6, __tok0) | Token(7, __tok0) | Token(8, __tok0) | Token(9, __tok0) | Token(10, __tok0) | Token(11, __tok0) | Token(12, __tok0) | Token(13, __tok0) | Token(0, __tok0) | Token(1, __tok0) | Token(2, __tok0) if true => __Symbol::Variant0(__tok0),
                 _ => unreachable!(),
             },
             _ => unreachable!(),
@@ -1504,11 +1504,11 @@ mod __parse__Expr {
         _: core::marker::PhantomData<(&'input ())>,
     ) -> (usize, usize)
     {
-        // int = r#"[0-9]+"# => ActionFn(18);
+        // int = r#"[0-9]+"# => ActionFn(19);
         let __sym0 = __pop_Variant0(__symbols);
         let __start = __sym0.0;
         let __end = __sym0.2;
-        let __nt = super::__action18::<>(input, __sym0);
+        let __nt = super::__action19::<>(input, __sym0);
         __symbols.push((__start, __Symbol::Variant10(__nt), __end));
         (1, 15)
     }
@@ -1521,11 +1521,11 @@ mod __parse__Expr {
         _: core::marker::PhantomData<(&'input ())>,
     ) -> (usize, usize)
     {
-        // str = r#"[\\\"*\\\"]"# => ActionFn(19);
+        // str = "\"([^\"])*\"" => ActionFn(18);
         let __sym0 = __pop_Variant0(__symbols);
         let __start = __sym0.0;
         let __end = __sym0.2;
-        let __nt = super::__action19::<>(input, __sym0);
+        let __nt = super::__action18::<>(input, __sym0);
         __symbols.push((__start, __Symbol::Variant9(__nt), __end));
         (1, 16)
     }
@@ -1561,7 +1561,7 @@ mod __parse__LiteralData {
     }
     const __ACTION: &[i8] = &[
         // State 0
-        0, 0, 0, 0, 0, 0, 0, 0, 7, 8, 9, 10, 11, 0,
+        7, 0, 0, 0, 0, 0, 0, 0, 0, 8, 9, 10, 11, 0,
         // State 1
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         // State 2
@@ -1600,15 +1600,15 @@ mod __parse__LiteralData {
         // State 5
         -21,
         // State 6
-        -30,
-        // State 7
-        -29,
-        // State 8
-        -33,
-        // State 9
-        -31,
-        // State 10
         -34,
+        // State 7
+        -30,
+        // State 8
+        -29,
+        // State 9
+        -33,
+        // State 10
+        -31,
     ];
     fn __goto(state: i8, nt: usize) -> i8 {
         match nt {
@@ -1621,6 +1621,7 @@ mod __parse__LiteralData {
         }
     }
     const __TERMINAL: &[&str] = &[
+        r###""\"([^\"])*\"""###,
         r###""(""###,
         r###"")""###,
         r###""*""###,
@@ -1633,7 +1634,6 @@ mod __parse__LiteralData {
         r###""true""###,
         r###"r#"[0-9]+"#"###,
         r###"r#"[0-9]+\\.[0-9]+"#"###,
-        r###"r#"[\\\"*\\\"]"#"###,
         r###"r#"[a-zA-Z][a-zA-Z0-9_-]*"#"###,
     ];
     fn __expected_tokens(__state: i8) -> alloc::vec::Vec<alloc::string::String> {
@@ -1770,20 +1770,20 @@ mod __parse__LiteralData {
     ) -> Option<usize>
     {
         match *__token {
-            Token(4, _) if true => Some(0),
-            Token(5, _) if true => Some(1),
-            Token(6, _) if true => Some(2),
-            Token(7, _) if true => Some(3),
-            Token(8, _) if true => Some(4),
-            Token(9, _) if true => Some(5),
-            Token(10, _) if true => Some(6),
-            Token(11, _) if true => Some(7),
-            Token(12, _) if true => Some(8),
-            Token(13, _) if true => Some(9),
-            Token(0, _) if true => Some(10),
-            Token(1, _) if true => Some(11),
-            Token(2, _) if true => Some(12),
-            Token(3, _) if true => Some(13),
+            Token(3, _) if true => Some(0),
+            Token(4, _) if true => Some(1),
+            Token(5, _) if true => Some(2),
+            Token(6, _) if true => Some(3),
+            Token(7, _) if true => Some(4),
+            Token(8, _) if true => Some(5),
+            Token(9, _) if true => Some(6),
+            Token(10, _) if true => Some(7),
+            Token(11, _) if true => Some(8),
+            Token(12, _) if true => Some(9),
+            Token(13, _) if true => Some(10),
+            Token(0, _) if true => Some(11),
+            Token(1, _) if true => Some(12),
+            Token(2, _) if true => Some(13),
             _ => None,
         }
     }
@@ -1797,7 +1797,7 @@ mod __parse__LiteralData {
     {
         match __token_index {
             0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 => match __token {
-                Token(4, __tok0) | Token(5, __tok0) | Token(6, __tok0) | Token(7, __tok0) | Token(8, __tok0) | Token(9, __tok0) | Token(10, __tok0) | Token(11, __tok0) | Token(12, __tok0) | Token(13, __tok0) | Token(0, __tok0) | Token(1, __tok0) | Token(2, __tok0) | Token(3, __tok0) if true => __Symbol::Variant0(__tok0),
+                Token(3, __tok0) | Token(4, __tok0) | Token(5, __tok0) | Token(6, __tok0) | Token(7, __tok0) | Token(8, __tok0) | Token(9, __tok0) | Token(10, __tok0) | Token(11, __tok0) | Token(12, __tok0) | Token(13, __tok0) | Token(0, __tok0) | Token(1, __tok0) | Token(2, __tok0) if true => __Symbol::Variant0(__tok0),
                 _ => unreachable!(),
             },
             _ => unreachable!(),
@@ -2895,11 +2895,11 @@ mod __parse__LiteralData {
         _: core::marker::PhantomData<(&'input ())>,
     ) -> (usize, usize)
     {
-        // int = r#"[0-9]+"# => ActionFn(18);
+        // int = r#"[0-9]+"# => ActionFn(19);
         let __sym0 = __pop_Variant0(__symbols);
         let __start = __sym0.0;
         let __end = __sym0.2;
-        let __nt = super::__action18::<>(input, __sym0);
+        let __nt = super::__action19::<>(input, __sym0);
         __symbols.push((__start, __Symbol::Variant10(__nt), __end));
         (1, 15)
     }
@@ -2912,11 +2912,11 @@ mod __parse__LiteralData {
         _: core::marker::PhantomData<(&'input ())>,
     ) -> (usize, usize)
     {
-        // str = r#"[\\\"*\\\"]"# => ActionFn(19);
+        // str = "\"([^\"])*\"" => ActionFn(18);
         let __sym0 = __pop_Variant0(__symbols);
         let __start = __sym0.0;
         let __end = __sym0.2;
-        let __nt = super::__action19::<>(input, __sym0);
+        let __nt = super::__action18::<>(input, __sym0);
         __symbols.push((__start, __Symbol::Variant9(__nt), __end));
         (1, 16)
     }
@@ -2936,8 +2936,8 @@ mod __intern_token {
         let __strs: &[(&str, bool)] = &[
             ("^([0-9]+)", false),
             ("^((?:[0-9]+\\.[0-9]+))", false),
-            ("^([\"\\*])", false),
             ("^((?:[A-Za-z][\\-0-9A-Z_a-z]*))", false),
+            ("^((?:\"\\(\\[\\^\"\\]\\)\\*\"))", false),
             ("^(\\()", false),
             ("^(\\))", false),
             ("^(\\*)", false),
@@ -3192,10 +3192,10 @@ fn __action18<
     'input,
 >(
     input: &'input str,
-    (_, s, _): (usize, &'input str, usize),
-) -> i64
+    (_, i, _): (usize, &'input str, usize),
+) -> String
 {
-    s.parse().unwrap()
+    i.to_string()
 }
 
 #[allow(unused_variables)]
@@ -3204,10 +3204,10 @@ fn __action19<
     'input,
 >(
     input: &'input str,
-    (_, i, _): (usize, &'input str, usize),
-) -> String
+    (_, s, _): (usize, &'input str, usize),
+) -> i64
 {
-    i.to_string()
+    s.parse().unwrap()
 }
 
 #[allow(unused_variables)]
