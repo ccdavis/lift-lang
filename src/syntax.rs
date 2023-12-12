@@ -46,8 +46,7 @@ pub enum DataType {
     Int,
     Flt,
     Bool,
-    Any,
-    None,
+    Any,    
     Map {
         key_type: Box<DataType>,
         value_type: Box<DataType>,
@@ -145,13 +144,12 @@ pub enum Expr {
     },
     If {
         cond: Box<Expr>,
-        then: Box<Expr>,
-        elsif: Vec<Box<Expr>>,
+        then: Box<Expr>,      
         final_else: Box<Expr>,
     },
     Match {
         cond: Box<Expr>,
-        against: Vec<(Expr, Box<Expr>)>,
+        against: Vec<(Expr, Expr)>,
     },
     While {
         cond: Box<Expr>,

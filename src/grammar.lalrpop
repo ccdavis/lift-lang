@@ -1,0 +1,64 @@
+use crate::syntax::{Operator,DataType,Param,KeywordArg,Expr, LiteralData};
+grammar;
+
+pub Expr: Expr = {
+    <l:Expr> "+" <r:Factor> => Expr::add(l, r).into(),
+    <l:Expr> "-" <r:Factor> => Expr::sub(l, r).into(),
+    Factor,
+};
+
+Factor: Expr = {
+    <l:Factor> "*" <r:Term> => Expr::mul(l, r).into(),
+    <l:Factor> "/" <r:Term> => Expr::div(l, r).into(),
+    Term,
+};
+
+Term: Expr = {
+    "(" <e:Expr> ")" => e,    
+    LiteralData => Expr::Literal(<>),    
+    <i:ident> "(" <a:CommaSeparated<KeywordArg>> ")" => Expr::Call{ fn_name:i, args: a},
+    <v:ident> => Expr::Variable(v.to_string()),
+};
+
+KeywordArg: KeywordArg = {
+	<k:ident> ":" <e:Expr> => KeywordArg { name: k.to_string(),value: e}, 
+}
+
+CommaSeparated<T>: Vec<T> = { 
+    <v:(<T> ",")*> <e:T?> => match e {
+        None => v,
+        Some(e) => {
+            let mut v = v;
+            v.push(e);
+            v
+        }
+    }
+};
+
+pub LiteralData: LiteralData = {
+    int => LiteralData::from(<>),
+    flt => LiteralData::from(<>),
+    str => LiteralData::from(<>),
+    bool => LiteralData::from(<>),  
+};
+
+flt: f64 = {
+  <s:r"[0-9]+\.[0-9]+"> => s.parse().unwrap(),
+};
+
+int: i64 = {
+  <s:r"[0-9]+"> => s.parse().unwrap(),
+};
+
+str: String= {
+  <i:r#"[\"*\"]"#> => i.to_string(),  
+}
+
+bool: bool = {
+  "true" => true,
+  "false" => false,
+}
+
+ident: String = {
+  <i:r"[a-zA-Z][a-zA-Z0-9_-]*"> => i.to_string(),
+};
