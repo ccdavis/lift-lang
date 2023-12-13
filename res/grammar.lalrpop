@@ -2,10 +2,29 @@ use crate::syntax::{Operator,DataType,Param,KeywordArg,Expr};
 grammar;
 
 pub Expr: Expr = {
+    "if" <t:Expr> "then"  <c:Expr> "else" <e:Expr> => Expr::If {cond: Box::new(t), then: Box::new(c), final_else: Box::new(e) }.into(),
+    "while" <c:Expr> "do" <b:Expr> => Expr::While { cond: Box::new(c), body: Box::new(b)}.into(),
+    Block,        
     <l:Expr> "+" <r:Factor> => Expr::add(l, r).into(),
     <l:Expr> "-" <r:Factor> => Expr::sub(l, r).into(),
-    Factor,
+    Factor,,    
 };
+
+Block: Expr = {
+  "{" <s:SemiSeparated<Expr>> "}" => Expr::Block(s).into(),
+};
+
+SemiSeparated<T>: Vec<T> = { 
+    <s:(<T> ";")*> <e:T?> => match e {
+        None => s,
+        Some(e) => {
+            let mut s = s;
+            s.push(e);
+            s
+        }
+    }
+};
+
 
 Factor: Expr = {
     <l:Factor> "*" <r:Term> => Expr::mul(l, r).into(),
@@ -15,9 +34,14 @@ Factor: Expr = {
 
 Term: Expr = {
     "(" <e:Expr> ")" => e,    
-    LiteralData => Expr::LiteralData(<>),    
-    <i:ident> "(" <a:CommaSeparated<Expr>> ")" => Expr::Call{ name:i, args: a},
+    <l:LiteralData> => Expr::LiteralData(l),        
+    <f:FunctionCall> =>f,
     <v:ident> => Expr::Variable(v.to_string()),
+
+};
+
+pub FunctionCall: Expr = {
+  <i:ident> "(" <a:CommaSeparated<Expr>> ")" => Expr::Call{ name:i, args: a},
 };
 
 CommaSeparated<T>: Vec<T> = { 

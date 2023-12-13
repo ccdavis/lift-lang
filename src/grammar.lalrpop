@@ -2,10 +2,30 @@ use crate::syntax::{Operator,DataType,Param,KeywordArg,Expr, LiteralData};
 grammar;
 
 pub Expr: Expr = {
+	"if" <t:Expr>  <c:Block> "else" <b:Block> => Expr::If {cond: Box::new(t), then: Box::new(c), final_else: Box::new(b) }.into(),
+    "while" <c:Expr> <b:Block> => Expr::While { cond: Box::new(c), body: Box::new(b)}.into(),
+    Block,        
     <l:Expr> "+" <r:Factor> => Expr::add(l, r).into(),
     <l:Expr> "-" <r:Factor> => Expr::sub(l, r).into(),
     Factor,
 };
+
+
+Block: Expr = {
+  "{" <s:SemiSeparated<Expr>> "}" => Expr::Block(s).into(),
+};
+
+SemiSeparated<T>: Vec<T> = { 
+    <s:(<T> ";")*> <e:T?> => match e {
+        None => s,
+        Some(e) => {
+            let mut s = s;
+            s.push(e);
+            s
+        }
+    }
+};
+
 
 Factor: Expr = {
     <l:Factor> "*" <r:Term> => Expr::mul(l, r).into(),

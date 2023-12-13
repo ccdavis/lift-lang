@@ -58,15 +58,15 @@ pub fn make_literal_int(v: i64) -> Box<Expr> {
 }
 
 #[test]
-fn test_expression_parsing() {
+fn test_binary_expression_parsing() {
     let parser = grammar::ExprParser::new();
     let src = "1 + 2";
     let parse_result = parser.parse(src);
     let one = make_literal_int(1); let two = make_literal_int(2);
     let should_be = Expr::BinaryExpr { 
-            left: one, 
+            left: one.clone(), 
             op: Operator::Add, 
-            right: two };
+            right: two.clone() };
 
     match parse_result {
         Ok(r) => {
@@ -78,17 +78,38 @@ fn test_expression_parsing() {
     }
 
     let src = " 1*2 -2";
+    let should_be  = Expr::BinaryExpr { 
+            left: Box::new(
+                Expr::BinaryExpr { 
+                    left: one.clone(),
+                    op: Operator::Mul, 
+                    right: two.clone(),
+                }),            
+            op: Operator::Sub, 
+            right: two,
+    };
+    
+
     let parse_result = parser.parse(src);
     assert!(parse_result.is_ok());
     let got = parse_result.unwrap();
     println!("Got {:?}",got);
-
-
-
-
+    assert_eq!(got, should_be);
 
 }
 
+
+#[test]
+fn test_parse_if_expr() {
+    let src = "if (true)  { 8} else{ 5}";
+    let parser = grammar::ExprParser::new();
+    let parse_result = parser.parse(src);
+    if let Err(ref e) = parse_result {
+        eprintln!("Error parsing '{}', got {:?}",src, e);
+    };
+    assert!(parse_result.is_ok());
+
+}
 
 fn main() {
     println!("Hello world!")
