@@ -1,4 +1,5 @@
 mod syntax;
+mod symboltable;
 
 use lalrpop_util::lalrpop_mod;
 use syntax::*;
@@ -101,7 +102,7 @@ fn test_binary_expression_parsing() {
 
 #[test]
 fn test_parse_if_expr() {
-    let src = "if (true)  { 8} else{ 5}";
+    let src = "if true  { 8} else{ 5}";
     let parser = grammar::ExprParser::new();
     let parse_result = parser.parse(src);
     if let Err(ref e) = parse_result {

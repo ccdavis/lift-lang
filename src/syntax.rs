@@ -1,3 +1,5 @@
+
+
 /*
 
 expr := <term>
@@ -17,6 +19,9 @@ arg-list := EPSILON
           | <expr> ("," <expr
 */
 #![allow(unused_variables)]
+
+use crate::symboltable::Env;
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Operator {
     Div,
@@ -104,10 +109,11 @@ impl From<bool> for LiteralData {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
+    Program { body: Vec<Expr>, symbols: Env},
+    Block { body: Vec<Expr>, symbols: Env},
     Literal(LiteralData),
     ListLiteral(Vec<Expr>),
-    MapLiteral(Vec<(Expr, Expr)>),
-    Block(Vec<Expr>),
+    MapLiteral(Vec<(Expr, Expr)>),    
     BinaryExpr {
         left: Box<Expr>,
         op: Operator,
@@ -117,24 +123,29 @@ pub enum Expr {
         op: Operator,
         expr: Box<Expr>,
     },
-    Variable(String),
+    Variable{name: String, index: usize},
     Call {
         fn_name: String,
+        index: usize,
         args: Vec<KeywordArg>,
     },
     DefineFunction {
         fn_name: String,
+        index: usize,
         params: Vec<Param>,
         return_type: DataType,
         body: Box<Expr>,
+        symbols: Env,
     },
     Lambda {
-        args: Vec<KeywordArg>,
+        args: Vec<Param>,
         return_type: DataType,
         body: Box<Expr>,
+        symbols: Env,
     },
     Let {
         var_name: String,
+        index: usize,
         data_type: DataType,
         value: Box<Expr>,
     },
