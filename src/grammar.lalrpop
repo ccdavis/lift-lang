@@ -1,5 +1,5 @@
 use crate::syntax::{Operator,DataType,Param,KeywordArg,Expr, LiteralData};
-use crate::symboltable::Env;
+
 grammar;
 
 pub Expr: Expr = {
@@ -13,7 +13,7 @@ pub Expr: Expr = {
 
 
 Block: Expr = {
-  "{" <s:SemiSeparated<Expr>> "}" => Expr::Block {body:s, symbols: Env::new(None)}.into(),
+  "{" <s:SemiSeparated<Expr>> "}" => Expr::Block {body:s, environment: 0}.into(),
 };
 
 SemiSeparated<T>: Vec<T> = { 
@@ -37,8 +37,8 @@ Factor: Expr = {
 Term: Expr = {
     "(" <e:Expr> ")" => e,    
     LiteralData => Expr::Literal(<>),    
-    <i:ident> "(" <a:CommaSeparated<KeywordArg>> ")" => Expr::Call{ fn_name:i, args: a, index: 0},
-    <v:ident> => Expr::Variable { name:v.to_string(), index: 0},
+    <i:ident> "(" <a:CommaSeparated<KeywordArg>> ")" => Expr::Call{ fn_name:i, args: a, index: (0,0)},
+    <v:ident> => Expr::Variable { name:v.to_string(), index: (0,0)},
 };
 
 KeywordArg: KeywordArg = {

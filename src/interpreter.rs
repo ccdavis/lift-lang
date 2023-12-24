@@ -1,54 +1,100 @@
-use crate::symboltable::Env;
-use crate::syntax::Expr;
-use crate::syntax::DataType;
+use crate::symboltable::SymbolTable;
+use crate::symboltable::*;
 use crate::syntax::AssignableData;
+use crate::syntax::DataType;
+use crate::syntax::Expr;
 use crate::syntax::LiteralData;
-use std::collections::HashMap;
-use std::rc::Rc;
 
-
-pub type ParseError = String;
-pub fn add_index(envr: &mut Rc<Env>, e: &mut Expr)->Result<(), ParseError> {
+// This adds symbols for the current scope and the child scopes, plus updates the index (scope id, symbol id) on the expr
+pub fn add_symbols(
+    e: &mut Expr,
+    symbols: &mut SymbolTable,
+    current_scope_id: usize,
+) -> Result<(), ParseError> {
     match *e {
-        Expr::DefineFunction { ref fn_name, ref mut index, ref value, ..} => {            
-            *index = envr.add(fn_name, &AssignableData::Lambda(value.clone()))?
-        },                
-        Expr::Let { ref var_name, ref value, ref data_type, ref mut index } => {            
-                let data = match data_type {
-                    DataType::Bool => AssignableData::Literal(LiteralData::Bool(false)),
-                    DataType::Int=> AssignableData::Literal(LiteralData::Int(0)),
-                    DataType::Flt => AssignableData::Literal(LiteralData::Flt(0.0)),
-                    DataType::Str => AssignableData::Literal(LiteralData::Str("".to_string())),
-                    DataType::List { ..} => AssignableData::ListLiteral(Vec::new()),                    
-                    _ => AssignableData::Tbd(value.clone()),
-                };
-                *index = envr.add(var_name, &data)?
-            
-        },
-        Expr::Block { ref mut body, ref mut symbols} => {
-            symbols.parent = Some(Rc::downgrade(envr));
-            for e in body {
-                add_index(symbols, e)?;
-            }                                    
-        }        
+        Expr::DefineFunction {
+            ref fn_name,
+            ref mut index,
+            ref value,
+            ref mut environment,
+        } => {
+            // The function is getting defined for the current scope:
+            let new_symbol_id = symbols.add_symbol(
+                fn_name,
+                AssignableData::Lambda(value.clone()),
+                current_scope_id,
+            )?;
+            *index = (current_scope_id, new_symbol_id);
+            // The function has its own scope as well which we should create
+            let new_scope_id = symbols.create_scope(Some(current_scope_id));
+            *environment = new_scope_id;
+        }
+        // Here we set the variable's index from the already added symbol and catch
+        // places where the call comes before the definition.
+        Expr::Variable {
+            ref name,
+            ref mut index,
+        } => {
+            if let Some(found_index) = symbols.find_index_reachable_from(name, current_scope_id) {
+                *index = found_index;
+            } else {
+                let msg = format!("use of undeclared or not yet declared variable '{}'", name);
+                return Err(msg);
+            }
+        }
+
+        Expr::Let {
+            ref var_name,
+            ref value,
+            ref data_type,
+            ref mut index,
+        } => {
+            // This is just the first pass. We will assign better values when we do the
+            // type inference pass and the type checking pass.
+            let partial_typed_value = match data_type {
+                DataType::Bool => AssignableData::Literal(LiteralData::Bool(false)),
+                DataType::Int => AssignableData::Literal(LiteralData::Int(0)),
+                DataType::Flt => AssignableData::Literal(LiteralData::Flt(0.0)),
+                DataType::Str => AssignableData::Literal(LiteralData::Str("".to_string())),
+                DataType::List { .. } => AssignableData::ListLiteral(Vec::new()),
+                _ => AssignableData::Tbd(value.clone()),
+            };
+            let new_symbol_id =
+                symbols.add_symbol(var_name, partial_typed_value, current_scope_id)?;
+            *index = (current_scope_id, new_symbol_id);
+        }
+        Expr::Block {
+            ref mut body,
+            ref mut environment,
+        } => {
+            // Create the new scope first
+            let new_scope_id = symbols.create_scope(Some(current_scope_id));
+            *environment = new_scope_id;
+            for ref mut e in body {
+                add_symbols(e, symbols, new_scope_id)?
+            }
+        }
         _ => (),
     }
     Ok(())
 }
 
-
-
 impl Expr {
-    pub fn interpret(&mut self, symbols: &mut Rc<Env>) {
-        let result = add_index(symbols, self);
-        match result {
-            Err(msg) => eprintln!("Error indexing variable and function names: {}",msg),
-            _=> {}
+    pub fn interpret(&mut self, symbols: &mut SymbolTable) -> Result<(), Vec<ParseError>> {
+        let mut errors = Vec::new();
 
+        // Analyze  parse tree to index symbols across scopes.
+        let result = add_symbols(self, symbols, 0);
+        if let Err(ref msg) = result {
+            eprintln!("Error indexing variable and function names: {}", msg);
+            errors.push(msg.to_string());
         }
+        // Collect other errors...
 
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
     }
-
-    
-
 } // impl

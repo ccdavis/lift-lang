@@ -1,6 +1,6 @@
-mod syntax;
-mod symboltable;
 mod interpreter;
+mod symboltable;
+mod syntax;
 
 use lalrpop_util::lalrpop_mod;
 use syntax::*;
@@ -10,8 +10,8 @@ use grammar::*;
 #[test]
 fn test_parse_numbers() {
     let src = "3";
-    let should_be =  LiteralData::Int(3);
-    let parser  = grammar::LiteralDataParser::new();
+    let should_be = LiteralData::Int(3);
+    let parser = grammar::LiteralDataParser::new();
     let got = parser.parse(src).unwrap();
     assert_eq!(got, should_be);
 
@@ -23,18 +23,18 @@ fn test_parse_numbers() {
     let src = "09.5";
     let should_be = LiteralData::Flt(9.5);
     let got = parser.parse(src).unwrap();
-    assert_eq!(got, should_be);    
+    assert_eq!(got, should_be);
 }
 
 #[test]
 fn test_parse_strings() {
-    let parser  = grammar::LiteralDataParser::new();
-    let src = "'abc'";    
+    let parser = grammar::LiteralDataParser::new();
+    let src = "'abc'";
     let should_be = LiteralData::Str("'abc'".to_string());
     let got = match parser.parse(src) {
         Ok(s) => s,
         Err(e) => {
-            println!("Got {:?} for string",e);
+            println!("Got {:?} for string", e);
             panic!("Parse error");
         }
     };
@@ -42,8 +42,8 @@ fn test_parse_strings() {
 }
 
 #[test]
-fn test_parse_bool(){
-    let parser  = grammar::LiteralDataParser::new();
+fn test_parse_bool() {
+    let parser = grammar::LiteralDataParser::new();
     let src = "true";
     let should_be = LiteralData::Bool(true);
     let got = parser.parse(src).unwrap();
@@ -64,42 +64,40 @@ fn test_binary_expression_parsing() {
     let parser = grammar::ExprParser::new();
     let src = "1 + 2";
     let parse_result = parser.parse(src);
-    let one = make_literal_int(1); let two = make_literal_int(2);
-    let should_be = Expr::BinaryExpr { 
-            left: one.clone(), 
-            op: Operator::Add, 
-            right: two.clone() };
+    let one = make_literal_int(1);
+    let two = make_literal_int(2);
+    let should_be = Expr::BinaryExpr {
+        left: one.clone(),
+        op: Operator::Add,
+        right: two.clone(),
+    };
 
     match parse_result {
         Ok(r) => {
             assert_eq!(r, should_be);
         }
         Err(e) => {
-            eprintln!("Error parsing '{}', got {:?}",src, e);
+            eprintln!("Error parsing '{}', got {:?}", src, e);
         }
     }
 
     let src = " 1*2 -2";
-    let should_be  = Expr::BinaryExpr { 
-            left: Box::new(
-                Expr::BinaryExpr { 
-                    left: one.clone(),
-                    op: Operator::Mul, 
-                    right: two.clone(),
-                }),            
-            op: Operator::Sub, 
-            right: two,
+    let should_be = Expr::BinaryExpr {
+        left: Box::new(Expr::BinaryExpr {
+            left: one.clone(),
+            op: Operator::Mul,
+            right: two.clone(),
+        }),
+        op: Operator::Sub,
+        right: two,
     };
-    
 
     let parse_result = parser.parse(src);
     assert!(parse_result.is_ok());
     let got = parse_result.unwrap();
-    println!("Got {:?}",got);
+    println!("Got {:?}", got);
     assert_eq!(got, should_be);
-
 }
-
 
 #[test]
 fn test_parse_if_expr() {
@@ -107,10 +105,9 @@ fn test_parse_if_expr() {
     let parser = grammar::ExprParser::new();
     let parse_result = parser.parse(src);
     if let Err(ref e) = parse_result {
-        eprintln!("Error parsing '{}', got {:?}",src, e);
+        eprintln!("Error parsing '{}', got {:?}", src, e);
     };
     assert!(parse_result.is_ok());
-
 }
 
 fn main() {

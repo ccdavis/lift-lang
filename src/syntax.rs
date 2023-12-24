@@ -1,5 +1,3 @@
-
-
 /*
 
 expr := <term>
@@ -19,9 +17,6 @@ arg-list := EPSILON
           | <expr> ("," <expr
 */
 #![allow(unused_variables)]
-
-use crate::symboltable::Env;
-use std::rc::*;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Operator {
@@ -52,7 +47,7 @@ pub enum DataType {
     Int,
     Flt,
     Bool,
-    Any,    
+    Any,
     Map {
         key_type: Box<DataType>,
         value_type: Box<DataType>,
@@ -64,7 +59,7 @@ pub enum DataType {
     Struct(Vec<Param>),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct KeywordArg {
     pub name: String,
     pub value: Expr,
@@ -108,34 +103,40 @@ impl From<bool> for LiteralData {
     }
 }
 
-#[derive(Clone,Debug,PartialEq)]
-struct Function {
+#[derive(Clone, Debug, PartialEq)]
+pub struct Function {
     params: Vec<Param>,
     return_type: DataType,
     body: Box<Expr>,
 }
 
-// The AssignableData is what we can place in the  Environment for 
+// The AssignableData is what we can place in the  Environment for
 // blocks and functions for variables and functions after they are
-// evaluated. 
-#[derive(Clone,Debug,PartialEq)]
+// evaluated.
+#[derive(Clone, Debug, PartialEq)]
 pub enum AssignableData {
     Lambda(Function),
     Literal(LiteralData),
     ListLiteral(Vec<LiteralData>),
-    MapLiteral(Vec<(LiteralData, LiteralData)>),    
-    Tbd(Box<Expr>),// To be determined later
-    // TODO if we allow something like Macro(Expr) we can
-    // store arbitrary code and interpret it later
+    MapLiteral(Vec<(LiteralData, LiteralData)>),
+    Tbd(Box<Expr>), // To be determined later
+                    // TODO if we allow something like Macro(Expr) we can
+                    // store arbitrary code and interpret it later
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
-    Program { body: Vec<Expr>, symbols:Env},
-    Block { body: Vec<Expr>, symbols: Rc<Env>},
+    Program {
+        body: Vec<Expr>,
+        environment: usize,
+    },
+    Block {
+        body: Vec<Expr>,
+        environment: usize,
+    },
     Literal(LiteralData),
     ListLiteral(Vec<Expr>),
-    MapLiteral(Vec<(Expr, Expr)>),    
+    MapLiteral(Vec<(Expr, Expr)>),
     BinaryExpr {
         left: Box<Expr>,
         op: Operator,
@@ -145,35 +146,39 @@ pub enum Expr {
         op: Operator,
         expr: Box<Expr>,
     },
-    Variable{name: String, index: usize},
+    Variable {
+        name: String,
+        index: (usize, usize),
+    },
     Call {
         fn_name: String,
-        index: usize,
+        index: (usize, usize),
         args: Vec<KeywordArg>,
     },
     DefineFunction {
         fn_name: String,
-        index: usize,
-        value: Function,        
-        symbols: Rc<Env>,
+        index: (usize, usize),
+        value: Function,
+        environment: usize,
     },
     Lambda {
         value: Function,
-        symbols:Rc< Env>,
+        environment: usize,
     },
     Let {
         var_name: String,
-        index: usize,
+        index: (usize, usize),
         data_type: DataType,
         value: Box<Expr>,
     },
     DefineType {
         type_name: String,
         definition: DataType,
+        index: (usize, usize),
     },
     If {
         cond: Box<Expr>,
-        then: Box<Expr>,      
+        then: Box<Expr>,
         final_else: Box<Expr>,
     },
     Match {
