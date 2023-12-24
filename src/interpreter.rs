@@ -1,59 +1,54 @@
 use crate::symboltable::Env;
 use crate::syntax::Expr;
-use crate::syntax::*;
+use crate::syntax::DataType;
+use crate::syntax::AssignableData;
+use crate::syntax::LiteralData;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 
-pub fn add_index(envr: &mut Env, e: &mut Expr) {
-    match e {
-        Expr::DefineFunction(_) => {
+pub type ParseError = String;
+pub fn add_index(envr: &mut Rc<Env>, e: &mut Expr)->Result<(), ParseError> {
+    match *e {
+        Expr::DefineFunction { ref fn_name, ref mut index, ref value, ..} => {            
+            *index = envr.add(fn_name, &AssignableData::Lambda(value.clone()))?
+        },                
+        Expr::Let { ref var_name, ref value, ref data_type, ref mut index } => {            
+                let data = match data_type {
+                    DataType::Bool => AssignableData::Literal(LiteralData::Bool(false)),
+                    DataType::Int=> AssignableData::Literal(LiteralData::Int(0)),
+                    DataType::Flt => AssignableData::Literal(LiteralData::Flt(0.0)),
+                    DataType::Str => AssignableData::Literal(LiteralData::Str("".to_string())),
+                    DataType::List { ..} => AssignableData::ListLiteral(Vec::new()),                    
+                    _ => AssignableData::Tbd(value.clone()),
+                };
+                *index = envr.add(var_name, &data)?
             
         },
-        
-        
-        Expr::Let { name, value, index } => {
-            envr.data.push(value.clone());
-            let new_index = envr.data.size();
-            index = new_index;
-            envr.name[index] = name.clone();
-            envr.index[name.clone()] = index
-        }
-        
-        
-        
+        Expr::Block { ref mut body, ref mut symbols} => {
+            symbols.parent = Some(Rc::downgrade(envr));
+            for e in body {
+                add_index(symbols, e)?;
+            }                                    
+        }        
         _ => (),
     }
-
+    Ok(())
 }
 
 
 
 impl Expr {
-    pub fn interpret(&self, symbols: &mut Env) {
+    pub fn interpret(&mut self, symbols: &mut Rc<Env>) {
+        let result = add_index(symbols, self);
+        match result {
+            Err(msg) => eprintln!("Error indexing variable and function names: {}",msg),
+            _=> {}
+
+        }
 
     }
 
     
-    pub fn index_symbols(&mut self) {
-        let mut vars = 0;
-        match self {            
-            Expr::Block { body, env} => {
-                for e in &body {
-                    match e {
-                        Expr::Let(_) => {
 
-                        }
-
-                    }
-                    
-                    
-                } // for
-            }, // Block
-            
-            
-                    
-                        
-                                
-        } // match
-    } // fn
-   
 } // impl

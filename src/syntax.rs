@@ -21,6 +21,7 @@ arg-list := EPSILON
 #![allow(unused_variables)]
 
 use crate::symboltable::Env;
+use std::rc::*;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Operator {
@@ -63,7 +64,7 @@ pub enum DataType {
     Struct(Vec<Param>),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct KeywordArg {
     pub name: String,
     pub value: Expr,
@@ -107,10 +108,31 @@ impl From<bool> for LiteralData {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone,Debug,PartialEq)]
+struct Function {
+    params: Vec<Param>,
+    return_type: DataType,
+    body: Box<Expr>,
+}
+
+// The AssignableData is what we can place in the  Environment for 
+// blocks and functions for variables and functions after they are
+// evaluated. 
+#[derive(Clone,Debug,PartialEq)]
+pub enum AssignableData {
+    Lambda(Function),
+    Literal(LiteralData),
+    ListLiteral(Vec<LiteralData>),
+    MapLiteral(Vec<(LiteralData, LiteralData)>),    
+    Tbd(Box<Expr>),// To be determined later
+    // TODO if we allow something like Macro(Expr) we can
+    // store arbitrary code and interpret it later
+}
+
+#[derive(Clone, Debug)]
 pub enum Expr {
-    Program { body: Vec<Expr>, symbols: Env},
-    Block { body: Vec<Expr>, symbols: Env},
+    Program { body: Vec<Expr>, symbols:Env},
+    Block { body: Vec<Expr>, symbols: Rc<Env>},
     Literal(LiteralData),
     ListLiteral(Vec<Expr>),
     MapLiteral(Vec<(Expr, Expr)>),    
@@ -132,16 +154,12 @@ pub enum Expr {
     DefineFunction {
         fn_name: String,
         index: usize,
-        params: Vec<Param>,
-        return_type: DataType,
-        body: Box<Expr>,
-        symbols: Env,
+        value: Function,        
+        symbols: Rc<Env>,
     },
     Lambda {
-        args: Vec<Param>,
-        return_type: DataType,
-        body: Box<Expr>,
-        symbols: Env,
+        value: Function,
+        symbols:Rc< Env>,
     },
     Let {
         var_name: String,

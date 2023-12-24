@@ -1,5 +1,6 @@
 mod syntax;
 mod symboltable;
+mod interpreter;
 
 use lalrpop_util::lalrpop_mod;
 use syntax::*;
