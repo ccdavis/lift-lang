@@ -1,11 +1,11 @@
 mod interpreter;
+mod semantic_analysis;
 mod symboltable;
 mod syntax;
 
 use lalrpop_util::lalrpop_mod;
-use syntax::*;
 use symboltable::SymbolTable;
-
+use syntax::*;
 
 lalrpop_mod!(pub grammar); // synthesized by LALRPOP
 use grammar::*;
@@ -118,12 +118,10 @@ fn test_interpret() {
     let parser = grammar::ExprParser::new();
     let parse_result = parser.parse(src);
     assert!(parse_result.is_ok());
-    
+
     let mut symbols = SymbolTable::new();
     let s = parse_result.unwrap().interpret(&mut symbols);
     assert!(s.is_ok());
-
-
 }
 
 fn main() {
