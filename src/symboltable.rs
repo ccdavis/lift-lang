@@ -15,9 +15,16 @@ pub struct Scope {
 pub struct SymbolTable(Vec<Scope>);
 
 impl SymbolTable {
+
+    pub fn new() -> Self {        
+        let mut symbols = SymbolTable(Vec::new());
+        symbols.create_scope(None);
+        symbols
+    }
+
     pub fn create_scope(&mut self, parent: Option<usize>) -> usize {
         self.0.push(Scope::new(parent));
-        self.0.len()
+        self.0.len()-1
     }
 
     // Determine if a symbol is in the current scope or any of its parent scopes.

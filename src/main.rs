@@ -4,6 +4,9 @@ mod syntax;
 
 use lalrpop_util::lalrpop_mod;
 use syntax::*;
+use symboltable::SymbolTable;
+
+
 lalrpop_mod!(pub grammar); // synthesized by LALRPOP
 use grammar::*;
 
@@ -108,6 +111,19 @@ fn test_parse_if_expr() {
         eprintln!("Error parsing '{}', got {:?}", src, e);
     };
     assert!(parse_result.is_ok());
+}
+#[test]
+fn test_interpret() {
+    let src = "if true  { 8} else{ 5}";
+    let parser = grammar::ExprParser::new();
+    let parse_result = parser.parse(src);
+    assert!(parse_result.is_ok());
+    
+    let mut symbols = SymbolTable::new();
+    let s = parse_result.unwrap().interpret(&mut symbols);
+    assert!(s.is_ok());
+
+
 }
 
 fn main() {
