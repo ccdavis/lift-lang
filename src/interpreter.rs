@@ -12,7 +12,7 @@ pub struct RuntimeError {
     pub msg: String,
 }
 
-type InterpreterResult = Result<Option<Expr>, RuntimeError>;
+pub type InterpreterResult = Result<Option<Expr>, RuntimeError>;
 
 impl Expr {
     pub fn prepare(&mut self, symbols: &mut SymbolTable) -> Result<(), Vec<ParseError>> {
@@ -42,6 +42,11 @@ impl Expr {
             Expr::BinaryExpr { left, op, right } => {
                 interpret_binary(symbols, left, op, right, current_scope)
             }
+            Expr::If {
+                cond,
+                then,
+                final_else,
+            } => interpret_if(symbols, cond, then, final_else, current_scope),
 
             _ => Ok(None),
         }
@@ -70,6 +75,20 @@ fn interpret_body_or_block(
         }
     }
     tmp_expr_result
+}
+
+fn interpret_if(
+    symbols: &mut SymbolTable,
+    cond: &Box<Expr>,
+    then: &Box<Expr>,
+    final_else: &Box<Expr>,
+    current_scope: usize,
+) -> InterpreterResult {
+    if let Some(Expr::Literal(LiteralData::Bool(true))) = cond.interpret(symbols, current_scope)? {
+        then.interpret(symbols, current_scope)
+    } else {
+        final_else.interpret(symbols, current_scope)
+    }
 }
 
 impl LiteralData {
@@ -139,6 +158,9 @@ fn interpret_binary(
     let mut error: Option<RuntimeError> = None;
     let mut result: InterpreterResult = Ok(None);
 
+    // This is repeative because we are optimizing for the case where the expressions
+    // are literal values (primary expressions) and don't need to be interpreted.
+    // This saves a clone().
     match (left, right) {
         (Expr::Literal(l_value), Expr::Literal(r_value)) => {
             result = l_value.apply_binary_operator(r_value, op)

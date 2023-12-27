@@ -3,6 +3,7 @@ mod semantic_analysis;
 mod symboltable;
 mod syntax;
 
+use interpreter::InterpreterResult;
 use lalrpop_util::lalrpop_mod;
 use symboltable::SymbolTable;
 use syntax::*;
@@ -113,7 +114,7 @@ fn test_parse_if_expr() {
     assert!(parse_result.is_ok());
 }
 #[test]
-fn test_interpret() {
+fn test_interpret_math() {
     let src = "1 + 2 * 3";
     let parser = grammar::ExprParser::new();
     let parse_result = parser.parse(src);
@@ -126,6 +127,53 @@ fn test_interpret() {
         Ok(ref r) => println!("Success: {:?}", &r),
     }
     assert!(s.is_ok());
+}
+
+#[test]
+fn test_interpret_conditionals() {
+    let parser = grammar::ExprParser::new();
+    let src = "if true { 25*5} else { 1-3}";
+    let parse_result = parser.parse(src);
+    match parse_result {
+        Err(ref e) => eprintln!("Parse conditional failed: {:?}", &e),
+        Ok(ref r) => println!("Success parsing conditional."),
+    }
+    assert!(parse_result.is_ok());
+
+    let mut symbols = SymbolTable::new();
+    let s = parse_result.unwrap().interpret(&mut symbols, 0);
+    match s {
+        Err(ref e) => println!("Runtime error: {:?}", e),
+        Ok(ref r) => println!("Success: {:?}", &r),
+    }
+    assert!(s.is_ok());
+    assert!(check_value(&s, LiteralData::Int(125)));
+
+    let src = "if false { 25*5} else { 1-3}";
+    let parse_result = parser.parse(src);
+    match parse_result {
+        Err(ref e) => eprintln!("Parse conditional failed: {:?}", &e),
+        Ok(ref r) => println!("Success parsing conditional."),
+    }
+    assert!(parse_result.is_ok());
+    let mut symbols = SymbolTable::new();
+    let s = parse_result.unwrap().interpret(&mut symbols, 0);
+    assert_eq!(LiteralData::Int(-2), extract_value(s));
+}
+
+// A test helper
+fn check_value(s: &InterpreterResult, value: LiteralData) -> bool {
+    if let Ok(Some(ref e)) = s {
+        return e.has_value(&value);
+    }
+    false
+}
+
+fn extract_value(r: InterpreterResult) -> LiteralData {
+    if let Ok(Some(Expr::Literal(l))) = r {
+        return l;
+    }
+    panic!("Must pass an interpreter result that holds a literal data value.");
 }
 
 fn main() {

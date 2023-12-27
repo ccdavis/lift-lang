@@ -193,6 +193,14 @@ pub enum Expr {
 }
 
 impl Expr {
+    pub fn has_value(&self, value: &LiteralData) -> bool {
+        if let (Expr::Literal(l), r) = (self, value) {
+            return l == r;
+        } else {
+            false
+        }
+    }
+
     pub fn is_literal(&self) -> bool {
         match self {
             Expr::Literal(_) | Expr::MapLiteral(_) | Expr::ListLiteral(_) => true,
