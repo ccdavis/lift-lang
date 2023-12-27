@@ -193,6 +193,13 @@ pub enum Expr {
 }
 
 impl Expr {
+    pub fn is_literal(&self) -> bool {
+        match self {
+            Expr::Literal(_) | Expr::MapLiteral(_) | Expr::ListLiteral(_) => true,
+            _ => false,
+        }
+    }
+
     pub fn add(l: Expr, r: Expr) -> Expr {
         Expr::BinaryExpr {
             left: Box::new(l),

@@ -114,13 +114,17 @@ fn test_parse_if_expr() {
 }
 #[test]
 fn test_interpret() {
-    let src = "if true  { 8} else{ 5}";
+    let src = "1 + 2 * 3";
     let parser = grammar::ExprParser::new();
     let parse_result = parser.parse(src);
     assert!(parse_result.is_ok());
 
     let mut symbols = SymbolTable::new();
     let s = parse_result.unwrap().interpret(&mut symbols, 0);
+    match s {
+        Err(ref e) => println!("Runtime error: {:?}", e),
+        Ok(ref r) => println!("Success: {:?}", &r),
+    }
     assert!(s.is_ok());
 }
 
