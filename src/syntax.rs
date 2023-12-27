@@ -208,6 +208,13 @@ impl Expr {
         }
     }
 
+    pub fn equal(l: Expr, r:Expr)-> Expr {
+        Expr::BinaryExpr {
+            left: Box::new(l),
+            right: Box::new(r),
+            op: Operator::Eq,
+        }
+    }
     pub fn add(l: Expr, r: Expr) -> Expr {
         Expr::BinaryExpr {
             left: Box::new(l),
