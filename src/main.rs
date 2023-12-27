@@ -120,7 +120,7 @@ fn test_interpret() {
     assert!(parse_result.is_ok());
 
     let mut symbols = SymbolTable::new();
-    let s = parse_result.unwrap().interpret(&mut symbols);
+    let s = parse_result.unwrap().interpret(&mut symbols, 0);
     assert!(s.is_ok());
 }
 
