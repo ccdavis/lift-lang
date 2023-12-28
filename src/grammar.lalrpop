@@ -3,19 +3,53 @@ use crate::syntax::{Operator,DataType,Param,KeywordArg,Expr, LiteralData};
 grammar;
 
 pub Expr: Expr = {
-	"if" <t:Expr>  <c:Block> "else" <b:Block> => Expr::If {cond: Box::new(t), then: Box::new(c), final_else: Box::new(b) }.into(),
-    "while" <c:Expr> <b:Block> => Expr::While { cond: Box::new(c), body: Box::new(b)}.into(),
-    Block,        
-    <l:Expr> "=" <r:Factor> => Expr::equal(l, r).into(),
-    <l:Expr> "+" <r:Factor> => Expr::add(l, r).into(),
-    <l:Expr> "-" <r:Factor> => Expr::sub(l, r).into(),
+    ExprBlock,
+    ExprIf,
+    ExprWhile,
+    ExprAssign,
+};
+
+
+ExprBlock: Expr = {
+  "{" <s:SemiSeparated<Expr>> "}" => Expr::Block {body:s, environment: 0}.into(),  
+}
+
+ExprIf: Expr = "if" <t:ExprLogicOr>  <c:ExprBlock> "else" <b:ExprBlock> => Expr::If {cond: Box::new(t), then: Box::new(c), final_else: Box::new(b) }.into();
+ExprWhile: Expr =  "while" <c:ExprLogicOr> <b:ExprBlock> => Expr::While { cond: Box::new(c), body: Box::new(b)}.into();
+  
+
+ExprAssign = {
+  // TODO put assignment here too
+
+    ExprLogicOr,
+}
+
+ExprLogicOr = ExprInfix<ExprLogicOr, OpLogicOr, ExprLogicAnd>;
+OpLogicOr: Operator = "or" => Operator::Or;
+ExprLogicAnd = ExprInfix<ExprLogicAnd, OpLogicAnd, ExprEquality>;
+OpLogicAnd: Operator = "and" => Operator::And;
+ExprEquality = ExprInfix<ExprEquality, OpEquality, ExprComparison>;
+
+OpEquality: Operator = {
+    "=" => Operator::Eq,
+    "<>" => Operator::Neq,
+}
+
+ExprComparison = ExprInfix<ExprComparison, OpComparison, ExprArithmetic>;
+OpComparison: Operator = {
+    ">" => Operator::Gt,
+    ">=" => Operator::Gte,
+    "<" => Operator::Lt,
+    "<=" => Operator::Lte,
+}
+
+
+ExprArithmetic: Expr = {	      
+    <l:ExprArithmetic> "+" <r:Factor> => Expr::add(l, r).into(),
+    <l:ExprArithmetic> "-" <r:Factor> => Expr::sub(l, r).into(),
     Factor,
 };
 
-
-Block: Expr = {
-  "{" <s:SemiSeparated<Expr>> "}" => Expr::Block {body:s, environment: 0}.into(),
-};
 
 SemiSeparated<T>: Vec<T> = { 
     <s:(<T> ";")*> <e:T?> => match e {
@@ -84,3 +118,10 @@ bool: bool = {
 ident: String = {
   <i:r"[a-zA-Z][a-zA-Z0-9_-]*"> => i.to_string(),
 };
+
+ExprInfix<Lt, Op, Rt>: Expr = {
+    <lt:Lt> <op:Op> <rt:Rt> =>
+        Expr::BinaryExpr { left: Box::new(lt), op, right: Box::new(rt)} ,
+    Rt,
+}
+
