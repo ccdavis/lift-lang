@@ -103,6 +103,17 @@ impl From<bool> for LiteralData {
     }
 }
 
+impl From<Expr> for LiteralData {
+    fn from(data: Expr) -> LiteralData {
+        match data {
+            Expr::Literal(l) => l,
+            _ => panic!("Can only extract LiteralData from Expr::LiteralData."),
+        }
+    }
+
+
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Function {
     params: Vec<Param>,
@@ -115,14 +126,37 @@ pub struct Function {
 // evaluated.
 #[derive(Clone, Debug, PartialEq)]
 pub enum AssignableData {
-    Lambda(Function),
+    Lambda(Function, usize),
     Literal(LiteralData),
-    ListLiteral(Vec<LiteralData>),
-    MapLiteral(Vec<(LiteralData, LiteralData)>),
+    ListLiteral(Vec<AssignableData>),
+    MapLiteral(Vec<(LiteralData, AssignableData)>),
     Tbd(Box<Expr>), // To be determined later
                     // TODO if we allow something like Macro(Expr) we can
                     // store arbitrary code and interpret it later
 }
+
+impl From<Expr> for AssignableData {
+    fn from(data: Expr) -> AssignableData {
+        match data {
+            Expr::Literal(value) => AssignableData::Literal(value),
+            Expr::Lambda {value, environment} => AssignableData::Lambda(value,environment),
+            Expr::ListLiteral(l) => {
+                let assignable_items = l.into_iter()
+                    .map(|item| AssignableData::from(item))
+                    .collect::<Vec<AssignableData>>();
+                AssignableData::ListLiteral(assignable_items)
+            }
+            Expr::MapLiteral(m) => {
+                let assignable_values = m.into_iter()
+                    .map(|item| (LiteralData::from(item.0),AssignableData::from(item.1)))
+                    .collect::<Vec<(LiteralData,AssignableData)>>();
+                AssignableData::MapLiteral(assignable_values)
+            }                    
+            _ => AssignableData::Tbd(Box::new(data)),
+        }
+    }
+}
+
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
@@ -190,6 +224,7 @@ pub enum Expr {
         body: Box<Expr>,
     },
     Return(Box<Expr>),
+    Unit,
 }
 
 impl Expr {
@@ -222,6 +257,7 @@ impl Expr {
             op: Operator::Add,
         }
     }
+
     pub fn sub(l: Expr, r: Expr) -> Expr {
         Expr::BinaryExpr {
             left: Box::new(l),

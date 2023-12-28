@@ -6,6 +6,7 @@ pub Expr: Expr = {
     ExprBlock,
     ExprIf,
     ExprWhile,
+    ExprLet,
     ExprAssign,
 };
 
@@ -14,6 +15,7 @@ ExprBlock: Expr = {
   "{" <s:SemiSeparated<Expr>> "}" => Expr::Block {body:s, environment: 0}.into(),  
 }
 
+ExprLet: Expr = "let" <n: ident> "=" <r:Expr> => Expr::Let {var_name: n, data_type: DataType::Any, index: (0,0),value: Box::new(r)}.into();
 ExprIf: Expr = "if" <t:ExprLogicOr>  <c:ExprBlock> "else" <b:ExprBlock> => Expr::If {cond: Box::new(t), then: Box::new(c), final_else: Box::new(b) }.into();
 ExprWhile: Expr =  "while" <c:ExprLogicOr> <b:ExprBlock> => Expr::While { cond: Box::new(c), body: Box::new(b)}.into();
   

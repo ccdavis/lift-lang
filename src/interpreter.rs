@@ -3,6 +3,7 @@ use crate::semantic_analysis::*;
 use crate::symboltable::SymbolTable;
 use crate::syntax::Expr;
 use crate::syntax::LiteralData;
+use crate::syntax::DataType;
 use crate::syntax::Operator;
 
 // TODO this should eventually  store line numbers, columns in source and function names
@@ -39,9 +40,13 @@ impl Expr {
             Expr::Literal(_) => Ok(Some(self.clone())),
             Expr::Program { body, environment } => interpret_program(symbols, body, *environment),
             Expr::Block { body, environment } => interpret_block(symbols, body, *environment),
+            Expr::Let { var_name, value, index, data_type } =>
+                interpret_let(symbols, var_name, data_type, value, index),
             Expr::BinaryExpr { left, op, right } => {
                 interpret_binary(symbols, left, op, right, current_scope)
             }
+            Expr::Variable { name, index } =>
+                interpret_var(symbols, name, index),
             Expr::If {
                 cond,
                 then,
@@ -77,11 +82,37 @@ fn interpret_body_or_block(
     tmp_expr_result
 }
 
+fn interpret_let(
+    symbols: &mut SymbolTable, 
+    var_name: &str, 
+    data_type: &DataType, 
+    value: & Expr, 
+    index: &(usize,usize)) -> InterpreterResult{
+    // The analysis phase has already placed the variable 
+    // in the current scope; here we only need to
+    // evaluate the right-hand side.
+    let current_scope = index.0;
+    let result = value.interpret(symbols, current_scope)?;
+    if let Some(expr) = result {
+        symbols.update_value(expr.into(), index);
+        Ok(Some(Expr::Unit))
+    } else {
+        let msg = format!("Didn't make any assignment to '{}': {:?}",var_name, data_type);
+        let error = RuntimeError { msg, stack: Vec::new()};
+        Err(error)
+    }    
+}
+
+fn interpret_var(symbols: &mut SymbolTable, name: &str, index: &(usize,usize)) -> InterpreterResult{
+    let var_value = symbols.get_value(index).into();
+    Ok(Some(var_value))
+}
+
 fn interpret_if(
     symbols: &mut SymbolTable,
-    cond: &Box<Expr>,
-    then: &Box<Expr>,
-    final_else: &Box<Expr>,
+    cond: &Expr,
+    then: &Expr,
+    final_else: &Expr,
     current_scope: usize,
 ) -> InterpreterResult {
     if let Some(Expr::Literal(LiteralData::Bool(true))) = cond.interpret(symbols, current_scope)? {

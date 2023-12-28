@@ -21,7 +21,7 @@ pub fn add_symbols(
             // The function is getting defined for the current scope:
             let new_symbol_id = symbols.add_symbol(
                 fn_name,
-                AssignableData::Lambda(value.clone()),
+                AssignableData::Lambda(value.clone(), current_scope_id),
                 current_scope_id,
             )?;
             *index = (current_scope_id, new_symbol_id);

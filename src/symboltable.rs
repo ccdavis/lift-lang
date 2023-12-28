@@ -56,11 +56,11 @@ impl SymbolTable {
         self.0[scope].add(name, value)
     }
 
-    pub fn update_value(&mut self, value: AssignableData, index: (usize, usize)) {
+    pub fn update_value(&mut self, value: AssignableData, index: &(usize, usize)) {
         self.0[index.0].data[index.1] = value;
     }
 
-    pub fn get_value(&self, index: (usize, usize)) -> AssignableData {
+    pub fn get_value(&self, index: &(usize, usize)) -> AssignableData {
         self.0[index.0].data[index.1].clone()
     }
 }
