@@ -118,8 +118,7 @@ fn interpret_var(
     name: &str,
     index: &(usize, usize),
 ) -> InterpreterResult {
-    let var_value = symbols.get_value(index).into();
-    Ok(Some(var_value))
+    Ok(Some(symbols.get_runtime_value(index)))
 }
 
 fn interpret_if(

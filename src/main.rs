@@ -7,6 +7,7 @@ use interpreter::InterpreterResult;
 use lalrpop_util::lalrpop_mod;
 use symboltable::SymbolTable;
 use syntax::*;
+use semantic_analysis::add_symbols;
 
 lalrpop_mod!(pub grammar); // synthesized by LALRPOP
 use grammar::*;
@@ -203,6 +204,33 @@ fn test_interpret_conditionals() {
     let mut symbols = SymbolTable::new();
     let s = parse_result.unwrap().interpret(&mut symbols, 0);
     assert_eq!(LiteralData::Int(-2), extract_value(s));
+}
+
+#[test]
+fn test_variables() {
+    let parser = grammar::ExprParser::new();
+    let src = "{let x = 25; let y = 3; x + y}";
+    let parse_result = parser.parse(src);
+    match parse_result {
+        Err(ref e) => eprintln!("Parse variable definition failed: {:?}", &e),
+        Ok(ref r) => println!("Success parsing variable definition 'let'."),
+    }
+    assert!(parse_result.is_ok());
+    let mut root_expr = parse_result.unwrap();
+
+    
+    let mut symbols = SymbolTable::new();
+    add_symbols(&mut root_expr, &mut symbols, 0);
+
+    let s = root_expr.interpret(&mut symbols, 0);
+    match s {
+        Err(ref e) => println!("Runtime error: {:?}", e),
+        Ok(ref r) => println!("Success: {:?}", &r),
+    }
+    assert!(s.is_ok());
+    assert!(check_value(&s, LiteralData::Int(28)));
+
+
 }
 
 // A test helper

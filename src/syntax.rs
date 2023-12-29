@@ -153,9 +153,8 @@ pub struct Function {
     body: Box<Expr>,
 }
 
-// The AssignableData is what we can place in the  Environment for
-// blocks and functions for variables and functions after they are
-// evaluated.
+// The assignable data is compile time data information suitable 
+// in structure for the compiler to read and convert to another form.
 #[derive(Clone, Debug, PartialEq)]
 pub enum AssignableData {
     Lambda(Function, usize),

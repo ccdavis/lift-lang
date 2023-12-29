@@ -46,18 +46,33 @@ pub fn add_symbols(
         Expr::Let {
             ref var_name,
             ref value,
-            ref data_type,
+            ref mut data_type,
             ref mut index,
         } => {
             // This is just the first pass. We will assign better values when we do the
-            // type inference pass and the type checking pass.
+            // full type checking pass.
+            if matches!(DataType::Any, data_type) {
+                let inferred_type = determine_type(value);
+
+            }
+            
+
+
+
+            let assignable_data = AssignableData::from(value);
             let partial_typed_value = match data_type {
                 DataType::Bool => AssignableData::Literal(LiteralData::Bool(false)),
                 DataType::Int => AssignableData::Literal(LiteralData::Int(0)),
                 DataType::Flt => AssignableData::Literal(LiteralData::Flt(0.0)),
                 DataType::Str => AssignableData::Literal(LiteralData::Str("".to_string())),
                 DataType::List { .. } => AssignableData::ListLiteral(Vec::new()),
-                _ => AssignableData::Tbd(value.clone()),
+                _ => {
+                    if let Some(inferred_type) = determine_type(value) {
+
+                    } else {
+                        AssignableData::Tbd(value.clone())
+                    }
+                }
             };
             let new_symbol_id =
                 symbols.add_symbol(var_name, partial_typed_value, current_scope_id)?;
@@ -77,4 +92,36 @@ pub fn add_symbols(
         _ => (),
     }
     Ok(())
+}
+
+pub fn determine_type(expression: &Expr) -> Option<DataType> {
+    let inferred_type = match expression {
+        Expr::Literal(l)=> {
+            match l {
+                LiteralData::Int(_) => DataType::Int,
+                LiteralData::Str(_) => DataType::Str,
+                LiteralData::Flt(_) => DataType::Flt,
+                LiteralData::Bool(_) => DataType::Bool,
+            }            
+        }
+        Expr::List(e) => {
+            if let Some(ref reference_expr) = e.first() {
+                if let Some(ref reference_type) = determine_type(reference_expr) {
+                    DataType::List(Box::new(reference_type))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }            
+        },
+        Expr::Map(kv) => {
+            // TODO
+            None
+
+        }
+
+    } // match
+
+
 }
