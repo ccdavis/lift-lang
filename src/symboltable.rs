@@ -7,6 +7,7 @@ use std::collections::HashMap;
 pub struct Scope {
     pub parent: Option<usize>,
     pub data: Vec<AssignableData>,
+    pub runtime_value: Vec<Expr>,
     pub name: HashMap<usize, String>,
     pub index: HashMap<String, usize>,
 }
@@ -56,12 +57,12 @@ impl SymbolTable {
         self.0[scope].add(name, value)
     }
 
-    pub fn update_value(&mut self, value: AssignableData, index: &(usize, usize)) {
-        self.0[index.0].data[index.1] = value;
+    pub fn update_value(&mut self, value: Expr, index: &(usize, usize)) {
+        self.0[index.0].runtime_value[index.1] = value;
     }
 
-    pub fn get_value(&self, index: &(usize, usize)) -> AssignableData {
-        self.0[index.0].data[index.1].clone()
+    pub fn get_value(&self, index: &(usize, usize)) -> Expr {
+        self.0[index.0].runtime_value[index.1].clone()
     }
 }
 
@@ -70,6 +71,7 @@ impl Scope {
         Self {
             parent,
             data: Vec::new(),
+            runtime_value: Vec::new(),
             name: HashMap::new(),
             index: HashMap::new(),
         }
@@ -83,8 +85,9 @@ impl Scope {
         if self.index.contains_key(name) {
             Err(format!("Symbol already defined in this scope: {}", name))
         } else {
-            self.data.push(value);
-            let new_index = self.data.len();
+            self.data.push(value.clone());
+            self.runtime_value.push(value.into());
+            let new_index = self.data.len() - 1;
             self.index.insert(name.to_string(), new_index);
             self.name.insert(new_index, name.to_string());
             Ok(new_index)

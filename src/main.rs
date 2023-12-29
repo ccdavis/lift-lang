@@ -3,10 +3,10 @@ mod semantic_analysis;
 mod symboltable;
 mod syntax;
 
+use interpreter::InterpreterResult;
 use lalrpop_util::lalrpop_mod;
 use symboltable::SymbolTable;
 use syntax::*;
-use interpreter::InterpreterResult;
 
 lalrpop_mod!(pub grammar); // synthesized by LALRPOP
 use grammar::*;
@@ -132,7 +132,7 @@ fn test_interpret_math() {
 #[test]
 fn test_boolean_expressions() {
     let parser = grammar::ExprParser::new();
-    let src = "3 = 3";    
+    let src = "3 = 3";
     let parse_result = parser.parse(src);
     assert!(parse_result.is_ok());
 
@@ -143,10 +143,9 @@ fn test_boolean_expressions() {
         Ok(ref r) => println!("Success: {:?}", &r),
     }
     assert!(s.is_ok());
-    assert_eq!(LiteralData::Bool(true),extract_value(s) );
+    assert_eq!(LiteralData::Bool(true), extract_value(s));
 
-
-    let src = "3 = 4";    
+    let src = "3 = 4";
     let parse_result = parser.parse(src);
     assert!(parse_result.is_ok());
 
@@ -157,12 +156,12 @@ fn test_boolean_expressions() {
         Ok(ref r) => println!("Success: {:?}", &r),
     }
     assert!(s.is_ok());
-    assert_eq!(LiteralData::Bool(false),extract_value(s) );
+    assert_eq!(LiteralData::Bool(false), extract_value(s));
 
-    let src = "3+9 =  1 + 11";    
+    let src = "3+9 =  1 + 11";
     let parse_result = parser.parse(src);
     assert!(parse_result.is_ok());
-    println!("Parse result for complex equality: {:?}",&parse_result);
+    println!("Parse result for complex equality: {:?}", &parse_result);
 
     let mut symbols = SymbolTable::new();
     let s = parse_result.unwrap().interpret(&mut symbols, 0);
@@ -171,7 +170,7 @@ fn test_boolean_expressions() {
         Ok(ref r) => println!("Success: {:?}", &r),
     }
     assert!(s.is_ok());
-    assert_eq!(LiteralData::Bool(true),extract_value(s) );
+    assert_eq!(LiteralData::Bool(true), extract_value(s));
 }
 
 #[test]
@@ -180,7 +179,7 @@ fn test_interpret_conditionals() {
     let src = "if true { 25*5} else { 1-3}";
     let parse_result = parser.parse(src);
     match parse_result {
-        Err(ref e) => eprintln!("Parse conditional failed: {:?}",&e),
+        Err(ref e) => eprintln!("Parse conditional failed: {:?}", &e),
         Ok(ref r) => println!("Success parsing conditional."),
     }
     assert!(parse_result.is_ok());
@@ -191,22 +190,19 @@ fn test_interpret_conditionals() {
         Err(ref e) => println!("Runtime error: {:?}", e),
         Ok(ref r) => println!("Success: {:?}", &r),
     }
-    assert!(s.is_ok());    
+    assert!(s.is_ok());
     assert!(check_value(&s, LiteralData::Int(125)));
 
     let src = "if false { 25*5} else { 1-3}";
     let parse_result = parser.parse(src);
     match parse_result {
-        Err(ref e) => eprintln!("Parse conditional failed: {:?}",&e),
+        Err(ref e) => eprintln!("Parse conditional failed: {:?}", &e),
         Ok(ref r) => println!("Success parsing conditional."),
     }
     assert!(parse_result.is_ok());
     let mut symbols = SymbolTable::new();
     let s = parse_result.unwrap().interpret(&mut symbols, 0);
     assert_eq!(LiteralData::Int(-2), extract_value(s));
-
-
-
 }
 
 // A test helper
@@ -217,12 +213,11 @@ fn check_value(s: &InterpreterResult, value: LiteralData) -> bool {
     false
 }
 
-fn extract_value(r: InterpreterResult) -> LiteralData{
-    if let Ok(Some(Expr::Literal(l))) =  r {
+fn extract_value(r: InterpreterResult) -> LiteralData {
+    if let Ok(Some(Expr::Literal(l))) = r {
         return l;
     }
     panic!("Must pass an interpreter result that holds a literal data value.");
-
 }
 
 fn main() {
