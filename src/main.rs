@@ -5,9 +5,9 @@ mod syntax;
 
 use interpreter::InterpreterResult;
 use lalrpop_util::lalrpop_mod;
+use semantic_analysis::add_symbols;
 use symboltable::SymbolTable;
 use syntax::*;
-use semantic_analysis::add_symbols;
 
 lalrpop_mod!(pub grammar); // synthesized by LALRPOP
 use grammar::*;
@@ -218,9 +218,9 @@ fn test_variables() {
     assert!(parse_result.is_ok());
     let mut root_expr = parse_result.unwrap();
 
-    
     let mut symbols = SymbolTable::new();
-    add_symbols(&mut root_expr, &mut symbols, 0);
+    root_expr.prepare(&mut symbols);
+
 
     let s = root_expr.interpret(&mut symbols, 0);
     match s {
@@ -229,8 +229,6 @@ fn test_variables() {
     }
     assert!(s.is_ok());
     assert!(check_value(&s, LiteralData::Int(28)));
-
-
 }
 
 // A test helper

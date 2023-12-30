@@ -38,6 +38,7 @@ impl Expr {
     pub fn interpret(&self, symbols: &mut SymbolTable, current_scope: usize) -> InterpreterResult {
         match self {
             Expr::Literal(_) => Ok(Some(self.clone())),
+            Expr::RuntimeData(_) => Ok(Some(self.clone())),
             Expr::Program { body, environment } => interpret_program(symbols, body, *environment),
             Expr::Block { body, environment } => interpret_block(symbols, body, *environment),
             Expr::Let {
@@ -98,7 +99,7 @@ fn interpret_let(
     let current_scope = index.0;
     let result = value.interpret(symbols, current_scope)?;
     if let Some(expr) = result {
-        symbols.update_value(expr.into(), index);
+        symbols.update_runtime_value(expr, index);
         Ok(Some(Expr::Unit))
     } else {
         let msg = format!(
@@ -118,7 +119,12 @@ fn interpret_var(
     name: &str,
     index: &(usize, usize),
 ) -> InterpreterResult {
-    Ok(Some(symbols.get_runtime_value(index)))
+    let stored_value = symbols.get_runtime_value(index);
+    if let Expr::RuntimeData(d) = stored_value {
+        Ok(Some(Expr::Literal(d)))
+    } else {
+        Ok(Some(stored_value))
+    }
 }
 
 fn interpret_if(

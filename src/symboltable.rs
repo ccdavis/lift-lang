@@ -1,12 +1,11 @@
 use crate::semantic_analysis::ParseError;
-use crate::syntax::AssignableData;
 use crate::syntax::Expr;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
 pub struct Scope {
     pub parent: Option<usize>,
-    pub data: Vec<AssignableData>,
+    pub data: Vec<Expr>,
     pub runtime_value: Vec<Expr>,
     pub name: HashMap<usize, String>,
     pub index: HashMap<String, usize>,
@@ -51,17 +50,17 @@ impl SymbolTable {
     pub fn add_symbol(
         &mut self,
         name: &str,
-        value: AssignableData,
+        value: Expr,
         scope: usize,
     ) -> Result<usize, ParseError> {
         self.0[scope].add(name, value)
     }
 
-    pub fn update_value(&mut self, value: Expr, index: &(usize, usize)) {
+    pub fn update_runtime_value(&mut self, value: Expr, index: &(usize, usize)) {
         self.0[index.0].runtime_value[index.1] = value;
     }
 
-    pub fn get_compiletime_value(&self, index: &(usize, usize)) -> AssignableData{
+    pub fn get_compiletime_value(&self, index: &(usize, usize)) -> Expr {
         self.0[index.0].data[index.1].clone()
     }
 
@@ -85,12 +84,12 @@ impl Scope {
         self.index.get(name).copied()
     }
 
-    pub fn add(&mut self, name: &str, value: AssignableData) -> Result<usize, ParseError> {
+    pub fn add(&mut self, name: &str, value: Expr) -> Result<usize, ParseError> {
         if self.index.contains_key(name) {
             Err(format!("Symbol already defined in this scope: {}", name))
         } else {
             self.data.push(value.clone());
-            self.runtime_value.push(value.into());
+            self.runtime_value.push(value.into_runtime_data());
             let new_index = self.data.len() - 1;
             self.index.insert(name.to_string(), new_index);
             self.name.insert(new_index, name.to_string());

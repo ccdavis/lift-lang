@@ -153,43 +153,6 @@ pub struct Function {
     body: Box<Expr>,
 }
 
-// The assignable data is compile time data information suitable 
-// in structure for the compiler to read and convert to another form.
-#[derive(Clone, Debug, PartialEq)]
-pub enum AssignableData {
-    Lambda(Function, usize),
-    Literal(LiteralData),
-    ListLiteral(Vec<AssignableData>),
-    MapLiteral(Vec<(LiteralData, AssignableData)>),
-    Tbd(Box<Expr>), // To be determined later
-                    // TODO if we allow something like Macro(Expr) we can
-                    // store arbitrary code and interpret it later
-}
-
-impl From<Expr> for AssignableData {
-    fn from(data: Expr) -> AssignableData {
-        match data {
-            Expr::Literal(value) => AssignableData::Literal(value),
-            Expr::Lambda { value, environment } => AssignableData::Lambda(value, environment),
-            Expr::List(l) => {
-                let assignable_items = l
-                    .into_iter()
-                    .map(|item| AssignableData::from(item))
-                    .collect::<Vec<AssignableData>>();
-                AssignableData::ListLiteral(assignable_items)
-            }
-            Expr::Map(m) => {
-                let assignable_values = m
-                    .into_iter()
-                    .map(|item| (LiteralData::from(item.0), AssignableData::from(item.1)))
-                    .collect::<Vec<(LiteralData, AssignableData)>>();
-                AssignableData::MapLiteral(assignable_values)
-            }
-            _ => AssignableData::Tbd(Box::new(data)),
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
     Program {
@@ -200,9 +163,34 @@ pub enum Expr {
         body: Vec<Expr>,
         environment: usize,
     },
+
+    // Parsed out from the source file; the structure will resemble the source code
+    // and is easily scanned and type checked.
     Literal(LiteralData),
-    List(Vec<Expr>),
-    Map(HashMap<KeyData, Expr>),
+    MapLiteral {
+        key_type: DataType,
+        value_type: DataType,
+        data: Vec<(KeyData, Expr)>,
+    },
+    ListLiteral {
+        data_type: DataType,
+        data: Vec<Expr>,
+    },
+
+    // Special case for values accessed and changed during runtime in the interpreter; we
+    // may wish to change the hashtable for Map or expand how data is physically represented
+    // in memory during execution.
+    RuntimeData(LiteralData),
+    RuntimeList {
+        data_type: DataType,
+        data: Vec<Expr>,
+    },
+    RuntimeMap {
+        key_type: DataType,
+        value_type: DataType,
+        data: HashMap<KeyData, Expr>,
+    },
+
     BinaryExpr {
         left: Box<Expr>,
         op: Operator,
@@ -259,29 +247,27 @@ pub enum Expr {
     Unit,
 }
 
-impl From<AssignableData> for Expr {
-    fn from(data: AssignableData) -> Expr {
-        match data {
-            AssignableData::Literal(value) => Expr::Literal(value),
-            AssignableData::Lambda(value, environment) => Expr::Lambda {value,environment},
-            AssignableData::ListLiteral(l) => {
-                let assignable_items = l.into_iter()
-                    .map(|item| Expr::from(item))
+impl Expr {
+    // Makes copies of the initial data emitted by the parser for use at runtime.
+    pub fn into_runtime_data(&self) -> Expr {
+        match self {
+            Expr::Literal(value) => Expr::RuntimeData(value.clone()),            
+            Expr::ListLiteral {ref data_type, ref data} => {
+                let upgraded_items = data.into_iter()
+                    .map(|i| i.into_runtime_data())                    
                     .collect::<Vec<Expr>>();
-                Expr::List(assignable_items)
+                Expr::RuntimeList {data_type: data_type.clone(), data: upgraded_items.clone()}
             }
-            AssignableData::MapLiteral(m) => {
-                let assignable_values = m.into_iter()
-                    .map(|item| (KeyData::from(item.0),Expr::from(item.1)))
+            Expr::MapLiteral {key_type, value_type, data} => {
+                let upgraded_values = data.into_iter()
+                    .map(|item| (item.0.clone(),item.1.into_runtime_data()))
                     .collect::<HashMap<KeyData,Expr>>();
-                Expr::Map(assignable_values)
+                Expr::RuntimeMap{ key_type: key_type.clone(), value_type: value_type.clone(), data: upgraded_values}
             }                    
-            _ => panic!("Error converting compiled data into runtime representation:\n -->  '{:?}' \nProbably this is an accidentally unsupported data structure -- a compiler bug.", &data),
+            _ => panic!("Error converting compiled data into runtime representation:\n -->  '{:?}' \nProbably this is an accidentally unsupported data structure -- a compiler bug.", &self),
         }
     }
-}
 
-impl Expr {
     pub fn has_value(&self, value: &LiteralData) -> bool {
         if let (Expr::Literal(l), r) = (self, value) {
             return l == r;
@@ -292,7 +278,7 @@ impl Expr {
 
     pub fn is_data(&self) -> bool {
         match self {
-            Expr::Literal(_) | Expr::Map(_) | Expr::List(_) => true,
+            Expr::Literal(_) | Expr::MapLiteral { .. } | Expr::ListLiteral { .. } => true,
             _ => false,
         }
     }

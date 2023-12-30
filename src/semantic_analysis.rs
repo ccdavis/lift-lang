@@ -1,5 +1,4 @@
 use crate::symboltable::SymbolTable;
-use crate::syntax::AssignableData;
 use crate::syntax::DataType;
 use crate::syntax::Expr;
 use crate::syntax::LiteralData;
@@ -21,7 +20,10 @@ pub fn add_symbols(
             // The function is getting defined for the current scope:
             let new_symbol_id = symbols.add_symbol(
                 fn_name,
-                AssignableData::Lambda(value.clone(), current_scope_id),
+                Expr::Lambda {
+                    value: value.clone(),
+                    environment: current_scope_id,
+                },
                 current_scope_id,
             )?;
             *index = (current_scope_id, new_symbol_id);
@@ -49,33 +51,13 @@ pub fn add_symbols(
             ref mut data_type,
             ref mut index,
         } => {
-            // This is just the first pass. We will assign better values when we do the
-            // full type checking pass.
-            if matches!(DataType::Any, data_type) {
-                let inferred_type = determine_type(value);
-
-            }
-            
-
-
-
-            let assignable_data = AssignableData::from(value);
-            let partial_typed_value = match data_type {
-                DataType::Bool => AssignableData::Literal(LiteralData::Bool(false)),
-                DataType::Int => AssignableData::Literal(LiteralData::Int(0)),
-                DataType::Flt => AssignableData::Literal(LiteralData::Flt(0.0)),
-                DataType::Str => AssignableData::Literal(LiteralData::Str("".to_string())),
-                DataType::List { .. } => AssignableData::ListLiteral(Vec::new()),
-                _ => {
-                    if let Some(inferred_type) = determine_type(value) {
-
-                    } else {
-                        AssignableData::Tbd(value.clone())
-                    }
+            if matches!(data_type,DataType::Any) {
+                if let Some(inferred_type) = determine_type(value) {
+                    *data_type = inferred_type;
                 }
-            };
-            let new_symbol_id =
-                symbols.add_symbol(var_name, partial_typed_value, current_scope_id)?;
+            }
+
+            let new_symbol_id = symbols.add_symbol(var_name, *value.clone(), current_scope_id)?;
             *index = (current_scope_id, new_symbol_id);
         }
         Expr::Block {
@@ -96,32 +78,34 @@ pub fn add_symbols(
 
 pub fn determine_type(expression: &Expr) -> Option<DataType> {
     let inferred_type = match expression {
-        Expr::Literal(l)=> {
-            match l {
-                LiteralData::Int(_) => DataType::Int,
-                LiteralData::Str(_) => DataType::Str,
-                LiteralData::Flt(_) => DataType::Flt,
-                LiteralData::Bool(_) => DataType::Bool,
-            }            
-        }
-        Expr::List(e) => {
-            if let Some(ref reference_expr) = e.first() {
-                if let Some(ref reference_type) = determine_type(reference_expr) {
-                    DataType::List(Box::new(reference_type))
-                } else {
-                    None
-                }
-            } else {
-                None
-            }            
+        Expr::Literal(l) => match l {
+            LiteralData::Int(_) => DataType::Int,
+            LiteralData::Str(_) => DataType::Str,
+            LiteralData::Flt(_) => DataType::Flt,
+            LiteralData::Bool(_) => DataType::Bool,
         },
-        Expr::Map(kv) => {
-            // TODO
-            None
-
+        Expr::ListLiteral {
+            ref data_type,
+            ref data,
+        } => {
+            // Check first element and use that as the inferred type
+            let mut element_type = data_type.clone();
+            if matches!(data_type, DataType::Any) {
+                if let Some(reference_expr) = data.first() {
+                    if let Some(reference_type) = determine_type(reference_expr) {
+                        element_type = reference_type;
+                    }
+                }
+            }
+            DataType::List {
+                element_type: Box::new(element_type.clone()),
+            }
         }
-
-    } // match
-
-
+        _ => DataType::Any,
+    }; // match
+    if matches!(inferred_type, DataType::Any) {
+        None
+    } else {
+        Some(inferred_type)
+    }
 }
