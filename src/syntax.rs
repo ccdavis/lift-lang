@@ -41,6 +41,8 @@ pub enum Operator {
 pub struct Param {
     pub name: String,
     pub data_type: DataType,
+    pub default: Option<Expr>,
+    pub index: (usize,usize),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -148,9 +150,9 @@ impl From<Expr> for LiteralData {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Function {
-    params: Vec<Param>,
-    return_type: DataType,
-    body: Box<Expr>,
+    pub params: Vec<Param>,
+    pub return_type: DataType,
+    pub body: Box<Expr>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -212,8 +214,7 @@ pub enum Expr {
     DefineFunction {
         fn_name: String,
         index: (usize, usize),
-        value: Function,
-        environment: usize,
+        value: Box<Expr>,// Probably an Expr::Lambda        
     },
     Lambda {
         value: Function,

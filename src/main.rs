@@ -219,9 +219,9 @@ fn test_variables() {
     let mut root_expr = parse_result.unwrap();
 
     let mut symbols = SymbolTable::new();
-    root_expr.prepare(&mut symbols);
-
-
+    if let Err(err) = root_expr.prepare(&mut symbols) {
+        eprintln!("Error assigning symbols and scopes: '{:?}'", &err);        
+    }
     let s = root_expr.interpret(&mut symbols, 0);
     match s {
         Err(ref e) => println!("Runtime error: {:?}", e),

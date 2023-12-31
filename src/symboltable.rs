@@ -2,6 +2,8 @@ use crate::semantic_analysis::ParseError;
 use crate::syntax::Expr;
 use std::collections::HashMap;
 
+const TRACE: bool = true;
+
 #[derive(Clone, Debug)]
 pub struct Scope {
     pub parent: Option<usize>,
@@ -22,6 +24,9 @@ impl SymbolTable {
 
     pub fn create_scope(&mut self, parent: Option<usize>) -> usize {
         self.0.push(Scope::new(parent));
+        if TRACE {             
+            println!("Add scope {} with parent {:?}",self.0.len()-1, &parent);
+        }
         self.0.len() - 1
     }
 
@@ -35,6 +40,7 @@ impl SymbolTable {
         symbol_name: &str,
         current_scope_id: usize,
     ) -> Option<(usize, usize)> {
+        if TRACE { println!("Find  index for {} in scope {}",symbol_name, current_scope_id)}
         match self.get_index_in_scope(symbol_name, current_scope_id) {
             Some(index) => Some((current_scope_id, index)),
             None => {
@@ -53,7 +59,9 @@ impl SymbolTable {
         value: Expr,
         scope: usize,
     ) -> Result<usize, ParseError> {
-        self.0[scope].add(name, value)
+        let added_index = self.0[scope].add(name, value.clone());
+        if TRACE { println!("Added '{}' to symbol table:scope {},  at index {:?} with value '{:?}'",name, &scope, &added_index, &value.clone())}
+        added_index
     }
 
     pub fn update_runtime_value(&mut self, value: Expr, index: &(usize, usize)) {
