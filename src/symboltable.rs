@@ -13,6 +13,12 @@ pub struct Scope {
     pub index: HashMap<String, usize>,
 }
 
+impl Scope {
+    pub fn borrow_runtime_data(&self, index: usize) -> &Expr {
+        &self.runtime_value[index]
+    }
+}
+
 pub struct SymbolTable(Vec<Scope>);
 
 impl SymbolTable {
@@ -24,8 +30,8 @@ impl SymbolTable {
 
     pub fn create_scope(&mut self, parent: Option<usize>) -> usize {
         self.0.push(Scope::new(parent));
-        if TRACE {             
-            println!("Add scope {} with parent {:?}",self.0.len()-1, &parent);
+        if TRACE {
+            println!("Add scope {} with parent {:?}", self.0.len() - 1, &parent);
         }
         self.0.len() - 1
     }
@@ -40,7 +46,12 @@ impl SymbolTable {
         symbol_name: &str,
         current_scope_id: usize,
     ) -> Option<(usize, usize)> {
-        if TRACE { println!("Find  index for {} in scope {}",symbol_name, current_scope_id)}
+        if TRACE {
+            println!(
+                "Find  index for {} in scope {}",
+                symbol_name, current_scope_id
+            )
+        }
         match self.get_index_in_scope(symbol_name, current_scope_id) {
             Some(index) => Some((current_scope_id, index)),
             None => {
@@ -60,7 +71,15 @@ impl SymbolTable {
         scope: usize,
     ) -> Result<usize, ParseError> {
         let added_index = self.0[scope].add(name, value.clone());
-        if TRACE { println!("Added '{}' to symbol table:scope {},  at index {:?} with value '{:?}'",name, &scope, &added_index, &value.clone())}
+        if TRACE {
+            println!(
+                "Added '{}' to symbol table:scope {},  at index {:?} with value '{:?}'",
+                name,
+                &scope,
+                &added_index,
+                &value.clone()
+            )
+        }
         added_index
     }
 
@@ -74,6 +93,10 @@ impl SymbolTable {
 
     pub fn get_runtime_value(&self, index: &(usize, usize)) -> Expr {
         self.0[index.0].runtime_value[index.1].clone()
+    }
+
+    pub fn borrow_runtime_value(&self, index: (usize, usize)) -> &Expr {
+        &self.0[index.0].runtime_value[index.1]
     }
 }
 
@@ -97,7 +120,7 @@ impl Scope {
             Err(format!("Symbol already defined in this scope: {}", name))
         } else {
             self.data.push(value.clone());
-            self.runtime_value.push(value.into_runtime_data());
+            self.runtime_value.push(value.copy_to_runtime_data());
             let new_index = self.data.len() - 1;
             self.index.insert(name.to_string(), new_index);
             self.name.insert(new_index, name.to_string());

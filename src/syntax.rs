@@ -19,6 +19,7 @@ arg-list := EPSILON
 #![allow(unused_variables)]
 
 use std::collections::HashMap;
+use std::rc::Rc;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Operator {
@@ -42,7 +43,7 @@ pub struct Param {
     pub name: String,
     pub data_type: DataType,
     pub default: Option<Expr>,
-    pub index: (usize,usize),
+    pub index: (usize, usize),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -73,7 +74,7 @@ pub struct KeywordArg {
 pub enum LiteralData {
     Int(i64),
     Flt(f64),
-    Str(String),
+    Str(Rc<str>),
     Bool(bool),
 }
 
@@ -94,7 +95,7 @@ impl From<KeyData> for LiteralData {
 pub enum KeyData {
     Int(i64),
     Bool(bool),
-    Str(String),
+    Str(Rc<str>),
 }
 
 impl From<LiteralData> for KeyData {
@@ -111,13 +112,13 @@ impl From<LiteralData> for KeyData {
 
 impl From<&str> for LiteralData {
     fn from(data: &str) -> LiteralData {
-        LiteralData::Str(data.to_string())
+        LiteralData::Str(data.into())
     }
 }
 
 impl From<String> for LiteralData {
     fn from(data: String) -> LiteralData {
-        LiteralData::Str(data.clone())
+        LiteralData::Str(data.into())
     }
 }
 
@@ -214,7 +215,7 @@ pub enum Expr {
     DefineFunction {
         fn_name: String,
         index: (usize, usize),
-        value: Box<Expr>,// Probably an Expr::Lambda        
+        value: Box<Expr>, // Probably an Expr::Lambda
     },
     Lambda {
         value: Function,
@@ -250,18 +251,20 @@ pub enum Expr {
 
 impl Expr {
     // Makes copies of the initial data emitted by the parser for use at runtime.
-    pub fn into_runtime_data(&self) -> Expr {
+    // Only happens once when starting the interpreter, so maximum performance isn't too
+    // important.
+    pub fn copy_to_runtime_data(&self) -> Expr {
         match self {
             Expr::Literal(value) => Expr::RuntimeData(value.clone()),            
             Expr::ListLiteral {ref data_type, ref data} => {
                 let upgraded_items = data.into_iter()
-                    .map(|i| i.into_runtime_data())                    
+                    .map(|i| i.copy_to_runtime_data())                    
                     .collect::<Vec<Expr>>();
                 Expr::RuntimeList {data_type: data_type.clone(), data: upgraded_items.clone()}
             }
             Expr::MapLiteral {key_type, value_type, data} => {
                 let upgraded_values = data.into_iter()
-                    .map(|item| (item.0.clone(),item.1.into_runtime_data()))
+                    .map(|item| (item.0.clone(),item.1.copy_to_runtime_data()))
                     .collect::<HashMap<KeyData,Expr>>();
                 Expr::RuntimeMap{ key_type: key_type.clone(), value_type: value_type.clone(), data: upgraded_values}
             }                    

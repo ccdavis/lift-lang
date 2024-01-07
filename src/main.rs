@@ -35,7 +35,7 @@ fn test_parse_numbers() {
 fn test_parse_strings() {
     let parser = grammar::LiteralDataParser::new();
     let src = "'abc'";
-    let should_be = LiteralData::Str("'abc'".to_string());
+    let should_be = LiteralData::Str("'abc'".to_string().into());
     let got = match parser.parse(src) {
         Ok(s) => s,
         Err(e) => {
@@ -220,7 +220,7 @@ fn test_variables() {
 
     let mut symbols = SymbolTable::new();
     if let Err(err) = root_expr.prepare(&mut symbols) {
-        eprintln!("Error assigning symbols and scopes: '{:?}'", &err);        
+        eprintln!("Error assigning symbols and scopes: '{:?}'", &err);
     }
     let s = root_expr.interpret(&mut symbols, 0);
     match s {
@@ -233,14 +233,14 @@ fn test_variables() {
 
 // A test helper
 fn check_value(s: &InterpreterResult, value: LiteralData) -> bool {
-    if let Ok(Some(ref e)) = s {
+    if let Ok(ref e) = s {
         return e.has_value(&value);
     }
     false
 }
 
 fn extract_value(r: InterpreterResult) -> LiteralData {
-    if let Ok(Some(Expr::Literal(l))) = r {
+    if let Ok(Expr::Literal(l)) = r {
         return l;
     }
     panic!("Must pass an interpreter result that holds a literal data value.");

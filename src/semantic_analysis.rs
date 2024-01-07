@@ -1,8 +1,8 @@
 use crate::symboltable::SymbolTable;
 use crate::syntax::DataType;
 use crate::syntax::Expr;
-use crate::syntax::LiteralData;
 use crate::syntax::Function;
+use crate::syntax::LiteralData;
 
 pub type ParseError = String;
 // This adds symbols for the current scope and the child scopes, plus updates the index (scope id, symbol id) on the expr
@@ -14,46 +14,71 @@ pub fn add_symbols(
     current_scope_id: usize,
 ) -> Result<(), ParseError> {
     match *e {
-        Expr::Block { ref mut body, ref mut environment } => {
+        Expr::Block {
+            ref mut body,
+            ref mut environment,
+        } => {
             let new_scope_id = symbols.create_scope(Some(current_scope_id));
             *environment = new_scope_id;
             for e in body {
                 add_symbols(e, symbols, new_scope_id)?;
             }
-        },
-        Expr::BinaryExpr { ref mut left, ref op, ref mut right } => {
+        }
+        Expr::BinaryExpr {
+            ref mut left,
+            ref op,
+            ref mut right,
+        } => {
             add_symbols(left, symbols, current_scope_id)?;
-            add_symbols(right, symbols, current_scope_id)?;;
-        },
-        Expr::If { ref mut cond, ref mut then, ref mut final_else } => {
+            add_symbols(right, symbols, current_scope_id)?;
+        }
+        Expr::If {
+            ref mut cond,
+            ref mut then,
+            ref mut final_else,
+        } => {
             add_symbols(cond, symbols, current_scope_id)?;
             add_symbols(then, symbols, current_scope_id)?;
             add_symbols(final_else, symbols, current_scope_id)?;
-        },
-        Expr::While { ref mut cond , ref mut body }=>{
+        }
+        Expr::While {
+            ref mut cond,
+            ref mut body,
+        } => {
             add_symbols(cond, symbols, current_scope_id)?;
             add_symbols(body, symbols, current_scope_id)?;
-        },
-        Expr::Call { ref fn_name, ref mut index, ref mut args } => {
-            if let Some(found_index) = symbols.find_index_reachable_from(fn_name, current_scope_id) {
+        }
+        Expr::Call {
+            ref fn_name,
+            ref mut index,
+            ref mut args,
+        } => {
+            if let Some(found_index) = symbols.find_index_reachable_from(fn_name, current_scope_id)
+            {
                 *index = found_index;
             } else {
-                let msg = format!("use of undeclared or not yet declared function '{}'", fn_name);
+                let msg = format!(
+                    "use of undeclared or not yet declared function '{}'",
+                    fn_name
+                );
                 return Err(msg);
             }
             for a in args {
-                if let Err(ref err) = add_symbols(&mut a.value, symbols, current_scope_id) {                                        
+                if let Err(ref err) = add_symbols(&mut a.value, symbols, current_scope_id) {
                     let new_msg = format!("Error on argument '{}': {}", a.name, err.clone());
-                    return Err(new_msg);                    
+                    return Err(new_msg);
                 }
             }
         }
-        Expr::Lambda { ref mut value, ref mut environment } => {
+        Expr::Lambda {
+            ref mut value,
+            ref mut environment,
+        } => {
             // The function has its own scope as well which we should create
             let current_scope_id = *environment;
             let new_scope_id = symbols.create_scope(Some(current_scope_id));
             *environment = new_scope_id;
-            
+
             // Add params to the new environment
             for p in &mut value.params {
                 let new_symbol_id = symbols.add_symbol(&p.name, Expr::Unit, new_scope_id)?;
@@ -67,14 +92,10 @@ pub fn add_symbols(
             ref mut index,
             ref mut value,
         } => {
-            add_symbols(value, symbols, current_scope_id)?;            
+            add_symbols(value, symbols, current_scope_id)?;
             // The function is getting defined for the current scope:
-            let new_symbol_id = symbols.add_symbol(
-                fn_name,
-                *value.clone(),
-                current_scope_id,
-            )?;
-            *index = (current_scope_id, new_symbol_id);                                    
+            let new_symbol_id = symbols.add_symbol(fn_name, *value.clone(), current_scope_id)?;
+            *index = (current_scope_id, new_symbol_id);
         }
         // Here we set the variable's index from the already added symbol and catch
         // places where the call comes before the definition.
@@ -96,7 +117,7 @@ pub fn add_symbols(
             ref mut data_type,
             ref mut index,
         } => {
-            if matches!(data_type,DataType::Any) {
+            if matches!(data_type, DataType::Any) {
                 if let Some(inferred_type) = determine_type(value) {
                     *data_type = inferred_type;
                 }
@@ -104,13 +125,13 @@ pub fn add_symbols(
             let new_symbol_id = symbols.add_symbol(var_name, *value.clone(), current_scope_id)?;
             *index = (current_scope_id, new_symbol_id);
         }
-        Expr::Return(ref mut e)=> add_symbols(e, symbols, current_scope_id)?,
-        
+        Expr::Return(ref mut e) => add_symbols(e, symbols, current_scope_id)?,
+
         _ => (),
     }
     Ok(())
 }
-
+// TODO  determine_type() is incomplete. Does not address all types and does not fully traverse the tree.
 pub fn determine_type(expression: &Expr) -> Option<DataType> {
     let inferred_type = match expression {
         Expr::Literal(l) => match l {
