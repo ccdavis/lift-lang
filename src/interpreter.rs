@@ -1,4 +1,3 @@
-use crate::semantic_analysis::ParseError;
 use crate::semantic_analysis::*;
 use crate::symboltable::SymbolTable;
 use crate::syntax::DataType;
@@ -7,25 +6,58 @@ use crate::syntax::Function;
 use crate::syntax::KeywordArg;
 use crate::syntax::LiteralData;
 use crate::syntax::Operator;
+use std::error::Error;
+use std::error;
 
 // TODO this should eventually  store line numbers, columns in source and function names
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub struct RuntimeError {
-    stack: Vec<String>,
+    stack: Option<Vec<String>>, // should be able to unwind the stack
+    location: Option<(usize,usize)>,
     pub msg: String,
 }
 
-pub type InterpreterResult = Result<Expr, RuntimeError>;
+impl std::fmt::Display for RuntimeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let stack_trace = if let Some(ref trace) = self.stack {
+            trace.join("\n")
+        } else {
+            "\n".to_string()
+        };
+        
+        if let Some((line,column)) = self.location {
+            write!(f, "{}{}, {}: {}", &stack_trace, line, column, self.msg)
+        } else {
+            write!(f, "{}{}", &stack_trace, self.msg)
+        }
+    }
+}
+impl RuntimeError {
+    pub fn new(msg: &str, location: Option<(usize,usize)>, stack: Option<Vec<String>>) -> Self{
+        Self {
+            msg: msg.to_string(), 
+            location, stack,
+        }
+    }
+}
+
+impl Error for RuntimeError {
+    fn description(&self) ->&str {
+        &self.msg
+    } 
+}
+
+pub type InterpreterResult = Result<Expr,  Box<dyn error::Error>>;
 
 impl Expr {
-    pub fn prepare(&mut self, symbols: &mut SymbolTable) -> Result<(), Vec<ParseError>> {
+    pub fn prepare(&mut self, symbols: &mut SymbolTable) -> Result<(), Vec<CompileError>> {
         let mut errors = Vec::new();
 
         // Analyze  parse tree to index symbols across scopes.
         let result = add_symbols(self, symbols, 0);
         if let Err(ref msg) = result {
             eprintln!("Error indexing variable and function names: {}", msg);
-            errors.push(msg.to_string());
+            errors.push(msg.clone());
         }
         // Collect other errors...
 
@@ -59,7 +91,7 @@ impl Expr {
                 ref left,
                 op,
                 ref right,
-            } => interpret_binary(symbols, left, &op, right, current_scope),
+            } => interpret_binary(symbols, left, op, right, current_scope),
             Expr::Variable {
                 ref name,
                 ref index,
@@ -106,8 +138,8 @@ fn interpret_body_or_block(
     let mut tmp_expr_result: InterpreterResult = Ok(Expr::Unit);
     for exp in body {
         tmp_expr_result = exp.interpret(symbols, env);
-        if let Err(ref err) = tmp_expr_result {
-            eprintln!("Runtime error: {}", err.msg);
+        if let Err(ref err) = tmp_expr_result {            
+            eprintln!("Runtime error: {}", err);
             return tmp_expr_result;
         }
     }
@@ -193,7 +225,7 @@ fn interprets_as_true(
     symbols: &mut SymbolTable,
     current_scope: usize,
     cond: &Expr,
-) -> Result<bool, RuntimeError> {
+) -> Result<bool, Box< dyn Error>> {
     if let Expr::Literal(LiteralData::Bool(b)) = cond.interpret(symbols, current_scope)? {
         Ok(b)
     } else {
@@ -269,10 +301,7 @@ impl LiteralData {
                 // The type checker and parser should have prevented us from
                 // reaching this point.
                 let msg = format!("{:?} not allowed on {:?},{:?}", op, self, rhs);
-                return Err(RuntimeError {
-                    msg,
-                    stack: Vec::new(),
-                });
+                return Err(RuntimeError::new(&msg,None,None).into());                                                        
             }
         };
         Ok(Expr::Literal(result))
@@ -304,10 +333,7 @@ fn interpret_binary(
                     "Result of {:?} isn't a simple primary expression. Cannot apply {:?} to it.",
                     left, op
                 );
-                error = Some(RuntimeError {
-                    msg,
-                    stack: Vec::new(),
-                });
+                error = Some(RuntimeError::new(&msg,None,None).into());                    
             }
         }
         (Expr::Literal(l_value), _) => {
@@ -318,10 +344,7 @@ fn interpret_binary(
                     "Result of {:?} isn't a simple primary expression. Cannot apply {:?} to it.",
                     right, op
                 );
-                error = Some(RuntimeError {
-                    msg,
-                    stack: Vec::new(),
-                });
+                error = Some(RuntimeError::new(&msg,None,None).into());                    
             }
         }
         (_, _) => {
@@ -334,15 +357,12 @@ fn interpret_binary(
                     "Expressions don't evaluate to anything applicable to a binary operator: {:?}, {:?}",
                     &left, &right
                 );
-                error = Some(RuntimeError {
-                    msg,
-                    stack: Vec::new(),
-                });
+                error = Some(RuntimeError::new(&msg,None,None).into());                    
             }
         }
     }
     if let Some(e) = error {
-        Err(e)
+        Err(e.into())
     } else {
         result
     }

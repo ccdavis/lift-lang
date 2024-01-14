@@ -1,4 +1,4 @@
-use crate::semantic_analysis::ParseError;
+use crate::semantic_analysis::CompileError;
 use crate::syntax::Expr;
 use std::collections::HashMap;
 
@@ -69,7 +69,7 @@ impl SymbolTable {
         name: &str,
         value: Expr,
         scope: usize,
-    ) -> Result<usize, ParseError> {
+    ) -> Result<usize, CompileError> {
         let added_index = self.0[scope].add(name, value.clone());
         if TRACE {
             println!(
@@ -115,9 +115,12 @@ impl Scope {
         self.index.get(name).copied()
     }
 
-    pub fn add(&mut self, name: &str, value: Expr) -> Result<usize, ParseError> {
+    pub fn add(&mut self, name: &str, value: Expr) -> Result<usize, CompileError> {
         if self.index.contains_key(name) {
-            Err(format!("Symbol already defined in this scope: {}", name))
+            Err(
+                CompileError::name(
+                    &format!("Symbol already defined in this scope: {}", name), 
+                    (0,0)))
         } else {
             self.data.push(value.clone());
             self.runtime_value.push(value.copy_to_runtime_data());
