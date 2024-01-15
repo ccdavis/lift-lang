@@ -4,45 +4,66 @@ use crate::syntax::Expr;
 use crate::syntax::Function;
 use crate::syntax::LiteralData;
 
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub enum CompileErrorType {
-    StructureError, NameError, TypeCheckError,
+    StructureError,
+    NameError,
+    TypeCheckError,
 }
 impl CompileErrorType {
     pub fn name(&self) -> String {
         match self {
-            CompileErrorType::TypeCheckError {..} => "Type check Error",
-            CompileErrorType::NameError {..} => "Name Error",
-            CompileErrorType::StructureError {..} => "Structure Error",   
-        }.to_string()
+            CompileErrorType::TypeCheckError { .. } => "Type check Error",
+            CompileErrorType::NameError { .. } => "Name Error",
+            CompileErrorType::StructureError { .. } => "Structure Error",
+        }
+        .to_string()
     }
 }
 
 impl CompileError {
-    pub fn structure(msg: &str, location: (usize,usize)) -> Self {
-        Self { error_type: CompileErrorType::StructureError,location,msg: msg.to_string()}
+    pub fn structure(msg: &str, location: (usize, usize)) -> Self {
+        Self {
+            error_type: CompileErrorType::StructureError,
+            location,
+            msg: msg.to_string(),
+        }
     }
-    pub fn name(msg: &str, location: (usize,usize)) -> Self {
-        Self { error_type: CompileErrorType::NameError,location,msg: msg.to_string()}
+    pub fn name(msg: &str, location: (usize, usize)) -> Self {
+        Self {
+            error_type: CompileErrorType::NameError,
+            location,
+            msg: msg.to_string(),
+        }
     }
-    pub fn typecheck(msg: &str, location: (usize,usize)) -> Self {
-        Self { error_type: CompileErrorType::TypeCheckError,location,msg: msg.to_string()}
+    pub fn typecheck(msg: &str, location: (usize, usize)) -> Self {
+        Self {
+            error_type: CompileErrorType::TypeCheckError,
+            location,
+            msg: msg.to_string(),
+        }
     }
-
 }
-#[derive(Debug,Clone)]
-pub struct  CompileError {
+#[derive(Debug, Clone)]
+pub struct CompileError {
     error_type: CompileErrorType,
-    location: (usize,usize),
+    location: (usize, usize),
     msg: String,
 }
 
 impl std::fmt::Display for CompileError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {                 
-        if let (line,column) = self.location {
-            write!(f, "{}: {}, {}: {}", &self.error_type.name(),line, column, self.msg)
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let (line, column) = self.location {
+            write!(
+                f,
+                "{}: {}, {}: {}",
+                &self.error_type.name(),
+                line,
+                column,
+                self.msg
+            )
         } else {
-            write!(f, "{}: {}", &self.error_type.name(),&self.msg)
+            write!(f, "{}: {}", &self.error_type.name(), &self.msg)
         }
     }
 }
@@ -104,12 +125,12 @@ pub fn add_symbols(
                     "use of undeclared or not yet declared function '{}'",
                     fn_name
                 );
-                return Err(CompileError::name(&msg, (0,0)));
+                return Err(CompileError::name(&msg, (0, 0)));
             }
             for a in args {
                 if let Err(ref err) = add_symbols(&mut a.value, symbols, current_scope_id) {
                     let new_msg = format!("Error on argument '{}': {}", a.name, err.clone());
-                    return Err(CompileError::structure(&new_msg, (0,0)));
+                    return Err(CompileError::structure(&new_msg, (0, 0)));
                 }
             }
         }
@@ -150,7 +171,7 @@ pub fn add_symbols(
                 *index = found_index;
             } else {
                 let msg = format!("use of undeclared or not yet declared variable '{}'", name);
-                return Err(CompileError::name(&msg,(0,0)));
+                return Err(CompileError::name(&msg, (0, 0)));
             }
         }
 

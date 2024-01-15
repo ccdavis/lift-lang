@@ -117,10 +117,10 @@ impl Scope {
 
     pub fn add(&mut self, name: &str, value: Expr) -> Result<usize, CompileError> {
         if self.index.contains_key(name) {
-            Err(
-                CompileError::name(
-                    &format!("Symbol already defined in this scope: {}", name), 
-                    (0,0)))
+            Err(CompileError::name(
+                &format!("Symbol already defined in this scope: {}", name),
+                (0, 0),
+            ))
         } else {
             self.data.push(value.clone());
             self.runtime_value.push(value.copy_to_runtime_data());

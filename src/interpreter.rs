@@ -6,14 +6,14 @@ use crate::syntax::Function;
 use crate::syntax::KeywordArg;
 use crate::syntax::LiteralData;
 use crate::syntax::Operator;
-use std::error::Error;
 use std::error;
+use std::error::Error;
 
 // TODO this should eventually  store line numbers, columns in source and function names
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub struct RuntimeError {
     stack: Option<Vec<String>>, // should be able to unwind the stack
-    location: Option<(usize,usize)>,
+    location: Option<(usize, usize)>,
     pub msg: String,
 }
 
@@ -24,8 +24,8 @@ impl std::fmt::Display for RuntimeError {
         } else {
             "\n".to_string()
         };
-        
-        if let Some((line,column)) = self.location {
+
+        if let Some((line, column)) = self.location {
             write!(f, "{}{}, {}: {}", &stack_trace, line, column, self.msg)
         } else {
             write!(f, "{}{}", &stack_trace, self.msg)
@@ -33,21 +33,22 @@ impl std::fmt::Display for RuntimeError {
     }
 }
 impl RuntimeError {
-    pub fn new(msg: &str, location: Option<(usize,usize)>, stack: Option<Vec<String>>) -> Self{
+    pub fn new(msg: &str, location: Option<(usize, usize)>, stack: Option<Vec<String>>) -> Self {
         Self {
-            msg: msg.to_string(), 
-            location, stack,
+            msg: msg.to_string(),
+            location,
+            stack,
         }
     }
 }
 
 impl Error for RuntimeError {
-    fn description(&self) ->&str {
+    fn description(&self) -> &str {
         &self.msg
-    } 
+    }
 }
 
-pub type InterpreterResult = Result<Expr,  Box<dyn error::Error>>;
+pub type InterpreterResult = Result<Expr, Box<dyn error::Error>>;
 
 impl Expr {
     pub fn prepare(&mut self, symbols: &mut SymbolTable) -> Result<(), Vec<CompileError>> {
@@ -138,7 +139,7 @@ fn interpret_body_or_block(
     let mut tmp_expr_result: InterpreterResult = Ok(Expr::Unit);
     for exp in body {
         tmp_expr_result = exp.interpret(symbols, env);
-        if let Err(ref err) = tmp_expr_result {            
+        if let Err(ref err) = tmp_expr_result {
             eprintln!("Runtime error: {}", err);
             return tmp_expr_result;
         }
@@ -185,7 +186,16 @@ fn interpret_call(
                 );
             }
 
-            for a in args {}
+            for a in args {
+                let arg_value = a.value.interpret(symbols, current_scope)?;
+
+                // TODO this part should be done in a compiler pass, it's sort of slow this way.
+                if let Some(assign_to_index) = symbols.get_index_in_scope(&a.name, environment) {
+                    symbols.update_runtime_value(arg_value, &(environment, assign_to_index));
+                } else {
+                    panic!("Interpreter error: Keyword arg names must match the function definition parameters.");
+                }
+            }
 
             interpret_lambda(symbols, &value, environment)
         }
@@ -225,7 +235,7 @@ fn interprets_as_true(
     symbols: &mut SymbolTable,
     current_scope: usize,
     cond: &Expr,
-) -> Result<bool, Box< dyn Error>> {
+) -> Result<bool, Box<dyn Error>> {
     if let Expr::Literal(LiteralData::Bool(b)) = cond.interpret(symbols, current_scope)? {
         Ok(b)
     } else {
@@ -301,7 +311,7 @@ impl LiteralData {
                 // The type checker and parser should have prevented us from
                 // reaching this point.
                 let msg = format!("{:?} not allowed on {:?},{:?}", op, self, rhs);
-                return Err(RuntimeError::new(&msg,None,None).into());                                                        
+                return Err(RuntimeError::new(&msg, None, None).into());
             }
         };
         Ok(Expr::Literal(result))
@@ -333,7 +343,7 @@ fn interpret_binary(
                     "Result of {:?} isn't a simple primary expression. Cannot apply {:?} to it.",
                     left, op
                 );
-                error = Some(RuntimeError::new(&msg,None,None).into());                    
+                error = Some(RuntimeError::new(&msg, None, None).into());
             }
         }
         (Expr::Literal(l_value), _) => {
@@ -344,7 +354,7 @@ fn interpret_binary(
                     "Result of {:?} isn't a simple primary expression. Cannot apply {:?} to it.",
                     right, op
                 );
-                error = Some(RuntimeError::new(&msg,None,None).into());                    
+                error = Some(RuntimeError::new(&msg, None, None).into());
             }
         }
         (_, _) => {
@@ -357,7 +367,7 @@ fn interpret_binary(
                     "Expressions don't evaluate to anything applicable to a binary operator: {:?}, {:?}",
                     &left, &right
                 );
-                error = Some(RuntimeError::new(&msg,None,None).into());                    
+                error = Some(RuntimeError::new(&msg, None, None).into());
             }
         }
     }
