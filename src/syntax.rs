@@ -19,6 +19,7 @@ arg-list := EPSILON
 #![allow(unused_variables)]
 
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::rc::Rc;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -149,6 +150,17 @@ impl From<Expr> for LiteralData {
     }
 }
 
+impl std::fmt::Display for LiteralData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LiteralData::Int(i) => write!(f, "{}", i),
+            LiteralData::Flt(fl) => write!(f, "{}", fl),
+            LiteralData::Bool(b) => write!(f, "{}", b),
+            LiteralData::Str(s) => write!(f, "{}", &s),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Function {
     pub params: Vec<Param>,
@@ -248,10 +260,36 @@ pub enum Expr {
     Return(Box<Expr>),
     Unit,
 }
+impl std::fmt::Display for Expr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Expr::Literal(d) => {
+                write!(f, "{}", d)
+            }
+            Expr::ListLiteral { data_type, data } => {
+                let printed_items = data
+                    .iter()
+                    .map(|i| i.to_string())
+                    .collect::<Vec<String>>()
+                    .join(",");
+
+                write!(f, "[{}", printed_items)
+            }
+            Expr::MapLiteral {
+                key_type,
+                value_type,
+                data,
+            } => {
+                write!(f, "{:?}", &data)
+            }
+            _ => write!(f, "{:?}", &self),
+        }
+    }
+}
 
 impl Expr {
     // Makes copies of the initial data emitted by the parser for use at runtime.
-    // Only happens once when starting the interpreter, so maximum performance isn't too
+    // Only happens once when starting the interpreter, so maximum performane isn't too
     // important.
     pub fn copy_to_runtime_data(&self) -> Expr {
         match self {

@@ -2,7 +2,7 @@ use crate::semantic_analysis::CompileError;
 use crate::syntax::Expr;
 use std::collections::HashMap;
 
-const TRACE: bool = true;
+const TRACE: bool = false;
 
 #[derive(Clone, Debug)]
 pub struct Scope {

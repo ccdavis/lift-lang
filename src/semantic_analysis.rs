@@ -6,16 +6,16 @@ use crate::syntax::LiteralData;
 
 #[derive(Clone, Debug)]
 pub enum CompileErrorType {
-    StructureError,
-    NameError,
-    TypeCheckError,
+    Structure,
+    Name,
+    TypeCheck,
 }
 impl CompileErrorType {
     pub fn name(&self) -> String {
         match self {
-            CompileErrorType::TypeCheckError { .. } => "Type check Error",
-            CompileErrorType::NameError { .. } => "Name Error",
-            CompileErrorType::StructureError { .. } => "Structure Error",
+            CompileErrorType::TypeCheck { .. } => "Type check Error",
+            CompileErrorType::Name { .. } => "Name Error",
+            CompileErrorType::Structure { .. } => "Structure Error",
         }
         .to_string()
     }
@@ -24,21 +24,21 @@ impl CompileErrorType {
 impl CompileError {
     pub fn structure(msg: &str, location: (usize, usize)) -> Self {
         Self {
-            error_type: CompileErrorType::StructureError,
+            error_type: CompileErrorType::Structure,
             location,
             msg: msg.to_string(),
         }
     }
     pub fn name(msg: &str, location: (usize, usize)) -> Self {
         Self {
-            error_type: CompileErrorType::NameError,
+            error_type: CompileErrorType::Name,
             location,
             msg: msg.to_string(),
         }
     }
     pub fn typecheck(msg: &str, location: (usize, usize)) -> Self {
         Self {
-            error_type: CompileErrorType::TypeCheckError,
+            error_type: CompileErrorType::TypeCheck,
             location,
             msg: msg.to_string(),
         }

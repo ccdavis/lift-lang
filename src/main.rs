@@ -335,11 +335,11 @@ pub fn repl() {
                             for e in errors {
                                 eprintln!("{}", &e);
                             }
-                            println!("");
+                            println!();
                         }
                         match ast.interpret(&mut symbols, 0) {
                             Err(interpreter_error) => eprintln!("{}", interpreter_error),
-                            Ok(res) => println!("=> '{:?}'", &res),
+                            Ok(res) => println!("=> '{}'", &res),
                         }
                     }
                     Err(parse_error) => eprintln!("Syntax error: '{}'", &parse_error),
