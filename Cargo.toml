@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 lalrpop = "0.20.0"
 lalrpop-util = "0.20.0"
+rustyline = {version = "13.0.0", features = ["derive","custom-bindings"]}
 
 [build-dependencies]
 lalrpop = "0.20.0"
