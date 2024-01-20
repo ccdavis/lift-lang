@@ -10,6 +10,8 @@ use syntax::*;
 
 use rustyline::completion::FilenameCompleter;
 use rustyline::error::ReadlineError;
+use rustyline::{DefaultEditor, Result};
+
 use std::borrow::Cow::{self, Borrowed, Owned};
 
 use rustyline::highlight::{Highlighter, MatchingBracketHighlighter};
@@ -296,25 +298,12 @@ pub fn repl() {
     let parser = grammar::ExprParser::new();
     let mut symbols = SymbolTable::new();
 
-    let config = Config::builder()
-        .history_ignore_space(true)
-        .completion_type(CompletionType::List)
-        .edit_mode(EditMode::Emacs)
-        .build();
+    let mut rl = DefaultEditor::new().unwrap();
 
-    let h = MyHelper {
-        completer: FilenameCompleter::new(),
-        highlighter: MatchingBracketHighlighter::new(),
-        hinter: HistoryHinter::new(),
-        colored_prompt: "".to_owned(),
-        validator: MatchingBracketValidator::new(),
-    };
+    //rl.bind_sequence(KeyEvent::alt('n'), Cmd::HistorySearchForward);
+    //rl.bind_sequence(KeyEvent::alt('p'), Cmd::HistorySearchBackward);
 
-    let mut rl = Editor::with_config(config).expect("Could not create line reader.");
-    rl.set_helper(Some(h));
-    rl.bind_sequence(KeyEvent::alt('n'), Cmd::HistorySearchForward);
-    rl.bind_sequence(KeyEvent::alt('p'), Cmd::HistorySearchBackward);
-
+    #[cfg(feature = "with-file-history")]
     if rl.load_history("history.txt").is_err() {
         println!("No previous history.");
     }
@@ -323,7 +312,7 @@ pub fn repl() {
 
     loop {
         count += 1;
-        let p = format!("{count}> ");
+        let p = format!("{count} ==> ");
 
         let readline = rl.readline(&p);
         match readline {

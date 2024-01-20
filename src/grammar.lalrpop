@@ -1,4 +1,4 @@
-use crate::syntax::{Operator,DataType,Param,KeywordArg,Expr, LiteralData};
+use crate::syntax::{Operator,DataType,Param,KeywordArg,Expr, Function, LiteralData};
 
 grammar;
 
@@ -7,6 +7,8 @@ pub Expr: Expr = {
     ExprIf,
     ExprWhile,
     ExprLet,
+    ExprDefineFunction,
+    ExprLambda,
     ExprAssign,
 };
 
@@ -18,6 +20,11 @@ ExprBlock: Expr = {
 ExprLet: Expr = "let" <n: ident> "=" <r:Expr> => Expr::Let {var_name: n, data_type: DataType::Any, index: (0,0),value: Box::new(r)}.into();
 ExprIf: Expr = "if" <t:ExprLogicOr>  <c:ExprBlock> "else" <b:ExprBlock> => Expr::If {cond: Box::new(t), then: Box::new(c), final_else: Box::new(b) }.into();
 ExprWhile: Expr =  "while" <c:ExprLogicOr> <b:ExprBlock> => Expr::While { cond: Box::new(c), body: Box::new(b)}.into();
+ExprDefineFunction: Expr  = "function" <n: ident>  <f:DefFunction> => Expr::DefineFunction {fn_name: n,index: (0,0), value: Box::new(f)}.into();
+ExprLambda: Expr = "Lambda" <f:LambdaFunction> => Expr::Lambda { value: f, environment: 0}.into();
+
+DefFunction: Expr = "(" <pm:CommaSeparated<Param>> ")" ":" <rt:DataType> <b:ExprBlock> => Expr::Lambda { value: Function { body: Box::new(b), params: pm, return_type: rt}, environment: 0}.into();
+LambdaFunction: Function = "(" <lpm:CommaSeparated<Param>> ")"  ":" <dt:DataType> <b:ExprBlock> => Function { params: lpm, body: Box::new(b), return_type: dt };  
   
 
 ExprAssign = {
@@ -42,7 +49,7 @@ OpComparison: Operator = {
     ">" => Operator::Gt,
     ">=" => Operator::Gte,
     "<" => Operator::Lt,
-    "<=" => Operator::Lte,
+    "<=" => Operator::Lte,    
 }
 
 
@@ -51,7 +58,6 @@ ExprArithmetic: Expr = {
     <l:ExprArithmetic> "-" <r:Factor> => Expr::sub(l, r).into(),
     Factor,
 };
-
 
 SemiSeparated<T>: Vec<T> = { 
     <s:(<T> ";")*> <e:T?> => match e {
@@ -82,6 +88,18 @@ KeywordArg: KeywordArg = {
 	<k:ident> ":" <e:Expr> => KeywordArg { name: k.to_string(),value: e}, 
 }
 
+Param:  Param = {
+    <p:ident> ":" <t:DataType> => Param { name: p.to_string(),data_type: t, default: None, index: (0,0)}, 
+}
+
+pub DataType : DataType = {
+    "Int" => DataType::Int,
+    "Flt" => DataType::Flt,
+    "Str" => DataType::Str,
+    "Bool" => DataType::Bool,    
+    "List of" <e: DataType> => DataType::List { element_type: Box::new(e)},
+};
+
 CommaSeparated<T>: Vec<T> = { 
     <v:(<T> ",")*> <e:T?> => match e {
         None => v,
@@ -92,6 +110,7 @@ CommaSeparated<T>: Vec<T> = {
         }
     }
 };
+
 
 pub LiteralData: LiteralData = {
     int => LiteralData::from(<>),

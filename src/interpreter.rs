@@ -273,7 +273,6 @@ impl LiteralData {
     fn apply_binary_operator(&self, rhs: &LiteralData, op: &Operator) -> InterpreterResult {
         use LiteralData::*;
         use Operator::*;
-        let mut error: Option<RuntimeError> = None;
 
         let result = match (op, self, rhs) {
             (Add, Int(l), Int(r)) => Int(l + r),
