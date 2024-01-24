@@ -289,24 +289,41 @@ impl std::fmt::Display for Expr {
 
 impl Expr {
     // Makes copies of the initial data emitted by the parser for use at runtime.
-    // Only happens once when starting the interpreter, so maximum performane isn't too
+    // Only happens once when starting the interpreter, so maximum performance isn't too
     // important.
     pub fn copy_to_runtime_data(&self) -> Expr {
         match self {
-            Expr::Literal(value) => Expr::RuntimeData(value.clone()),            
-            Expr::ListLiteral {ref data_type, ref data} => {
-                let upgraded_items = data.into_iter()
-                    .map(|i| i.copy_to_runtime_data())                    
+            Expr::Literal(value) => Expr::RuntimeData(value.clone()),
+            Expr::ListLiteral {
+                ref data_type,
+                ref data,
+            } => {
+                let upgraded_items = data
+                    .into_iter()
+                    .map(|i| i.copy_to_runtime_data())
                     .collect::<Vec<Expr>>();
-                Expr::RuntimeList {data_type: data_type.clone(), data: upgraded_items.clone()}
+                Expr::RuntimeList {
+                    data_type: data_type.clone(),
+                    data: upgraded_items.clone(),
+                }
             }
-            Expr::MapLiteral {key_type, value_type, data} => {
-                let upgraded_values = data.into_iter()
-                    .map(|item| (item.0.clone(),item.1.copy_to_runtime_data()))
-                    .collect::<HashMap<KeyData,Expr>>();
-                Expr::RuntimeMap{ key_type: key_type.clone(), value_type: value_type.clone(), data: upgraded_values}
-            }                    
-            _ => panic!("Error converting compiled data into runtime representation:\n -->  '{:?}' \nProbably this is an accidentally unsupported data structure -- a compiler bug.", &self),
+            Expr::MapLiteral {
+                key_type,
+                value_type,
+                data,
+            } => {
+                let upgraded_values = data
+                    .into_iter()
+                    .map(|item| (item.0.clone(), item.1.copy_to_runtime_data()))
+                    .collect::<HashMap<KeyData, Expr>>();
+                Expr::RuntimeMap {
+                    key_type: key_type.clone(),
+                    value_type: value_type.clone(),
+                    data: upgraded_values,
+                }
+            }
+            _ => Expr::Unit,
+            //_ => panic!("Error converting compiled data into runtime representation:\n -->  '{:?}' \nProbably this is an accidentally unsupported data structure -- a compiler bug.", &self),
         }
     }
 

@@ -279,6 +279,36 @@ fn test_variables() {
     assert!(check_value(&s, LiteralData::Int(28)));
 }
 
+#[test]
+fn test_functions() {
+    let parser = grammar::ExprParser::new();
+    let mut symbols = SymbolTable::new();
+    let src = "{function f(a: Int, b: Int): Bool { 
+                let unused = 9;
+                a * a > b
+    }       ;
+
+            if f(a: 2,b: 5) {  1111 } else {0}
+
+        }";
+    let parse_result = parser.parse(src);
+    match parse_result {
+        Err(ref e) => eprintln!("Parse function definition : {:?}", &e),
+        Ok(ref r) => println!("Success parsing function definition 'let'."),
+    }
+    assert!(parse_result.is_ok());
+    let mut root_expr = parse_result.unwrap();
+    if let Err(err) = root_expr.prepare(&mut symbols) {
+        eprintln!("Error assigning symbols and scopes: '{:?}'", &err);
+    }
+    let s = root_expr.interpret(&mut symbols, 0);
+    match s {
+        Err(ref e) => println!("Runtime error: {:?}", e),
+        Ok(ref r) => println!("Success: {:?}", &r),
+    }
+    assert!(s.is_ok());
+}
+
 // A test helper
 fn check_value(s: &InterpreterResult, value: LiteralData) -> bool {
     if let Ok(ref e) = s {
