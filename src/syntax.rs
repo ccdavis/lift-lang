@@ -178,6 +178,9 @@ pub enum Expr {
         body: Vec<Expr>,
         environment: usize,
     },
+    Output {
+        data: Vec<Expr>,
+    },
 
     // Parsed out from the source file; the structure will resemble the source code
     // and is easily scanned and type checked.
@@ -214,6 +217,11 @@ pub enum Expr {
     UnaryExpr {
         op: Operator,
         expr: Box<Expr>,
+    },
+    Assign {
+        name: String,
+        value: Box<Expr>,
+        index: (usize, usize),
     },
     Variable {
         name: String,

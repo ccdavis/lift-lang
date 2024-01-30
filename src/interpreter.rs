@@ -366,7 +366,7 @@ fn interpret_binary(
                     "Expressions don't evaluate to anything applicable to a binary operator: {:?}, {:?}",
                     &left, &right
                 );
-                error = Some(RuntimeError::new(&msg, None, None).into());
+                error = Some(RuntimeError::new(&msg, None, None));
             }
         }
     }

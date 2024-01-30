@@ -114,7 +114,7 @@ pub fn make_literal_int(v: i64) -> Box<Expr> {
 
 #[test]
 fn test_binary_expression_parsing() {
-    let parser = grammar::ExprParser::new();
+    let parser = grammar::ProgramPartExprParser::new();
     let src = "1 + 2";
     let parse_result = parser.parse(src);
     let one = make_literal_int(1);
@@ -155,7 +155,7 @@ fn test_binary_expression_parsing() {
 #[test]
 fn test_parse_if_expr() {
     let src = "if true  { 8} else{ 5}";
-    let parser = grammar::ExprParser::new();
+    let parser = grammar::ProgramPartExprParser::new();
     let parse_result = parser.parse(src);
     if let Err(ref e) = parse_result {
         eprintln!("Error parsing '{}', got {:?}", src, e);
@@ -165,7 +165,7 @@ fn test_parse_if_expr() {
 #[test]
 fn test_interpret_math() {
     let src = "1 + 2 * 3";
-    let parser = grammar::ExprParser::new();
+    let parser = grammar::ProgramPartExprParser::new();
     let parse_result = parser.parse(src);
     assert!(parse_result.is_ok());
 
@@ -180,7 +180,7 @@ fn test_interpret_math() {
 
 #[test]
 fn test_boolean_expressions() {
-    let parser = grammar::ExprParser::new();
+    let parser = grammar::ProgramPartExprParser::new();
     let src = "3 = 3";
     let parse_result = parser.parse(src);
     assert!(parse_result.is_ok());
@@ -224,7 +224,7 @@ fn test_boolean_expressions() {
 
 #[test]
 fn test_interpret_conditionals() {
-    let parser = grammar::ExprParser::new();
+    let parser = grammar::ProgramPartExprParser::new();
     let src = "if true { 25*5} else { 1-3}";
     let parse_result = parser.parse(src);
     match parse_result {
@@ -256,7 +256,7 @@ fn test_interpret_conditionals() {
 
 #[test]
 fn test_variables() {
-    let parser = grammar::ExprParser::new();
+    let parser = grammar::ProgramPartExprParser::new();
     let src = "{let x = 25; let y = 3; x + y}";
     let parse_result = parser.parse(src);
     match parse_result {
@@ -281,16 +281,16 @@ fn test_variables() {
 
 #[test]
 fn test_functions() {
-    let parser = grammar::ExprParser::new();
+    let parser = grammar::ProgramPartExprParser::new();
     let mut symbols = SymbolTable::new();
     let src = "{function f(a: Int, b: Int): Bool { 
                 let unused = 9;
                 a * a > b
-    }       ;
+            };
 
             if f(a: 2,b: 5) {  1111 } else {0}
 
-        }";
+    }";
     let parse_result = parser.parse(src);
     match parse_result {
         Err(ref e) => eprintln!("Parse function definition : {:?}", &e),
@@ -325,7 +325,7 @@ fn extract_value(r: InterpreterResult) -> LiteralData {
 }
 
 pub fn repl() {
-    let parser = grammar::ExprParser::new();
+    let parser = grammar::ProgramPartExprParser::new();
     let mut symbols = SymbolTable::new();
 
     let mut rl = DefaultEditor::new().unwrap();
