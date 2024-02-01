@@ -171,7 +171,14 @@ fn interpret_call(
     args: &[KeywordArg],
 ) -> InterpreterResult {
     // Get the lambda for this function
-    let lm = symbols.get_compiletime_value(&index);
+    let maybe_lambda = symbols.get_compiletime_value(&index);
+    if maybe_lambda.is_none() {
+        panic!("Compiler Error: Can't find function definition for '{}' at index '{},{}'", 
+            &fn_name, &index.0,&index.1); 
+    }
+    
+    let lm = maybe_lambda.unwrap();
+    
     // If the call has any arguments we have to  evaluate them in the current scope before passing to the
     // lambda  (by updating the lambda's  environment with their values.)
     // If the call has no arguments, the expression bound to this "function" doesn't need to be a lambda;

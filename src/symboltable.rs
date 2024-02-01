@@ -87,8 +87,8 @@ impl SymbolTable {
         self.0[index.0].runtime_value[index.1] = value;
     }
 
-    pub fn get_compiletime_value(&self, index: &(usize, usize)) -> Expr {
-        self.0[index.0].data[index.1].clone()
+    pub fn get_compiletime_value(&self, index: &(usize, usize)) -> Option<Expr> {
+        Some(self.0.get(index.0)?.data.get(index.1)?.clone())
     }
 
     pub fn get_runtime_value(&self, index: &(usize, usize)) -> Expr {
