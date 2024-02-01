@@ -4,13 +4,15 @@ mod symboltable;
 mod syntax;
 use interpreter::InterpreterResult;
 use lalrpop_util::{lalrpop_mod, ParseError};
+use std::error;
+use std::error::Error;
 use std::fs;
 use symboltable::SymbolTable;
 use syntax::*;
 
 use rustyline::completion::FilenameCompleter;
 use rustyline::error::ReadlineError;
-use rustyline::{DefaultEditor, Result};
+use rustyline::DefaultEditor;
 
 use std::borrow::Cow::{self, Borrowed, Owned};
 
@@ -382,6 +384,28 @@ pub fn repl() {
     rl.save_history("history.txt");
 }
 
+fn interpret_code(code: &str) -> Result<(), Box<dyn error::Error>> {
+    let parser = grammar::ProgramPartExprParser::new();
+    let mut ast = match parser.parse(&code) {
+        Err(e) => {
+            eprintln!("{}", e);
+            std::process::exit(3);
+        }
+        Ok(parsed_ast) => parsed_ast,
+    };
+
+    let mut symbols = SymbolTable::new();
+    if let Err(ref errors) = ast.prepare(&mut symbols) {
+        for e in errors {
+            eprintln!("{}", e);
+        }
+    }
+
+    let res = ast.interpret(&mut symbols, 0)?;
+    println!("{}", res);
+    Ok(())
+}
+
 fn main() {
     let args = std::env::args().collect::<Vec<String>>();
     if args.len() < 2 {
@@ -390,5 +414,9 @@ fn main() {
         let program_file = &args[1];
         let code = fs::read_to_string(program_file)
             .expect(&format!("File at {} unreadable.", program_file));
+
+        if let Err(e) = interpret_code(&code) {
+            eprintln!("Error: {}", e);
+        }
     }
 }
