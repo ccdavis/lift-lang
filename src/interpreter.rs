@@ -175,8 +175,8 @@ fn interpret_call(
     if maybe_lambda.is_none() {
         symbols.print_debug();
         panic!(
-            "Compiler Error: Can't find function definition for '{}' at index '{},{}'",
-            &fn_name, &index.0, &index.1
+            "Compiler Error: Can't find function definition for '{}' at index '{},{}', in scope {}",
+            &fn_name, &index.0, &index.1, current_scope
         );
     }
 
