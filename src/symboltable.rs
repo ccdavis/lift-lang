@@ -17,6 +17,12 @@ impl Scope {
     pub fn borrow_runtime_data(&self, index: usize) -> &Expr {
         &self.runtime_value[index]
     }
+
+    pub fn print_debug(&self) {
+        for kv in &self.index {
+            println!("{} : {}", kv.0, kv.1);
+        }
+    }
 }
 
 pub struct SymbolTable(Vec<Scope>);
@@ -26,6 +32,13 @@ impl SymbolTable {
         let mut symbols = SymbolTable(Vec::new());
         symbols.create_scope(None);
         symbols
+    }
+
+    pub fn print_debug(&self) {
+        for (s, scope) in self.0.iter().enumerate() {
+            println!("Scope {} ------- ", s);
+            scope.print_debug();
+        }
     }
 
     pub fn create_scope(&mut self, parent: Option<usize>) -> usize {
@@ -91,8 +104,8 @@ impl SymbolTable {
         Some(self.0.get(index.0)?.data.get(index.1)?.clone())
     }
 
-    pub fn get_runtime_value(&self, index: &(usize, usize)) -> Expr {
-        self.0[index.0].runtime_value[index.1].clone()
+    pub fn get_runtime_value(&self, index: &(usize, usize)) -> Option<Expr> {
+        Some(self.0.get(index.0)?.runtime_value.get(index.1)?.clone())
     }
 
     pub fn borrow_runtime_value(&self, index: (usize, usize)) -> &Expr {

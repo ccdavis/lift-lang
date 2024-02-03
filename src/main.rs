@@ -291,12 +291,11 @@ fn test_functions() {
             };
 
             if f(a: 2,b: 5) {  1111 } else {0}
-
     }";
     let parse_result = parser.parse(src);
     match parse_result {
         Err(ref e) => eprintln!("Parse function definition : {:?}", &e),
-        Ok(ref r) => println!("Success parsing function definition 'let'."),
+        Ok(ref r) => println!("Success parsing function definition."),
     }
     assert!(parse_result.is_ok());
     let mut root_expr = parse_result.unwrap();

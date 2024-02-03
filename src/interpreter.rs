@@ -173,12 +173,15 @@ fn interpret_call(
     // Get the lambda for this function
     let maybe_lambda = symbols.get_compiletime_value(&index);
     if maybe_lambda.is_none() {
-        panic!("Compiler Error: Can't find function definition for '{}' at index '{},{}'", 
-            &fn_name, &index.0,&index.1); 
+        symbols.print_debug();
+        panic!(
+            "Compiler Error: Can't find function definition for '{}' at index '{},{}'",
+            &fn_name, &index.0, &index.1
+        );
     }
-    
+
     let lm = maybe_lambda.unwrap();
-    
+
     // If the call has any arguments we have to  evaluate them in the current scope before passing to the
     // lambda  (by updating the lambda's  environment with their values.)
     // If the call has no arguments, the expression bound to this "function" doesn't need to be a lambda;
@@ -229,8 +232,17 @@ fn interpret_var(
     name: &str,
     index: &(usize, usize),
 ) -> InterpreterResult {
-    let stored_value: Expr = symbols.get_runtime_value(index);
-    if let Expr::RuntimeData(d) = stored_value.clone() {
+    let stored_value: Expr = match symbols.get_runtime_value(index) {
+        Some(value) => value,
+        None => {
+            return Err(Box::new(RuntimeError::new(
+                &format!("Symbol '{}' not found at runtime", name),
+                None,
+                None,
+            )))
+        }
+    };
+    if let Expr::RuntimeData(d) = stored_value {
         Ok(Expr::Literal(d))
     } else {
         Ok(stored_value)
