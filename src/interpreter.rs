@@ -72,6 +72,7 @@ impl Expr {
     // Receives a "prepared" parse tree and symbol table.
     pub fn interpret(&self, symbols: &mut SymbolTable, current_scope: usize) -> InterpreterResult {
         match self {
+            Expr::Output { data } =>interpret_output(symbols, data, current_scope),
             Expr::Literal(_) => Ok(self.clone()),
             Expr::RuntimeData(_) => Ok(self.clone()),
             Expr::Program {
@@ -125,6 +126,15 @@ impl Expr {
 
 fn interpret_program(symbols: &mut SymbolTable, body: &Vec<Expr>, env: usize) -> InterpreterResult {
     interpret_body_or_block(symbols, body, env)
+}
+
+fn  interpret_output(symbols: &mut SymbolTable, data: &Vec<Expr>, current_scope: usize) -> InterpreterResult {
+    for e in data {
+        let r = e.interpret(symbols, current_scope)?;
+        print!("{} ",r);        
+    }
+    println!();
+    Ok(Expr::Unit)
 }
 
 fn interpret_block(symbols: &mut SymbolTable, body: &Vec<Expr>, env: usize) -> InterpreterResult {
@@ -372,7 +382,7 @@ fn interpret_binary(
                     "Result of {:?} isn't a simple primary expression. Cannot apply {:?} to it.",
                     right, op
                 );
-                error = Some(RuntimeError::new(&msg, None, None).into());
+                error = Some(RuntimeError::new(&msg, None, None));
             }
         }
         (_, _) => {
