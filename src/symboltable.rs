@@ -2,7 +2,7 @@ use crate::semantic_analysis::CompileError;
 use crate::syntax::Expr;
 use std::collections::HashMap;
 
-const TRACE: bool = false;
+const TRACE: bool = true;
 
 #[derive(Clone, Debug)]
 pub struct Scope {
@@ -94,6 +94,10 @@ impl SymbolTable {
             )
         }
         added_index
+    }
+
+    pub fn update_compiletime_symbol_value(&mut self,value: Expr, index: &(usize,usize)) {
+        self.0[index.0].data[index.1] = value;
     }
 
     pub fn update_runtime_value(&mut self, value: Expr, index: &(usize, usize)) {

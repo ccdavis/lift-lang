@@ -56,7 +56,7 @@ pub struct CompileError {
 
 impl std::fmt::Display for CompileError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let (line, column) = self.location {
+        let (line, column) = self.location ;
             write!(
                 f,
                 "{}: {}, {}: {}",
@@ -65,9 +65,7 @@ impl std::fmt::Display for CompileError {
                 column,
                 self.msg
             )
-        } else {
-            write!(f, "{}: {}", &self.error_type.name(), &self.msg)
-        }
+        
     }
 }
 impl std::error::Error for CompileError {}
@@ -85,6 +83,11 @@ pub fn add_symbols(
         
     }
     match *e {
+        Expr::Output { ref mut data } => {
+            for mut e in data {
+                add_symbols(e, symbols, current_scope_id)?;
+            }
+        }
         Expr::Block {
             ref mut body,
             ref mut environment,
@@ -126,16 +129,16 @@ pub fn add_symbols(
         } => {
             if let Some(found_index) = symbols.find_index_reachable_from(fn_name, current_scope_id)
             {
-                println!("DEBUG: During semantic analysis phase found index '{},{}' for '{}' function call.",
-                found_index.0, found_index.1,fn_name 
-            );
+                if DEBUG {println!("DEBUG: During semantic analysis phase found index '{},{}' for '{}' function call.",
+                    found_index.0, found_index.1,fn_name 
+                ); }
                 *index = found_index;
             } else {
                 let msg = format!(
-                    "use of undeclared or not yet declared function '{}'",
-                    fn_name
+                    "use of undeclared or not yet declared function '{}' at scope {}",
+                    fn_name, current_scope_id
                 );
-                eprintln!("{}",&msg);
+                if DEBUG {eprintln!("{}",&msg);}
                 return Err(CompileError::name(&msg, (0, 0)));
             }
             for a in args {
@@ -149,8 +152,7 @@ pub fn add_symbols(
             ref mut value,
             ref mut environment,
         } => {
-            // The function has its own scope as well which we should create
-            let current_scope_id = *environment;
+            // The function has its own scope as well which we should create            
             let new_scope_id = symbols.create_scope(Some(current_scope_id));
             *environment = new_scope_id;
 
@@ -165,11 +167,19 @@ pub fn add_symbols(
         Expr::DefineFunction {
             ref fn_name,
             ref mut index,
-            ref mut value,
-        } => {
+            ref mut value,            
+        } => {            
+            // At first just create the symbol table entry for the function  and make the value the Unit value...
+            let new_symbol_id = symbols.add_symbol(fn_name, Expr::Unit, current_scope_id)?;
+            if DEBUG { println!("Added symbol id {} for function {}", new_symbol_id, fn_name);}
+            // Then update the body (value) with all the right symbol indices including the function itself, to
+            // support recursion...
             add_symbols(value, symbols, current_scope_id)?;
-            // The function is getting defined for the current scope:
-            let new_symbol_id = symbols.add_symbol(fn_name, *value.clone(), current_scope_id)?;
+            // Now update the compile time value of the function with the correct indices for
+            // all symbols.
+            symbols.update_compiletime_symbol_value(*value.clone(), &(current_scope_id, new_symbol_id));
+                    
+            // The function is getting defined for the current scope:            
             *index = (current_scope_id, new_symbol_id);
         }
         // Here we set the variable's index from the already added symbol and catch
