@@ -61,7 +61,8 @@ pub enum DataType {
     List {
         element_type: Box<DataType>,
     },
-    Set(Box<DataType>),
+    Set(Box<DataType>),    
+    Enum(Vec<String>),
     Struct(Vec<Param>),
 }
 
