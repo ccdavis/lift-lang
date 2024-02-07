@@ -27,7 +27,11 @@ ExprBlock: Expr = {
   "{" <s:SemiSeparated<ProgramPartExpr>>   "}" => Expr::Block {body:s, environment: 0}.into(),  
  };
 
-ExprLet: Expr= "let" <n: ident> "=" <r:ProgramPartExpr> => Expr::Let {var_name: n, data_type: DataType::Any, index: (0,0),value: Box::new(r)}.into();
+ExprLet: Expr= {
+    "let" <n: ident> "=" <r:ProgramPartExpr> => Expr::Let {var_name: n, data_type: DataType::Any, index: (0,0),value: Box::new(r)}.into(),
+    "let" <n: ident>":" <d:DataType>  "=" <r:ProgramPartExpr> => Expr::Let {var_name: n, data_type: d, index: (0,0),value: Box::new(r)}.into(),
+};
+
 ExprIf: Expr = "if" <t:ExprLogicOr>  <c:ExprBlock> "else" <b:ExprBlock> => Expr::If {cond: Box::new(t), then: Box::new(c), final_else: Box::new(b) }.into();
 ExprWhile: Expr =  "while" <c:ExprLogicOr> <b:ExprBlock> => Expr::While { cond: Box::new(c), body: Box::new(b)}.into();
 ExprDefineFunction: Expr  = "function" <n: ident>  <f:DefFunction> => Expr::DefineFunction {fn_name: n,index: (0,0), value: Box::new(f)}.into();
@@ -36,7 +40,6 @@ ExprLambda: Expr = "Lambda" <f:LambdaFunction> => Expr::Lambda { value: f, envir
 DefFunction: Expr = "(" <pm:CommaSeparated<Param>> ")" ":" <rt:DataType> <b:ExprBlock> => Expr::Lambda { value: Function { body: Box::new(b), params: pm, return_type: rt}, environment: 0}.into();
 LambdaFunction: Function = "(" <lpm:CommaSeparated<Param>> ")"  ":" <dt:DataType> <b:ExprBlock> => Function { params: lpm, body: Box::new(b), return_type: dt };  
   
-
 ExprAssign = {  
     //DiscardResult,
     AssignResult,
