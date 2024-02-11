@@ -30,8 +30,10 @@ ExprBlock: Expr = {
 
 ExprType: Expr = {
     "type" <i:ident> "="  <d:DataType> => Expr::DefineType {type_name: i,definition: d,index: (0,0)}.into(),
-    "type" <i:ident> "="  "List" "of" <d:DataType> => Expr::DefineType {type_name: i,definition: DataType::List {element_type: Box::new(d)},index: (0,0)}.into(),,
-    "type" <i:ident> "=" "Map" "of" <k:DataType> "to" <v:DataType> => Expr::DefineType {type_name: i,definition: DataType::Map {key_type: Box::new(k), value_type: Box::new(v)},index: (0,0)}.into(),,
+    "type" <i:ident> "=" <n:int> "to"  <m:int> =>  Expr::DefineType {type_name: i,index: (0,0), definition: DataType::Range(Box::new(Expr::Range(n.into(),m.into())))}.into(),
+    "type" <i:ident> "=" <n:str> "to"  <m:str> =>  Expr::DefineType {type_name: i,index: (0,0), definition: DataType::Range(Box::new(Expr::Range(n.into(),m.into())))}.into(),
+    "type" <i:ident> "="  "List" "of" <d:DataType> => Expr::DefineType {type_name: i,definition: DataType::List {element_type: Box::new(d)},index: (0,0)}.into(),
+    "type" <i:ident> "=" "Map" "of" <k:DataType> "to" <v:DataType> => Expr::DefineType {type_name: i,definition: DataType::Map {key_type: Box::new(k), value_type: Box::new(v)},index: (0,0)}.into(),
     "type" <i:ident> "=" "Set" "of" <d:DataType> => Expr::DefineType { type_name: i, definition: DataType::Set(Box::new(d)), index: (0,0)},
     "type" <i:ident> "=" "(" <e:CommaSeparated<ident>> ")"=> Expr::DefineType {type_name: i, definition: DataType::Enum(Vec::new()), index: (0,0)},
     "type" <i:ident> "=" "struct"  "(" <m:CommaSeparated<Param>> ")" =>Expr::DefineType{type_name: i,definition: DataType::Struct(Vec::new()), index: (0,0)},

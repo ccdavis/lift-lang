@@ -96,7 +96,7 @@ impl SymbolTable {
         added_index
     }
 
-    pub fn update_compiletime_symbol_value(&mut self,value: Expr, index: &(usize,usize)) {
+    pub fn update_compiletime_symbol_value(&mut self, value: Expr, index: &(usize, usize)) {
         self.0[index.0].data[index.1] = value;
     }
 

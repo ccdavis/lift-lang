@@ -72,7 +72,7 @@ impl Expr {
     // Receives a "prepared" parse tree and symbol table.
     pub fn interpret(&self, symbols: &mut SymbolTable, current_scope: usize) -> InterpreterResult {
         match self {
-            Expr::Output { data } =>interpret_output(symbols, data, current_scope),
+            Expr::Output { data } => interpret_output(symbols, data, current_scope),
             Expr::Literal(_) => Ok(self.clone()),
             Expr::RuntimeData(_) => Ok(self.clone()),
             Expr::Program {
@@ -128,10 +128,14 @@ fn interpret_program(symbols: &mut SymbolTable, body: &Vec<Expr>, env: usize) ->
     interpret_body_or_block(symbols, body, env)
 }
 
-fn  interpret_output(symbols: &mut SymbolTable, data: &Vec<Expr>, current_scope: usize) -> InterpreterResult {
+fn interpret_output(
+    symbols: &mut SymbolTable,
+    data: &Vec<Expr>,
+    current_scope: usize,
+) -> InterpreterResult {
     for e in data {
         let r = e.interpret(symbols, current_scope)?;
-        print!("{} ",r);        
+        print!("{} ", r);
     }
     println!();
     Ok(Expr::Unit)

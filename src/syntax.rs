@@ -49,6 +49,8 @@ pub struct Param {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum DataType {
+    Optional(Box<DataType>),
+    Range(Box<Expr>),
     Str,
     Int,
     Flt,
@@ -61,7 +63,7 @@ pub enum DataType {
     List {
         element_type: Box<DataType>,
     },
-    Set(Box<DataType>),    
+    Set(Box<DataType>),
     Enum(Vec<String>),
     Struct(Vec<Param>),
 }
@@ -195,6 +197,7 @@ pub enum Expr {
         data_type: DataType,
         data: Vec<Expr>,
     },
+    Range(LiteralData, LiteralData),
 
     // Special case for values accessed and changed during runtime in the interpreter; we
     // may wish to change the hashtable for Map or expand how data is physically represented
