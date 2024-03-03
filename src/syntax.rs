@@ -49,13 +49,13 @@ pub struct Param {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum DataType {
+    Unsolved,
     Optional(Box<DataType>),
     Range(Box<Expr>),
     Str,
     Int,
     Flt,
     Bool,
-    Any,
     Map {
         key_type: Box<DataType>,
         value_type: Box<DataType>,

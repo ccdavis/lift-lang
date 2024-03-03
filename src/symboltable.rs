@@ -1,4 +1,5 @@
 use crate::semantic_analysis::CompileError;
+use crate::syntax::DataType;
 use crate::syntax::Expr;
 use std::collections::HashMap;
 
@@ -8,9 +9,12 @@ const TRACE: bool = true;
 pub struct Scope {
     pub parent: Option<usize>,
     pub data: Vec<Expr>,
+    pub types: Vec<DataType>,
     pub runtime_value: Vec<Expr>,
     pub name: HashMap<usize, String>,
     pub index: HashMap<String, usize>,
+    pub type_name: HashMap<usize, String>,
+    pub type_index: HashMap<String, usize>,
 }
 
 impl Scope {
@@ -77,6 +81,25 @@ impl SymbolTable {
         }
     }
 
+    pub fn add_type(
+        &mut self,
+        name: &str,
+        value: &DataType,
+        scope: usize,
+    ) -> Result<usize, CompileError> {
+        let added_index = self.0[scope].add_type(name, value.clone());
+        if TRACE {
+            println!(
+                "Added '{}' to symbol table:scope {},  at index {:?} with value '{:?}'",
+                name,
+                &scope,
+                &added_index,
+                &value.clone()
+            )
+        }
+        added_index
+    }
+
     pub fn add_symbol(
         &mut self,
         name: &str,
@@ -122,9 +145,12 @@ impl Scope {
         Self {
             parent,
             data: Vec::new(),
+            types: Vec::new(),
             runtime_value: Vec::new(),
             name: HashMap::new(),
+            type_name: HashMap::new(),
             index: HashMap::new(),
+            type_index: HashMap::new(),
         }
     }
 
@@ -144,6 +170,21 @@ impl Scope {
             let new_index = self.data.len() - 1;
             self.index.insert(name.to_string(), new_index);
             self.name.insert(new_index, name.to_string());
+            Ok(new_index)
+        }
+    }
+
+    pub fn add_type(&mut self, name: &str, value: DataType) -> Result<usize, CompileError> {
+        if self.type_index.contains_key(name) {
+            Err(CompileError::name(
+                &format!("Type already defined in this scope: {}", name),
+                (0, 0),
+            ))
+        } else {
+            self.types.push(value.clone());
+            let new_index = self.types.len() - 1;
+            self.type_index.insert(name.to_string(), new_index);
+            self.type_name.insert(new_index, name.to_string());
             Ok(new_index)
         }
     }

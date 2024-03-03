@@ -83,6 +83,13 @@ pub fn add_symbols(
         );
     }
     match *e {
+        Expr::DefineType {
+            type_name,
+            definition,
+            index,
+        } => {
+            let symbol_id = symbols.add_type(&type_name, &definition, current_scope_id)?;
+        }
         Expr::Output { ref mut data } => {
             for mut e in data {
                 add_symbols(e, symbols, current_scope_id)?;
@@ -211,7 +218,7 @@ pub fn add_symbols(
             ref mut data_type,
             ref mut index,
         } => {
-            if matches!(data_type, DataType::Any) {
+            if matches!(data_type, DataType::Unsolved) {
                 if let Some(inferred_type) = determine_type(value) {
                     *data_type = inferred_type;
                 }
@@ -252,9 +259,9 @@ pub fn determine_type(expression: &Expr) -> Option<DataType> {
                 element_type: Box::new(element_type.clone()),
             }
         }
-        _ => DataType::Any,
+        _ => DataType::Unsolved,
     }; // match
-    if matches!(inferred_type, DataType::Any) {
+    if matches!(inferred_type, DataType::Unsolved) {
         None
     } else {
         Some(inferred_type)
