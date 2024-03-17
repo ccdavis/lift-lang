@@ -248,7 +248,7 @@ pub fn determine_type(expression: &Expr) -> Option<DataType> {
         } => {
             // Check first element and use that as the inferred type
             let mut element_type = data_type.clone();
-            if matches!(data_type, DataType::Any) {
+            if matches!(data_type, DataType::Unsolved) {
                 if let Some(reference_expr) = data.first() {
                     if let Some(reference_type) = determine_type(reference_expr) {
                         element_type = reference_type;
