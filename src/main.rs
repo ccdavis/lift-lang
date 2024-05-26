@@ -340,44 +340,64 @@ pub fn repl() {
     }
 
     let mut count = 0;
-
     loop {
-        count += 1;
-        let p = format!("{count} ==> ");
+        let mut buffer: String = "".to_string();
+        let mut prompt = format!("{count} ==> ");
+        loop {
+            let readline = rl.readline(&prompt);
+            match readline {
+                Ok(ref line) => {
+                    buffer.push_str(&line);
 
-        let readline = rl.readline(&p);
-        match readline {
-            Ok(line) => {
-                rl.add_history_entry(line.as_str());
-                match parser.parse(&line) {
-                    Ok(ref mut ast) => {
-                        if let Err(errors) = ast.prepare(&mut symbols) {
-                            for e in errors {
-                                eprintln!("{}", &e);
-                            }
-                            println!();
-                        }
-                        match ast.interpret(&mut symbols, 0) {
-                            Err(interpreter_error) => eprintln!("{}", interpreter_error),
-                            Ok(res) => println!("=> '{}'", &res),
-                        }
+                    // Continue lines
+                    if line.trim_right().ends_with("\\") {
+                        buffer.push_str(&line);
+                        prompt = ">>".to_string();
+                        continue;
                     }
-                    Err(parse_error) => eprintln!("Syntax error: '{}'", &parse_error),
+                    match parser.parse(&buffer) {
+                        Ok(ref mut ast) => {
+                            rl.add_history_entry(buffer.as_str());
+
+                            count += 1;
+                            if let Err(errors) = ast.prepare(&mut symbols) {
+                                for e in errors {
+                                    eprintln!("{}", &e);
+                                }
+                                println!();
+                            }
+                            match ast.interpret(&mut symbols, 0) {
+                                Err(interpreter_error) => eprintln!("{}", interpreter_error),
+                                Ok(res) => println!("=> '{}'", &res),
+                            }
+                            buffer.clear();
+                        }
+                        Err(ref parse_error) => match parse_error {
+                            ParseError::UnrecognizedEof { location, expected } => {
+                                buffer.push('\n');
+                                prompt = ">>".to_string();
+                            }
+                            _ => {
+                                eprintln!("ERROR: {}", parse_error);
+                                buffer.clear();
+                            }
+                        },
+                    } //  match parse
+                } // loop
+                Err(ReadlineError::Interrupted) => {
+                    println!("CTRL-C");
+                    break;
                 }
-            }
-            Err(ReadlineError::Interrupted) => {
-                println!("CTRL-C");
-                break;
-            }
-            Err(ReadlineError::Eof) => {
-                println!("CTRL-D");
-                break;
-            }
-            Err(err) => {
-                println!("Error: {:?}", err);
-                break;
-            }
-        } // match
+                Err(ReadlineError::Eof) => {
+                    println!("CTRL-D");
+                    break;
+                }
+                Err(err) => {
+                    println!("Error: {:?}", err);
+                    break;
+                }
+            } // match
+        } // loop
     } // loop
     #[cfg(feature = "with-file-history")]
     rl.save_history("history.txt");

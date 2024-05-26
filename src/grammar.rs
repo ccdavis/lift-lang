@@ -1,5 +1,5 @@
 // auto-generated: "lalrpop 0.20.0"
-// sha3: 57be8eb3f14c3db974f6c01590c33442d1854761135404572b07bd00f571a51a
+// sha3: 458d2dd964501a196697f0e619e26e268e6d7319f0923fbf06ef72902dddf90e
 use crate::syntax::{Operator,DataType,Param,KeywordArg,Expr, Function, LiteralData};
 #[allow(unused_extern_crates)]
 extern crate lalrpop_util as __lalrpop_util;
@@ -14107,7 +14107,7 @@ fn __action22<
     (_, r, _): (usize, Expr, usize),
 ) -> Expr
 {
-    Expr::Let {var_name: n, data_type: DataType::Any, index: (0,0),value: Box::new(r)}.into()
+    Expr::Let {var_name: n, data_type: DataType::Unsolved, index: (0,0),value: Box::new(r)}.into()
 }
 
 #[allow(unused_variables)]

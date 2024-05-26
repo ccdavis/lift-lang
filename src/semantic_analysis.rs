@@ -82,7 +82,7 @@ pub fn add_symbols(
             &e, current_scope_id
         );
     }
-    match *e {
+    match e {
         Expr::DefineType {
             type_name,
             definition,

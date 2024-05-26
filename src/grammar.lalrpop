@@ -40,7 +40,7 @@ ExprType: Expr = {
 };
 
 ExprLet: Expr= {
-    "let" <n: ident> "=" <r:ProgramPartExpr> => Expr::Let {var_name: n, data_type: DataType::Any, index: (0,0),value: Box::new(r)}.into(),
+    "let" <n: ident> "=" <r:ProgramPartExpr> => Expr::Let {var_name: n, data_type: DataType::Unsolved, index: (0,0),value: Box::new(r)}.into(),
     "let" <n: ident>":" <d:DataType>  "=" <r:ProgramPartExpr> => Expr::Let {var_name: n, data_type: d, index: (0,0),value: Box::new(r)}.into(),
 };
 
