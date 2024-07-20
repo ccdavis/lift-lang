@@ -1,6 +1,6 @@
 # lift-lang
 
-I intended `Lift` to give me an excuse to mess around with the Cranelift  compiler backend and parser generators. Haven't made the compiler yet. I hope this approach makes it easier to add LSP support as well as JIT from Cranelift.
+I intended `Lift` to give me an excuse to mess around with the Cranelift  compiler backend and parser generators. Haven't made the compiler yet. I hope the parser-generator approach makes it easier to add LSP support as well as JIT from Cranelift.
 
 ## The Language
 
@@ -43,6 +43,21 @@ function microblog_post_html(headline: String, content: String, author: String):
 };
 ```
 
+## Interpreter and REPL
+
+Currently the interpreter (tree-walking type) supports most of the language. However I went nuts adding different kinds of data types like ranges and special enums. Implementing all that is hard and I should probably rethink all that. 
+
+The type checking  step is partly implemented; it unifies types for initialization and functions but not other places.
+
+Run the interpreter lby passing a source file:
+```scala
+lift-lang  test.lt
+```
+or with `cargo run --release examples/test.lt`
+
+The REPL works decently well now. Due to the syntax with expression separators it's a bit hard to enter multi-line expressions.  Continue an expression with '\'; if you're delaying evaluation in a multi expression block you also need to add the ';'  as expression separators according to the syntax rules.
+
+Use control-D to clear the buffer and control-C to quit the REPL.
 
 
 

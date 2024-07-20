@@ -326,6 +326,7 @@ fn extract_value(r: InterpreterResult) -> LiteralData {
 }
 
 pub fn repl() {
+    let mut quit = false;
     let parser = grammar::ProgramPartExprParser::new();
     let mut symbols = SymbolTable::new();
 
@@ -347,16 +348,17 @@ pub fn repl() {
             let readline = rl.readline(&prompt);
             match readline {
                 Ok(ref line) => {
-                    buffer.push_str(&line);
-
-                    // Continue lines
-                    if line.trim_right().ends_with("\\") {
-                        buffer.push_str(&line);
+                    if let Some(continuation_line) = line.trim_right().strip_suffix('\\') {
+                        buffer.push_str(continuation_line);
                         prompt = ">>".to_string();
                         continue;
+                    } else {
+                        buffer.push_str(line);
+                        prompt = format!("{count} ==> ");
                     }
+                    
                     match parser.parse(&buffer) {
-                        Ok(ref mut ast) => {
+                        Ok(mut ast) => {
                             rl.add_history_entry(buffer.as_str());
 
                             count += 1;
@@ -386,6 +388,7 @@ pub fn repl() {
                 } // loop
                 Err(ReadlineError::Interrupted) => {
                     println!("CTRL-C");
+                    quit = true;
                     break;
                 }
                 Err(ReadlineError::Eof) => {
@@ -398,6 +401,7 @@ pub fn repl() {
                 }
             } // match
         } // loop
+        if quit {break;}
     } // loop
     #[cfg(feature = "with-file-history")]
     rl.save_history("history.txt");
