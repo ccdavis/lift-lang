@@ -1,0 +1,13 @@
+{
+    let x = 5;
+    let y = 10.5;
+    let z = x + 2;
+    
+    let name = 'Alice';
+    let greeting = 'Hello, ' + name;
+    
+    let b: Bool = true;
+    let result = if b { x } else { 7 };
+    
+    result
+}

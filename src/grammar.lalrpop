@@ -44,7 +44,26 @@ ExprLet: Expr= {
     "let" <n: ident>":" <d:DataType>  "=" <r:ProgramPartExpr> => Expr::Let {var_name: n, data_type: d, index: (0,0),value: Box::new(r)}.into(),
 };
 
-ExprIf: Expr = "if" <t:ExprLogicOr>  <c:ExprBlock> "else" <b:ExprBlock> => Expr::If {cond: Box::new(t), then: Box::new(c), final_else: Box::new(b) }.into();
+ExprIf: Expr = "if" <cond:ExprLogicOr> <then_block:ExprBlock> <else_part:ElsePart> => {
+    Expr::If {
+        cond: Box::new(cond), 
+        then: Box::new(then_block), 
+        final_else: Box::new(else_part)
+    }.into()
+};
+
+ElsePart: Expr = {
+    "else" "if" <cond:ExprLogicOr> <then_block:ExprBlock> <else_part:ElsePart> => {
+        Expr::If {
+            cond: Box::new(cond),
+            then: Box::new(then_block),
+            final_else: Box::new(else_part)
+        }
+    },
+    "else" <block:ExprBlock> => block,
+    // Optional else - if no else is provided, return Unit
+    () => Expr::Unit,
+};
 ExprWhile: Expr =  "while" <c:ExprLogicOr> <b:ExprBlock> => Expr::While { cond: Box::new(c), body: Box::new(b)}.into();
 ExprDefineFunction: Expr  = "function" <n: ident>  <f:DefFunction> => Expr::DefineFunction {fn_name: n,index: (0,0), value: Box::new(f)}.into();
 ExprLambda: Expr = "Lambda" <f:LambdaFunction> => Expr::Lambda { value: f, environment: 0}.into();

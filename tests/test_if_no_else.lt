@@ -1,0 +1,13 @@
+{
+    let x = 10;
+    
+    if x > 5 {
+        output('Greater than 5')
+    };
+    
+    if x < 5 {
+        output('Less than 5')
+    };
+    
+    42
+}

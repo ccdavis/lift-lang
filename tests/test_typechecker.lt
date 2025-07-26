@@ -1,0 +1,15 @@
+{
+    let x: Int = 5;
+    let y = 10;
+    let sum = x + y;
+    
+    function add(a: Int, b: Int): Int {
+        a + b
+    };
+    
+    if x < y {
+        x + 1
+    } else {
+        y - 1
+    }
+}

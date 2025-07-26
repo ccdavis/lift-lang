@@ -1,0 +1,6 @@
+{
+    let x = 2.5;
+    let y = 3.0;
+    let z = x * y;
+    output(z)
+}

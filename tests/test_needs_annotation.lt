@@ -1,0 +1,4 @@
+{
+    let f = Lambda(x) : Int { x };
+    f(x: 5)
+}

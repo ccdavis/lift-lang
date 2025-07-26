@@ -1,0 +1,11 @@
+{
+    function count_down(n: Int): Int {
+        if n <= 0 {
+            0
+        } else {
+            count_down(n: n - 1)
+        }
+    };
+    
+    count_down(n: 100)
+}

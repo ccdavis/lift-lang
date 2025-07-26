@@ -1,0 +1,41 @@
+{
+    let max_iter = 10;
+    
+    function is_in_set(cx: Flt, cy: Flt, x: Flt, y: Flt, iter: Int): Bool {
+        if iter >= max_iter {
+            true
+        } else {
+            let xx: Flt = x * x;
+            let yy: Flt = y * y;
+            if xx + yy > 4.0 {
+                false
+            } else {
+                let newx: Flt = xx - yy + cx;
+                let newy: Flt = 2.0 * x * y + cy;
+                is_in_set(cx: cx, cy: cy, x: newx, y: newy, iter: iter + 1)
+            }
+        }
+    };
+    
+    function test_point(x: Flt, y: Flt): Bool {
+        is_in_set(cx: x, cy: y, x: 0.0, y: 0.0, iter: 0)
+    };
+    
+    if test_point(x: 0.0, y: 0.0) {
+        output('Origin is in the set')
+    } else {
+        output('Origin is not in the set')
+    };
+    
+    if test_point(x: 2.0, y: 0.0) {
+        output('(2,0) is in the set')
+    } else {
+        output('(2,0) is not in the set')
+    };
+    
+    if test_point(x: 0.0 - 0.5, y: 0.0) {
+        output('(-0.5,0) is in the set')
+    } else {
+        output('(-0.5,0) is not in the set')
+    }
+}
