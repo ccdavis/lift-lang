@@ -6,6 +6,7 @@ use crate::syntax::Function;
 use crate::syntax::KeywordArg;
 use crate::syntax::LiteralData;
 use crate::syntax::Operator;
+use std::collections::HashMap;
 use std::error;
 use std::error::Error;
 
@@ -60,7 +61,13 @@ impl Expr {
             eprintln!("Error indexing variable and function names: {}", msg);
             errors.push(msg.clone());
         }
-        // Collect other errors...
+        
+        // Type check the expression tree
+        let type_result = typecheck(self, symbols, 0);
+        if let Err(ref msg) = type_result {
+            eprintln!("Type error: {}", msg);
+            errors.push(msg.clone());
+        }
 
         if errors.is_empty() {
             Ok(())
@@ -116,6 +123,33 @@ impl Expr {
                 environment,
             } => interpret_lambda(symbols, value, *environment),
             Expr::DefineFunction { .. } => Ok(Expr::Unit), // The function got assigned in an earlier compiler pass
+            Expr::Unit => Ok(Expr::Unit),
+            Expr::ListLiteral { ref data_type, ref data } => {
+                // Evaluate each element in the list and convert to runtime representation
+                let mut evaluated_elements = Vec::new();
+                for element in data {
+                    evaluated_elements.push(element.interpret(symbols, current_scope)?);
+                }
+                Ok(Expr::RuntimeList {
+                    data_type: data_type.clone(),
+                    data: evaluated_elements,
+                })
+            },
+            Expr::MapLiteral { ref key_type, ref value_type, ref data } => {
+                // Evaluate each value in the map and convert to runtime representation
+                let mut evaluated_map = HashMap::new();
+                for (key, value) in data {
+                    let evaluated_value = value.interpret(symbols, current_scope)?;
+                    evaluated_map.insert(key.clone(), evaluated_value);
+                }
+                Ok(Expr::RuntimeMap {
+                    key_type: key_type.clone(),
+                    value_type: value_type.clone(),
+                    data: evaluated_map,
+                })
+            },
+            Expr::RuntimeList { .. } => Ok(self.clone()), // Already in runtime form
+            Expr::RuntimeMap { .. } => Ok(self.clone()),  // Already in runtime form
             _ => panic!(
                 "Interpreter error: interpret() not implemented for '{:?}'",
                 self
@@ -339,6 +373,8 @@ impl LiteralData {
             (Neq, Flt(l), Flt(r)) => Bool(l != r),
             (Neq, Bool(l), Bool(r)) => Bool(l != r),
             (Neq, Str(l), Str(r)) => Bool(l != r),
+            (And, Bool(l), Bool(r)) => Bool(*l && *r),
+            (Or, Bool(l), Bool(r)) => Bool(*l || *r),
             _ => {
                 // The type checker and parser should have prevented us from
                 // reaching this point.

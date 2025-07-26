@@ -1,6 +1,7 @@
 use crate::semantic_analysis::CompileError;
 use crate::syntax::DataType;
 use crate::syntax::Expr;
+use crate::syntax::LiteralData;
 use std::collections::HashMap;
 
 const TRACE: bool = true;
@@ -137,6 +138,40 @@ impl SymbolTable {
 
     pub fn borrow_runtime_value(&self, index: (usize, usize)) -> &Expr {
         &self.0[index.0].runtime_value[index.1]
+    }
+    
+    pub fn get_symbol_value(&self, index: &(usize, usize)) -> Option<&Expr> {
+        self.0.get(index.0)?.data.get(index.1)
+    }
+    
+    pub fn get_symbol_type(&self, index: &(usize, usize)) -> Option<DataType> {
+        let expr = self.0.get(index.0)?.data.get(index.1)?;
+        match expr {
+            Expr::Let { data_type, value, .. } => {
+                // If type annotation is provided, use it; otherwise infer from value
+                if !matches!(data_type, DataType::Unsolved) {
+                    Some(data_type.clone())
+                } else {
+                    // Try to infer type from value
+                    match value.as_ref() {
+                        Expr::Literal(l) => Some(match l {
+                            LiteralData::Int(_) => DataType::Int,
+                            LiteralData::Flt(_) => DataType::Flt,
+                            LiteralData::Str(_) => DataType::Str,
+                            LiteralData::Bool(_) => DataType::Bool,
+                        }),
+                        _ => Some(DataType::Unsolved),
+                    }
+                }
+            }
+            Expr::Lambda { value: func, .. } => Some(DataType::Unsolved), // Functions don't have a simple type yet
+            Expr::Unit => {
+                // This might be a function parameter placeholder
+                // Look for the parameter's type in the parent scope's function definition
+                Some(DataType::Unsolved)
+            }
+            _ => None,
+        }
     }
 }
 

@@ -164,6 +164,16 @@ impl std::fmt::Display for LiteralData {
     }
 }
 
+impl std::fmt::Display for KeyData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KeyData::Int(i) => write!(f, "{}", i),
+            KeyData::Bool(b) => write!(f, "{}", b),
+            KeyData::Str(s) => write!(f, "{}", &s),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Function {
     pub params: Vec<Param>,
@@ -285,14 +295,40 @@ impl std::fmt::Display for Expr {
                     .collect::<Vec<String>>()
                     .join(",");
 
-                write!(f, "[{}", printed_items)
+                write!(f, "[{}]", printed_items)
+            }
+            Expr::RuntimeList { data_type, data } => {
+                let printed_items = data
+                    .iter()
+                    .map(|i| i.to_string())
+                    .collect::<Vec<String>>()
+                    .join(",");
+
+                write!(f, "[{}]", printed_items)
             }
             Expr::MapLiteral {
                 key_type,
                 value_type,
                 data,
             } => {
-                write!(f, "{:?}", &data)
+                let printed_pairs = data
+                    .iter()
+                    .map(|(k, v)| format!("{}:{}", k, v))
+                    .collect::<Vec<String>>()
+                    .join(",");
+                write!(f, "{{{}}}", printed_pairs)
+            }
+            Expr::RuntimeMap {
+                key_type,
+                value_type,
+                data,
+            } => {
+                let mut pairs: Vec<String> = data
+                    .iter()
+                    .map(|(k, v)| format!("{}:{}", k, v))
+                    .collect();
+                pairs.sort(); // For consistent output
+                write!(f, "{{{}}}", pairs.join(","))
             }
             _ => write!(f, "{:?}", &self),
         }

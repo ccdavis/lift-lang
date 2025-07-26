@@ -47,13 +47,13 @@ function microblog_post_html(headline: String, content: String, author: String):
 
 Currently the interpreter (tree-walking type) supports most of the language. However I went nuts adding different kinds of data types like ranges and special enums. Implementing all that is hard and I should probably rethink all that. 
 
-The type checking  step is partly implemented; it unifies types for initialization and functions but not other places.
+The type checking step is fully implemented for all expression types, with strict checking suitable for compilation and type inference from literals.
 
-Run the interpreter lby passing a source file:
-```scala
-lift-lang  test.lt
+Run the interpreter by passing a source file:
+```bash
+cargo run tests/test_else_if.lt
 ```
-or with `cargo run --release examples/test.lt`
+or with `cargo run --release tests/test_else_if.lt`
 
 The REPL works decently well now. Due to the syntax with expression separators it's a bit hard to enter multi-line expressions.  Continue an expression with '\'; if you're delaying evaluation in a multi expression block you also need to add the ';'  as expression separators according to the syntax rules.
 
