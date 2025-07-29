@@ -37,6 +37,7 @@ pub enum Operator {
     And,
     Or,
     Not,
+    Range,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -66,6 +67,7 @@ pub enum DataType {
     Set(Box<DataType>),
     Enum(Vec<String>),
     Struct(Vec<Param>),
+    TypeRef(String), // Reference to a user-defined type
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -329,6 +331,9 @@ impl std::fmt::Display for Expr {
                     .collect();
                 pairs.sort(); // For consistent output
                 write!(f, "{{{}}}", pairs.join(","))
+            }
+            Expr::Range(start, end) => {
+                write!(f, "{}..{}", start, end)
             }
             _ => write!(f, "{:?}", &self),
         }

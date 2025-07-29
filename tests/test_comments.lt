@@ -1,0 +1,35 @@
+// This is a single-line comment at the top of the file
+// Another single line comment
+
+/* This is a multi-line comment
+   that spans multiple lines
+   and should be completely ignored */
+
+{
+    // Define a variable with a comment
+    let x = 42; // Inline comment after statement
+    
+    /* Multi-line comment in the middle
+       of the block */
+    let y = 10;
+    
+    // Test arithmetic with comments
+    let sum = x + /* inline block comment */ y;
+    
+    // Function with comments
+    function add(a: Int, b: Int): Int {
+        // This function adds two numbers
+        a + b /* and returns the result */
+    };
+    
+    /* Test nested comments behavior - 
+       This should work fine */
+    let result = add(a: 5, b: /* comment in args */ 3);
+    
+    output(x, y, sum, result); // Final output
+    
+    // Return value
+    sum
+}
+
+// End of file comment

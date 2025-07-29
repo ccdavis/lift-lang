@@ -319,12 +319,16 @@ pub fn repl() {
                                     eprintln!("{}", &e);
                                 }
                                 println!();
+                                buffer.clear();
+                                break; // Exit the inner loop after error
+                            } else {
+                                match ast.interpret(&mut symbols, 0) {
+                                    Err(interpreter_error) => eprintln!("{}", interpreter_error),
+                                    Ok(res) => println!("=> '{}'", &res),
+                                }
+                                buffer.clear();
+                                break; // Exit the inner loop after successful execution
                             }
-                            match ast.interpret(&mut symbols, 0) {
-                                Err(interpreter_error) => eprintln!("{}", interpreter_error),
-                                Ok(res) => println!("=> '{}'", &res),
-                            }
-                            buffer.clear();
                         }
                         Err(ref parse_error) => match parse_error {
                             ParseError::UnrecognizedEof { location: _, expected: _ } => {
@@ -334,6 +338,7 @@ pub fn repl() {
                             _ => {
                                 eprintln!("ERROR: {}", parse_error);
                                 buffer.clear();
+                                break; // Exit the inner loop after parse error
                             }
                         },
                     } //  match parse
@@ -345,10 +350,12 @@ pub fn repl() {
                 }
                 Err(ReadlineError::Eof) => {
                     println!("CTRL-D");
+                    quit = true;
                     break;
                 }
                 Err(err) => {
                     println!("Error: {:?}", err);
+                    // Don't quit on general errors, just break from inner loop
                     break;
                 }
             } // match
@@ -359,7 +366,7 @@ pub fn repl() {
 }
 
 fn interpret_code(code: &str) -> Result<(), Box<dyn error::Error>> {
-    let parser = grammar::ProgramPartExprParser::new();
+    let parser = grammar::ProgramParser::new();
     let mut ast = match parser.parse(&code) {
         Err(e) => {
             eprintln!("{}", e);
@@ -373,6 +380,7 @@ fn interpret_code(code: &str) -> Result<(), Box<dyn error::Error>> {
         for e in errors {
             eprintln!("{}", e);
         }
+        std::process::exit(2);
     }
 
     let res = ast.interpret(&mut symbols, 0)?;
@@ -925,7 +933,7 @@ fn run_lift_file(file_path: &str) -> Result<Expr, String> {
     let code = fs::read_to_string(file_path)
         .map_err(|e| format!("Failed to read file: {e}"))?;
     
-    let parser = grammar::ProgramPartExprParser::new();
+    let parser = grammar::ProgramParser::new();
     let mut ast = parser.parse(&code)
         .map_err(|e| format!("Parse error: {e}"))?;
     
@@ -1286,6 +1294,114 @@ fn test_collections_in_variables() {
 }
 
 #[test]
+fn test_define_type() {
+    let parser = grammar::ProgramPartExprParser::new();
+    let mut symbols = SymbolTable::new();
+    
+    // Test simple type alias - need to wrap in a block for multiple statements
+    let src = "{type Age = Int; let myAge: Age = 25; myAge}";
+    let mut ast = parser.parse(src).unwrap();
+    assert!(ast.prepare(&mut symbols).is_ok());
+    let result = ast.interpret(&mut symbols, 0).unwrap();
+    assert_eq!(result, Expr::Literal(LiteralData::Int(25)));
+    
+    // Test custom type in function - also needs to be in a block
+    let src2 = "{type Name = Str; function greet(n: Name): Name { n + '!' }; greet(n: 'Hi')}";
+    let mut ast2 = parser.parse(src2).unwrap();
+    let mut symbols2 = SymbolTable::new();
+    assert!(ast2.prepare(&mut symbols2).is_ok());
+    let result2 = ast2.interpret(&mut symbols2, 0).unwrap();
+    assert_eq!(result2, Expr::Literal(LiteralData::Str("'Hi''!'".into())));
+}
+
+#[test]
+fn test_lt_file_define_type() {
+    let result = run_lift_file("tests/test_define_type.lt").unwrap();
+    // The test file outputs various things and returns Unit
+    assert_eq!(result, Expr::Unit);
+}
+
+#[test]
+fn test_range_literals() {
+    let parser = grammar::ProgramPartExprParser::new();
+    let mut symbols = SymbolTable::new();
+    
+    // Test basic range literal
+    let src = "3..10";
+    let mut ast = parser.parse(src).unwrap();
+    ast.prepare(&mut symbols).unwrap();
+    let result = ast.interpret(&mut symbols, 0).unwrap();
+    assert_eq!(result.to_string(), "3..10");
+    
+    // Test range with expressions
+    let src2 = "(1 + 2)..(10 - 3)";
+    let mut ast2 = parser.parse(src2).unwrap();
+    let mut symbols2 = SymbolTable::new();
+    ast2.prepare(&mut symbols2).unwrap();
+    let result2 = ast2.interpret(&mut symbols2, 0).unwrap();
+    assert_eq!(result2.to_string(), "3..7");
+    
+    // Test range with variables
+    let src3 = "{let a = 5; let b = 15; a..b}";
+    let mut ast3 = parser.parse(src3).unwrap();
+    let mut symbols3 = SymbolTable::new();
+    ast3.prepare(&mut symbols3).unwrap();
+    let result3 = ast3.interpret(&mut symbols3, 0).unwrap();
+    assert_eq!(result3.to_string(), "5..15");
+}
+
+#[test]
+fn test_lt_file_ranges() {
+    let result = run_lift_file("tests/test_ranges.lt").unwrap();
+    // The test file outputs various ranges and returns Unit
+    assert_eq!(result, Expr::Unit);
+}
+
+#[test]
+fn test_lt_file_simple_list() {
+    // This should fail because empty list needs type annotation
+    let result = run_lift_file("tests/simple_list.lt");
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("Cannot infer type for empty list"));
+}
+
+#[test]
+fn test_lt_file_test_lists() {
+    // This should fail because of empty list without type annotation
+    let result = run_lift_file("tests/test_lists.lt");
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("Cannot infer type for empty list"));
+}
+
+#[test]
+fn test_lt_file_test_lists_simple() {
+    let result = run_lift_file("tests/test_lists_simple.lt").unwrap();
+    // The test file outputs various lists and returns Unit
+    assert_eq!(result, Expr::Unit);
+}
+
+#[test]
+fn test_lt_file_test_maps() {
+    let result = run_lift_file("tests/test_maps.lt").unwrap();
+    // The test file outputs various maps and returns Unit
+    assert_eq!(result, Expr::Unit);
+}
+
+#[test]
+fn test_lt_file_test_maps_simple() {
+    let result = run_lift_file("tests/test_maps_simple.lt").unwrap();
+    // The test file outputs various maps and returns Unit
+    assert_eq!(result, Expr::Unit);
+}
+
+#[test]
+fn test_lt_file_test_runtime_collections() {
+    let result = run_lift_file("tests/test_runtime_collections.lt").unwrap();
+    // The test file outputs various runtime collections and returns Unit
+    assert_eq!(result, Expr::Unit);
+}
+
+#[test]
 fn test_collection_display() {
     let parser = grammar::ProgramPartExprParser::new();
     let mut symbols = SymbolTable::new();
@@ -1309,6 +1425,126 @@ fn test_collection_display() {
     ast.prepare(&mut symbols).unwrap();
     let result = ast.interpret(&mut symbols, 0).unwrap();
     assert_eq!(result.to_string(), "[[1,2],[3,4]]");
+}
+
+#[test]
+fn test_let_type_resolution() {
+    let parser = grammar::ProgramParser::new();
+    let mut symbols = SymbolTable::new();
+    
+    // Test 1: let with integer literal should have Int type
+    let mut ast = parser.parse("let x = 42").unwrap();
+    ast.prepare(&mut symbols).unwrap();
+    
+    // Get the symbol and check its type
+    let x_index = symbols.find_index_reachable_from("x", 0).unwrap();
+    let x_type = symbols.get_symbol_type(&x_index).unwrap();
+    assert_eq!(x_type, DataType::Int);
+    
+    // Test 2: let with boolean literal should have Bool type
+    let mut ast2 = parser.parse("let debug = true").unwrap();
+    ast2.prepare(&mut symbols).unwrap();
+    
+    let debug_index = symbols.find_index_reachable_from("debug", 0).unwrap();
+    let debug_type = symbols.get_symbol_type(&debug_index).unwrap();
+    assert_eq!(debug_type, DataType::Bool);
+    
+    // Test 3: let with string literal should have Str type
+    let mut ast3 = parser.parse("let name = 'Alice'").unwrap();
+    ast3.prepare(&mut symbols).unwrap();
+    
+    let name_index = symbols.find_index_reachable_from("name", 0).unwrap();
+    let name_type = symbols.get_symbol_type(&name_index).unwrap();
+    assert_eq!(name_type, DataType::Str);
+    
+    // Test 4: let with float literal should have Flt type
+    let mut ast4 = parser.parse("let pi = 3.14").unwrap();
+    ast4.prepare(&mut symbols).unwrap();
+    
+    let pi_index = symbols.find_index_reachable_from("pi", 0).unwrap();
+    let pi_type = symbols.get_symbol_type(&pi_index).unwrap();
+    assert_eq!(pi_type, DataType::Flt);
+}
+
+#[test]
+fn test_empty_collection_type_errors() {
+    let parser = grammar::ProgramParser::new();
+    let mut symbols = SymbolTable::new();
+    
+    // Test 1: Empty list without type annotation should fail
+    let mut ast = parser.parse("let x = []").unwrap();
+    let result = ast.prepare(&mut symbols);
+    assert!(result.is_err());
+    let errors = result.unwrap_err();
+    assert!(errors[0].to_string().contains("Cannot infer type for empty list"));
+    
+    // Test 2: Empty map without type annotation should fail
+    let mut symbols2 = SymbolTable::new();
+    let mut ast2 = parser.parse("let m = #{}").unwrap();
+    let result2 = ast2.prepare(&mut symbols2);
+    assert!(result2.is_err());
+    let errors2 = result2.unwrap_err();
+    assert!(errors2[0].to_string().contains("Cannot infer type for empty map"));
+    
+    // Test 3: Empty list with type annotation should succeed
+    let mut symbols3 = SymbolTable::new();
+    let mut ast3 = parser.parse("let nums: List of Int = []").unwrap();
+    let result3 = ast3.prepare(&mut symbols3);
+    assert!(result3.is_ok());
+    
+    // Verify the type was properly set
+    let nums_index = symbols3.find_index_reachable_from("nums", 0).unwrap();
+    let nums_type = symbols3.get_symbol_type(&nums_index).unwrap();
+    // Check if we got a List type with Int elements
+    if let DataType::List { element_type } = nums_type {
+        // element_type is a Box<DataType>, so we need to deref it properly
+        assert!(matches!(element_type.as_ref(), DataType::Int));
+    } else {
+        panic!("Expected List type, got {:?}", nums_type);
+    }
+}
+
+#[test]
+fn test_let_with_expressions() {
+    let parser = grammar::ProgramParser::new();
+    let mut symbols = SymbolTable::new();
+    
+    // Test arithmetic expression type inference
+    let mut ast = parser.parse("let sum = 5 + 3").unwrap();
+    ast.prepare(&mut symbols).unwrap();
+    
+    let sum_index = symbols.find_index_reachable_from("sum", 0).unwrap();
+    let sum_type = symbols.get_symbol_type(&sum_index).unwrap();
+    assert_eq!(sum_type, DataType::Int);
+    
+    // Test comparison expression type inference
+    let mut ast2 = parser.parse("let is_greater = 10 > 5").unwrap();
+    ast2.prepare(&mut symbols).unwrap();
+    
+    let is_greater_index = symbols.find_index_reachable_from("is_greater", 0).unwrap();
+    let is_greater_type = symbols.get_symbol_type(&is_greater_index).unwrap();
+    assert_eq!(is_greater_type, DataType::Bool);
+}
+
+#[test]
+fn test_lt_file_type_resolution() {
+    let result = run_lift_file("tests/test_type_resolution.lt").unwrap();
+    // The test file outputs various values and returns Unit
+    assert_eq!(result, Expr::Unit);
+}
+
+#[test]
+fn test_lt_file_comments() {
+    let result = run_lift_file("tests/test_comments.lt").unwrap();
+    // The test file tests various comment scenarios and returns 52 (sum of x and y)
+    assert_eq!(result, Expr::Literal(LiteralData::Int(52)));
+}
+
+#[test]
+fn test_lt_file_negative_numbers() {
+    let result = run_lift_file("tests/test_negative_numbers.lt").unwrap();
+    // The test file tests negative numbers and returns -62 (sum of x, sum, product, quotient)
+    assert_eq!(result, Expr::Literal(LiteralData::Int(-62)));
 }
 
 fn main() {

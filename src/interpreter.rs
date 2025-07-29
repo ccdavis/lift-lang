@@ -58,14 +58,12 @@ impl Expr {
         // Analyze  parse tree to index symbols across scopes.
         let result = add_symbols(self, symbols, 0);
         if let Err(ref msg) = result {
-            eprintln!("Error indexing variable and function names: {msg}");
             errors.push(msg.clone());
         }
         
         // Type check the expression tree
         let type_result = typecheck(self, symbols, 0);
         if let Err(ref msg) = type_result {
-            eprintln!("Type error: {msg}");
             errors.push(msg.clone());
         }
 
@@ -123,6 +121,7 @@ impl Expr {
                 environment,
             } => interpret_lambda(symbols, value, *environment),
             Expr::DefineFunction { .. } => Ok(Expr::Unit), // The function got assigned in an earlier compiler pass
+            Expr::DefineType { .. } => Ok(Expr::Unit), // The type definition was registered in an earlier compiler pass
             Expr::Unit => Ok(Expr::Unit),
             Expr::ListLiteral { ref data_type, ref data } => {
                 // Evaluate each element in the list and convert to runtime representation
@@ -150,6 +149,7 @@ impl Expr {
             },
             Expr::RuntimeList { .. } => Ok(self.clone()), // Already in runtime form
             Expr::RuntimeMap { .. } => Ok(self.clone()),  // Already in runtime form
+            Expr::Range(..) => Ok(self.clone()), // Range is a value type
             _ => panic!(
                 "Interpreter error: interpret() not implemented for '{self:?}'"
             ),
@@ -391,6 +391,25 @@ fn interpret_binary(
     right: &Expr,
     current_scope: usize,
 ) -> InterpreterResult {
+    // Special handling for Range operator
+    if matches!(op, Operator::Range) {
+        let left_val = left.interpret(symbols, current_scope)?;
+        let right_val = right.interpret(symbols, current_scope)?;
+        
+        match (left_val, right_val) {
+            (Expr::Literal(LiteralData::Int(start)), Expr::Literal(LiteralData::Int(end))) => {
+                return Ok(Expr::Range(LiteralData::Int(start), LiteralData::Int(end)));
+            }
+            _ => {
+                return Err(RuntimeError::new(
+                    "Range operator '..' requires integer operands",
+                    None,
+                    None,
+                ).into());
+            }
+        }
+    }
+    
     let mut error: Option<RuntimeError> = None;
     let mut result: InterpreterResult = Ok(Expr::Unit);
 

@@ -1,0 +1,15 @@
+{
+// Test basic list literals
+let int_list = [1, 2, 3, 4, 5];
+let string_list = ['hello', 'world'];
+let mixed_expressions = [1 + 2, 4 * 5, 10 - 3];
+
+// Test nested lists
+let nested = [[1, 2], [3, 4], [5, 6]];
+
+// Output the lists to see them
+output(int_list);
+output(string_list);
+output(mixed_expressions);
+output(nested)
+}

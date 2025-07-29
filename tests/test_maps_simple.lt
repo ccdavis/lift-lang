@@ -1,0 +1,19 @@
+{
+// Test basic map literals with non-empty maps only
+let int_map = #{1: 'one', 2: 'two', 3: 'three'};
+let string_map = #{'hello': 1, 'world': 2};
+let bool_map = #{true: 'yes', false: 'no'};
+
+// Test map with expressions as values
+let expr_map = #{1: 10 + 5, 2: 20 * 2, 3: 100 / 4};
+
+// Test nested map
+let nested_map = #{1: [1, 2, 3], 2: [4, 5, 6]};
+
+// Output the maps to see them
+output(int_map);
+output(string_map);
+output(bool_map);
+output(expr_map);
+output(nested_map)
+}

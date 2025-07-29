@@ -1,0 +1,28 @@
+{
+    let x = -42;
+    output(x);
+    
+    let pi = -3.14159;
+    output(pi);
+    
+    let sum = -10 + 5;
+    output(sum);
+    
+    let product = -3 * 4;
+    output(product);
+    
+    let quotient = -20 / 4;
+    output(quotient);
+    
+    let is_negative = -5 < 0;
+    output(is_negative);
+    
+    function abs(n: Int): Int {
+        if n < 0 { 0 - n } else { n }
+    };
+    
+    let abs_value: Int = abs(n: -25);
+    output(abs_value);
+    
+    x + sum + product + quotient
+}

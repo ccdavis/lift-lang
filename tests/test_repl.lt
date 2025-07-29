@@ -1,0 +1,40 @@
+// This file demonstrates REPL functionality
+// Not meant to be run directly, but shows expected REPL behavior
+
+// Simple expression evaluation
+42
+// => '42'
+
+// Variable definition
+let x = 10
+// => 'Unit'
+
+// Using previously defined variable
+x + 5
+// => '15'
+
+// Boolean expressions
+let flag = true
+// => 'Unit'
+
+flag and false
+// => 'false'
+
+// String operations
+'Hello, ' + 'World!'
+// => 'Hello, World!'
+
+// Lists
+[1, 2, 3, 4, 5]
+// => '[1,2,3,4,5]'
+
+// Type annotations for empty collections
+let empty_list: List of Int = []
+// => 'Unit'
+
+// Complex expressions
+let result = if x > 5 { x * 2 } else { x / 2 }
+// => 'Unit'
+
+result
+// => '20'

@@ -11,10 +11,10 @@ match {
     _ // Everything else
 }
 
-//pub ProgramExpr: Expr = {
-//     "program" <s:SemiSeparated<ProgramPartExpr>> "." => Expr::Program {body:s, environment: 0}.into(),  
-//};
-
+// A complete program is a sequence of top-level expressions
+pub Program: Expr = {
+    <s:SemiSeparated<ProgramPartExpr>> => Expr::Program {body:s, environment: 0}.into(),  
+};
 
 pub ProgramPartExpr: Expr = {
     ExprBlock,    
@@ -105,12 +105,26 @@ OpEquality: Operator = {
     "<>" => Operator::Neq,
 }
 
-ExprComparison = ExprInfix<ExprComparison, OpComparison, ExprArithmetic>;
+ExprComparison = ExprInfix<ExprComparison, OpComparison, ExprRange>;
 OpComparison: Operator = {
     ">" => Operator::Gt,
     ">=" => Operator::Gte,
     "<" => Operator::Lt,
     "<=" => Operator::Lte,    
+}
+
+// Range expressions have lower precedence than arithmetic
+ExprRange: Expr = {
+    <l:ExprArithmetic> ".." <r:ExprArithmetic> => {
+        // For now, we'll create a BinaryExpr with a special Range operator
+        // This will be handled properly in the interpreter
+        Expr::BinaryExpr {
+            left: Box::new(l),
+            op: Operator::Range,
+            right: Box::new(r),
+        }
+    },
+    ExprArithmetic,
 }
 
 
@@ -190,6 +204,7 @@ pub DataType : DataType = {
     "Str" => DataType::Str,
     "Bool" => DataType::Bool,    
     "List of" <e: DataType> => DataType::List { element_type: Box::new(e)},
+    <i:ident> => DataType::TypeRef(i), // Custom type reference
 };
 
 CommaSeparated<T>: Vec<T> = { 

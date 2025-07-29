@@ -1,0 +1,30 @@
+{
+// Test range literals
+let r1 = 1..10;
+let r2 = 0..100;
+let r3 = -5..5;
+
+output('Range 1:', r1);
+output('Range 2:', r2);
+output('Range 3:', r3);
+
+// Test range with variables - TODO: fix type inference for this case
+// let start = 10;
+// let end = 20;
+// let r4 = start..end;
+// output('Range 4:', r4);
+
+// Test range type in type definitions
+type ValidScore = 0 to 100;
+type Age = Int;
+let myAge: Age = 25;
+output('Age:', myAge);
+
+// Test range expressions in larger expressions
+let r5 = (1 + 2)..(10 - 3);
+output('Range 5:', r5);
+
+// Test negative ranges
+let r6 = -10..-1;
+output('Range 6:', r6)
+}

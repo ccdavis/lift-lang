@@ -1,0 +1,47 @@
+// Test type definitions and usage
+
+// Simple type alias
+type Age = Int;
+type Name = Str;
+
+// Type with range
+type Score = 0 to 100;
+
+// List type alias
+type Names = List of Str;
+type Numbers = List of Int;
+
+// Map type alias
+type AgeMap = Map of Str to Int;
+
+// Test using the defined types
+let myAge: Age = 25;
+let myName: Name = 'Alice';
+let scores: Numbers = [85, 90, 95];
+let ages: AgeMap = #{'Alice': 25, 'Bob': 30};
+
+// Test with custom types in functions
+function greet(name: Name): Name {
+    'Hello ' + name
+};
+
+function getAge(age: Age): Age {
+    age + 1
+};
+
+// Test function calls
+output(greet(name: 'Charlie'));
+output('Age plus one:', getAge(age: 35));
+
+// Test nested custom types
+type StringList = List of Str;
+type ListOfLists = List of StringList;
+
+let nested: ListOfLists = [['a', 'b'], ['c', 'd']];
+output('Nested lists defined');
+
+// Test that we can use the custom types
+output('Age:', myAge);
+output('Name:', myName);
+output('Scores:', scores);
+output('Ages map:', ages);

@@ -1,0 +1,23 @@
+// Test that let bindings have their types resolved
+let x = 42;
+let debug = true;
+let name = 'Alice';
+let pi = 3.14;
+
+// Test expressions
+let sum = 5 + 3;
+let is_greater = 10 > 5;
+
+// Test that empty collections require type annotations
+let nums: List of Int = [];
+let strs: List of Str = [];
+
+// Output to verify everything works
+output(x);
+output(debug);
+output(name);
+output(pi);
+output(sum);
+output(is_greater);
+output(nums);
+output(strs);

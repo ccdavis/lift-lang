@@ -4,7 +4,7 @@ use crate::syntax::Expr;
 use crate::syntax::LiteralData;
 use std::collections::HashMap;
 
-const TRACE: bool = true;
+const TRACE: bool = false;
 
 #[derive(Clone, Debug)]
 pub struct Scope {
@@ -100,6 +100,24 @@ impl SymbolTable {
             )
         }
         added_index
+    }
+
+    pub fn lookup_type(&self, name: &str, scope: usize) -> Option<DataType> {
+        // First check current scope
+        if let Some(index) = self.0[scope].type_index.get(name) {
+            return self.0[scope].types.get(*index).cloned();
+        }
+        
+        // Then check parent scopes
+        let mut current_scope = scope;
+        while current_scope > 0 {
+            current_scope -= 1;
+            if let Some(index) = self.0[current_scope].type_index.get(name) {
+                return self.0[current_scope].types.get(*index).cloned();
+            }
+        }
+        
+        None
     }
 
     pub fn add_symbol(

@@ -5,7 +5,7 @@ use crate::syntax::KeyData;
 use crate::syntax::LiteralData;
 use crate::syntax::Operator;
 
-const DEBUG: bool = true;
+const DEBUG: bool = false;
 
 #[derive(Clone, Debug)]
 pub enum CompileErrorType {
@@ -70,8 +70,6 @@ impl std::fmt::Display for CompileError {
 impl std::error::Error for CompileError {}
 
 // This adds symbols for the current scope and the child scopes, plus updates the index (scope id, symbol id) on the expr
-// TODO make a generic traversal function that takes a "visitor" lambda or selects between some different
-// visitor type functions like "add_symbols", "type_check", "print" etc.
 pub fn add_symbols(
     e: &mut Expr,
     symbols: &mut SymbolTable,
@@ -84,6 +82,27 @@ pub fn add_symbols(
         );
     }
     match e {
+        Expr::Program {
+            ref mut body,
+            ref mut environment,
+        } => {
+            // Programs use the current scope (usually 0)
+            *environment = _current_scope_id;
+            
+            // First pass: process all type definitions
+            for e in body.iter_mut() {
+                if matches!(e, Expr::DefineType { .. }) {
+                    add_symbols(e, symbols, _current_scope_id)?;
+                }
+            }
+            
+            // Second pass: process everything else
+            for e in body.iter_mut() {
+                if !matches!(e, Expr::DefineType { .. }) {
+                    add_symbols(e, symbols, _current_scope_id)?;
+                }
+            }
+        }
         Expr::DefineType {
             type_name,
             definition,
@@ -167,8 +186,14 @@ pub fn add_symbols(
             let new_scope_id = symbols.create_scope(Some(_current_scope_id));
             *environment = new_scope_id;
 
+            // Resolve function return type
+            value.return_type = resolve_type(&value.return_type, symbols, _current_scope_id)?;
+            
             // Add params to the new environment with their types
             for p in &mut value.params {
+                // Resolve any TypeRef in parameter types
+                p.data_type = resolve_type(&p.data_type, symbols, _current_scope_id)?;
+                
                 // Create a typed parameter representation
                 let param_expr = Expr::Let {
                     var_name: p.name.clone(),
@@ -230,9 +255,12 @@ pub fn add_symbols(
             
             // If no type annotation, try to infer the type
             if matches!(data_type, DataType::Unsolved) {
-                if let Some(inferred_type) = determine_type(value) {
+                if let Some(inferred_type) = determine_type_with_symbols(value, symbols, _current_scope_id) {
                     *data_type = inferred_type;
                 }
+            } else {
+                // Resolve any TypeRef in the data_type
+                *data_type = resolve_type(data_type, symbols, _current_scope_id)?;
             }
             
             // Create a typed symbol with the resolved type
@@ -262,10 +290,56 @@ pub fn add_symbols(
             }
             // Note: key_type and value_type are handled in typecheck, not here
         }
+        Expr::Range(..) => {
+            // Range literals don't need symbol processing
+        }
         _ => (),
     }
     Ok(())
 }
+// Resolve TypeRef to actual types
+pub fn resolve_type(
+    data_type: &DataType,
+    symbols: &SymbolTable,
+    scope: usize,
+) -> Result<DataType, CompileError> {
+    match data_type {
+        DataType::TypeRef(name) => {
+            match symbols.lookup_type(name, scope) {
+                Some(resolved_type) => Ok(resolved_type),
+                None => Err(CompileError::name(
+                    &format!("Unknown type: {}", name),
+                    (0, 0),
+                )),
+            }
+        }
+        DataType::List { element_type } => {
+            let resolved_element = resolve_type(element_type, symbols, scope)?;
+            Ok(DataType::List {
+                element_type: Box::new(resolved_element),
+            })
+        }
+        DataType::Map { key_type, value_type } => {
+            let resolved_key = resolve_type(key_type, symbols, scope)?;
+            let resolved_value = resolve_type(value_type, symbols, scope)?;
+            Ok(DataType::Map {
+                key_type: Box::new(resolved_key),
+                value_type: Box::new(resolved_value),
+            })
+        }
+        DataType::Set(element_type) => {
+            let resolved_element = resolve_type(element_type, symbols, scope)?;
+            Ok(DataType::Set(Box::new(resolved_element)))
+        }
+        DataType::Optional(inner_type) => {
+            let resolved_inner = resolve_type(inner_type, symbols, scope)?;
+            Ok(DataType::Optional(Box::new(resolved_inner)))
+        }
+        // Built-in types and others pass through unchanged
+        _ => Ok(data_type.clone()),
+    }
+}
+
 // Type checking functions
 pub fn typecheck(
     expr: &Expr,
@@ -353,6 +427,21 @@ pub fn typecheck(
                     }
                 }
                 Operator::Not => unreachable!("Not is a unary operator"),
+                Operator::Range => {
+                    // Range operator requires integer operands
+                    if !matches!(&left_type, DataType::Int) || !matches!(&right_type, DataType::Int) {
+                        return Err(CompileError::typecheck(
+                            &format!("Range operator '..' requires integer operands: {left_type:?} .. {right_type:?}"),
+                            (0, 0),
+                        ));
+                    }
+                    // Return a Range type containing the range expression
+                    Ok(DataType::Range(Box::new(Expr::BinaryExpr {
+                        left: left.clone(),
+                        op: Operator::Range,
+                        right: right.clone(),
+                    })))
+                }
             }
         }
         
@@ -426,28 +515,45 @@ pub fn typecheck(
         }
         
         Expr::Let { var_name, value, data_type, index: _ } => {
-            let value_type = typecheck(value, symbols, _current_scope_id)?;
-            
-            // Check if value type is fully resolved
-            if matches!(value_type, DataType::Unsolved) {
-                return Err(CompileError::typecheck(
-                    &format!("Cannot infer type for '{var_name}'. Please provide a type annotation."),
-                    (0, 0),
-                ));
-            }
-            
-            // If a type is specified, check it matches
+            // If a type is specified, use it and check the value is compatible
             if !matches!(data_type, DataType::Unsolved) {
-                if !types_compatible(data_type, &value_type) {
+                // Resolve any TypeRef in the data_type
+                let resolved_type = resolve_type(data_type, symbols, _current_scope_id)?;
+                
+                // Special handling for empty collections with type annotations
+                match value.as_ref() {
+                    Expr::ListLiteral { data, .. } if data.is_empty() => {
+                        // Empty list with type annotation is valid
+                        return Ok(resolved_type);
+                    }
+                    Expr::MapLiteral { data, .. } if data.is_empty() => {
+                        // Empty map with type annotation is valid
+                        return Ok(resolved_type);
+                    }
+                    _ => {
+                        // For non-empty values, check type compatibility
+                        let value_type = typecheck(value, symbols, _current_scope_id)?;
+                        if !types_compatible(&resolved_type, &value_type) {
+                            return Err(CompileError::typecheck(
+                                &format!("Type annotation mismatch for {var_name}: expected {:?}, got {value_type:?}", resolved_type),
+                                (0, 0),
+                            ));
+                        }
+                    }
+                }
+                Ok(resolved_type)
+            } else {
+                // No type annotation, must infer from value
+                let value_type = typecheck(value, symbols, _current_scope_id)?;
+                
+                // Check if value type is fully resolved
+                if matches!(value_type, DataType::Unsolved) {
                     return Err(CompileError::typecheck(
-                        &format!("Type annotation mismatch for {var_name}: expected {data_type:?}, got {value_type:?}"),
+                        &format!("Cannot infer type for '{var_name}'. Please provide a type annotation."),
                         (0, 0),
                     ));
                 }
-                Ok(data_type.clone())
-            } else {
-                // Type was inferred - we need to update the symbol table
-                // For now, return the inferred type
+                
                 Ok(value_type)
             }
         }
@@ -473,6 +579,13 @@ pub fn typecheck(
         
         Expr::ListLiteral { data_type, data } => {
             if data.is_empty() {
+                // Empty lists need explicit type annotation
+                if matches!(data_type, DataType::Unsolved) {
+                    return Err(CompileError::typecheck(
+                        "Cannot infer type for empty list. Please provide a type annotation.",
+                        (0, 0),
+                    ));
+                }
                 return Ok(DataType::List {
                     element_type: Box::new(data_type.clone()),
                 });
@@ -506,6 +619,14 @@ pub fn typecheck(
         }
         
         Expr::MapLiteral { key_type, value_type, data } => {
+            // Check for empty maps with unsolved types
+            if data.is_empty() && (matches!(key_type, DataType::Unsolved) || matches!(value_type, DataType::Unsolved)) {
+                return Err(CompileError::typecheck(
+                    "Cannot infer type for empty map. Please provide a type annotation.",
+                    (0, 0),
+                ));
+            }
+            
             for (_key, value) in data {
                 let value_type_actual = typecheck(value, symbols, _current_scope_id)?;
                 // Check value types match
@@ -530,9 +651,15 @@ pub fn typecheck(
             })
         }
         
-        Expr::Range(_start, _end) => {
-            // Ranges are Int ranges for now
-            Ok(DataType::Range(Box::new(Expr::Literal(LiteralData::Int(0)))))
+        Expr::Range(start, end) => {
+            // Range literals are always integers
+            match (start, end) {
+                (LiteralData::Int(_), LiteralData::Int(_)) => Ok(DataType::Range(Box::new(Expr::Range(start.clone(), end.clone())))),
+                _ => Err(CompileError::typecheck(
+                    "Range literals must have integer bounds",
+                    (0, 0),
+                )),
+            }
         }
         
         Expr::Call { fn_name, index, args } => {
@@ -649,7 +776,74 @@ fn types_compatible(t1: &DataType, t2: &DataType) -> bool {
         (DataType::Map { key_type: k1, value_type: v1 }, DataType::Map { key_type: k2, value_type: v2 }) => {
             types_compatible(k1, k2) && types_compatible(v1, v2)
         }
+        (DataType::Range(_), DataType::Range(_)) => {
+            // For now, all ranges are compatible with each other
+            // In the future we might want to check the bounds
+            true
+        }
         _ => false,
+    }
+}
+
+// Type inference with symbol table lookup
+pub fn determine_type_with_symbols(
+    expression: &Expr,
+    symbols: &SymbolTable,
+    scope: usize,
+) -> Option<DataType> {
+    match expression {
+        Expr::Literal(l) => Some(match l {
+            LiteralData::Int(_) => DataType::Int,
+            LiteralData::Str(_) => DataType::Str,
+            LiteralData::Flt(_) => DataType::Flt,
+            LiteralData::Bool(_) => DataType::Bool,
+        }),
+        
+        Expr::Variable { index, .. } => {
+            // Look up the variable type from the symbol table
+            symbols.get_symbol_type(index)
+        }
+        
+        Expr::BinaryExpr { left, op, right } => {
+            let left_type = determine_type_with_symbols(left, symbols, scope)?;
+            let right_type = determine_type_with_symbols(right, symbols, scope)?;
+            
+            match op {
+                Operator::Add | Operator::Sub | Operator::Mul | Operator::Div => {
+                    match (&left_type, &right_type) {
+                        (DataType::Int, DataType::Int) => Some(DataType::Int),
+                        (DataType::Flt, DataType::Flt) => Some(DataType::Flt),
+                        (DataType::Int, DataType::Flt) | (DataType::Flt, DataType::Int) => Some(DataType::Flt),
+                        (DataType::Str, DataType::Str) if matches!(op, Operator::Add) => Some(DataType::Str),
+                        _ => None,
+                    }
+                }
+                Operator::Gt | Operator::Lt | Operator::Gte | Operator::Lte |
+                Operator::Eq | Operator::Neq => Some(DataType::Bool),
+                Operator::And | Operator::Or => Some(DataType::Bool),
+                Operator::Not => unreachable!("Not is unary"),
+                Operator::Range => {
+                    match (&left_type, &right_type) {
+                        (DataType::Int, DataType::Int) => Some(DataType::Range(Box::new(expression.clone()))),
+                        _ => None,
+                    }
+                }
+            }
+        }
+        
+        Expr::Call { index, .. } => {
+            // Look up function return type
+            if let Some(fn_expr) = symbols.get_symbol_value(index) {
+                match fn_expr {
+                    Expr::Lambda { value: func, .. } => Some(func.return_type.clone()),
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        }
+        
+        _ => determine_type(expression), // Fall back to original for other cases
     }
 }
 
@@ -688,6 +882,17 @@ pub fn determine_type(expression: &Expr) -> Option<DataType> {
                 Operator::Eq | Operator::Neq => Some(DataType::Bool),
                 Operator::And | Operator::Or => Some(DataType::Bool),
                 Operator::Not => unreachable!("Not is unary"),
+                Operator::Range => {
+                    // Range operator produces a Range type
+                    match (&left_type, &right_type) {
+                        (DataType::Int, DataType::Int) => Some(DataType::Range(Box::new(Expr::BinaryExpr {
+                            left: left.clone(),
+                            op: Operator::Range,
+                            right: right.clone(),
+                        }))),
+                        _ => None,
+                    }
+                }
             }
         }
         
@@ -707,8 +912,6 @@ pub fn determine_type(expression: &Expr) -> Option<DataType> {
                 element_type: Box::new(element_type),
             })
         }
-        
-        Expr::Range(..) => Some(DataType::Range(Box::new(Expr::Literal(LiteralData::Int(0))))),
         
         Expr::If { then, final_else, .. } => {
             // If expression type is the type of its branches
@@ -756,6 +959,13 @@ pub fn determine_type(expression: &Expr) -> Option<DataType> {
                 key_type: Box::new(actual_key_type),
                 value_type: Box::new(actual_value_type),
             })
+        }
+        
+        Expr::Range(start, end) => {
+            match (start, end) {
+                (LiteralData::Int(_), LiteralData::Int(_)) => Some(DataType::Range(Box::new(Expr::Range(start.clone(), end.clone())))),
+                _ => None,
+            }
         }
         
         _ => None,

@@ -1,0 +1,21 @@
+{
+// Test that lists and maps are properly converted to runtime representations
+let list1 = [1, 2, 3];
+let list2 = ['a', 'b', 'c'];
+let map1 = #{1: 'one', 2: 'two'};
+let map2 = #{'x': 10, 'y': 20};
+
+// Test with nested structures
+let nested_list = [[1, 2], [3, 4]];
+let nested_map = #{1: [1, 2, 3], 2: [4, 5, 6]};
+let map_of_maps = #{'a': #{1: 'one'}, 'b': #{2: 'two'}};
+
+// Output to verify runtime representations work
+output(list1);
+output(list2);
+output(map1);
+output(map2);
+output(nested_list);
+output(nested_map);
+output(map_of_maps)
+}
