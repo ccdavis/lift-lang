@@ -19,10 +19,6 @@ pub struct Scope {
 }
 
 impl Scope {
-    pub fn borrow_runtime_data(&self, index: usize) -> &Expr {
-        &self.runtime_value[index]
-    }
-
     pub fn print_debug(&self) {
         for kv in &self.index {
             println!("{} : {}", kv.0, kv.1);
@@ -31,6 +27,12 @@ impl Scope {
 }
 
 pub struct SymbolTable(Vec<Scope>);
+
+impl Default for SymbolTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl SymbolTable {
     pub fn new() -> Self {
@@ -41,7 +43,7 @@ impl SymbolTable {
 
     pub fn print_debug(&self) {
         for (s, scope) in self.0.iter().enumerate() {
-            println!("Scope {} ------- ", s);
+            println!("Scope {s} ------- ");
             scope.print_debug();
         }
     }
@@ -66,8 +68,7 @@ impl SymbolTable {
     ) -> Option<(usize, usize)> {
         if TRACE {
             println!(
-                "Find  index for {} in scope {}",
-                symbol_name, current_scope_id
+                "Find  index for {symbol_name} in scope {current_scope_id}"
             )
         }
         match self.get_index_in_scope(symbol_name, current_scope_id) {
@@ -196,7 +197,7 @@ impl Scope {
     pub fn add(&mut self, name: &str, value: Expr) -> Result<usize, CompileError> {
         if self.index.contains_key(name) {
             Err(CompileError::name(
-                &format!("Symbol already defined in this scope: {}", name),
+                &format!("Symbol already defined in this scope: {name}"),
                 (0, 0),
             ))
         } else {
@@ -212,7 +213,7 @@ impl Scope {
     pub fn add_type(&mut self, name: &str, value: DataType) -> Result<usize, CompileError> {
         if self.type_index.contains_key(name) {
             Err(CompileError::name(
-                &format!("Type already defined in this scope: {}", name),
+                &format!("Type already defined in this scope: {name}"),
                 (0, 0),
             ))
         } else {

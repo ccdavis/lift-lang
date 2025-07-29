@@ -75,12 +75,12 @@ impl std::error::Error for CompileError {}
 pub fn add_symbols(
     e: &mut Expr,
     symbols: &mut SymbolTable,
-    current_scope_id: usize,
+    _current_scope_id: usize,
 ) -> Result<(), CompileError> {
     if DEBUG {
         println!(
             "DEBUG: adding symbols to expr '{}' at scope '{}'\n\n",
-            &e, current_scope_id
+            &e, _current_scope_id
         );
     }
     match e {
@@ -89,18 +89,18 @@ pub fn add_symbols(
             definition,
             index: _,
         } => {
-            let _symbol_id = symbols.add_type(type_name, definition, current_scope_id)?;
+            let _symbol_id = symbols.add_type(type_name, definition, _current_scope_id)?;
         }
         Expr::Output { ref mut data } => {
             for e in data {
-                add_symbols(e, symbols, current_scope_id)?;
+                add_symbols(e, symbols, _current_scope_id)?;
             }
         }
         Expr::Block {
             ref mut body,
             ref mut environment,
         } => {
-            let new_scope_id = symbols.create_scope(Some(current_scope_id));
+            let new_scope_id = symbols.create_scope(Some(_current_scope_id));
             *environment = new_scope_id;
             for e in body {
                 add_symbols(e, symbols, new_scope_id)?;
@@ -111,31 +111,31 @@ pub fn add_symbols(
             op: _,
             ref mut right,
         } => {
-            add_symbols(left, symbols, current_scope_id)?;
-            add_symbols(right, symbols, current_scope_id)?;
+            add_symbols(left, symbols, _current_scope_id)?;
+            add_symbols(right, symbols, _current_scope_id)?;
         }
         Expr::If {
             ref mut cond,
             ref mut then,
             ref mut final_else,
         } => {
-            add_symbols(cond, symbols, current_scope_id)?;
-            add_symbols(then, symbols, current_scope_id)?;
-            add_symbols(final_else, symbols, current_scope_id)?;
+            add_symbols(cond, symbols, _current_scope_id)?;
+            add_symbols(then, symbols, _current_scope_id)?;
+            add_symbols(final_else, symbols, _current_scope_id)?;
         }
         Expr::While {
             ref mut cond,
             ref mut body,
         } => {
-            add_symbols(cond, symbols, current_scope_id)?;
-            add_symbols(body, symbols, current_scope_id)?;
+            add_symbols(cond, symbols, _current_scope_id)?;
+            add_symbols(body, symbols, _current_scope_id)?;
         }
         Expr::Call {
             ref fn_name,
             ref mut index,
             ref mut args,
         } => {
-            if let Some(found_index) = symbols.find_index_reachable_from(fn_name, current_scope_id)
+            if let Some(found_index) = symbols.find_index_reachable_from(fn_name, _current_scope_id)
             {
                 if DEBUG {
                     println!("DEBUG: During semantic analysis phase found index '{},{}' for '{}' function call.",
@@ -145,7 +145,7 @@ pub fn add_symbols(
                 *index = found_index;
             } else {
                 let msg = format!(
-                    "use of undeclared or not yet declared function '{fn_name}' at scope {current_scope_id}"
+                    "use of undeclared or not yet declared function '{fn_name}' at scope {_current_scope_id}"
                 );
                 if DEBUG {
                     eprintln!("{}", &msg);
@@ -153,7 +153,7 @@ pub fn add_symbols(
                 return Err(CompileError::name(&msg, (0, 0)));
             }
             for a in args {
-                if let Err(ref err) = add_symbols(&mut a.value, symbols, current_scope_id) {
+                if let Err(ref err) = add_symbols(&mut a.value, symbols, _current_scope_id) {
                     let new_msg = format!("Error on argument '{}': {}", a.name, err.clone());
                     return Err(CompileError::structure(&new_msg, (0, 0)));
                 }
@@ -164,7 +164,7 @@ pub fn add_symbols(
             ref mut environment,
         } => {
             // The function has its own scope as well which we should create
-            let new_scope_id = symbols.create_scope(Some(current_scope_id));
+            let new_scope_id = symbols.create_scope(Some(_current_scope_id));
             *environment = new_scope_id;
 
             // Add params to the new environment with their types
@@ -188,22 +188,22 @@ pub fn add_symbols(
             ref mut value,
         } => {
             // At first just create the symbol table entry for the function  and make the value the Unit value...
-            let new_symbol_id = symbols.add_symbol(fn_name, Expr::Unit, current_scope_id)?;
+            let new_symbol_id = symbols.add_symbol(fn_name, Expr::Unit, _current_scope_id)?;
             if DEBUG {
                 println!("Added symbol id {new_symbol_id} for function {fn_name}");
             }
             // Then update the body (value) with all the right symbol indices including the function itself, to
             // support recursion...
-            add_symbols(value, symbols, current_scope_id)?;
+            add_symbols(value, symbols, _current_scope_id)?;
             // Now update the compile time value of the function with the correct indices for
             // all symbols.
             symbols.update_compiletime_symbol_value(
                 *value.clone(),
-                &(current_scope_id, new_symbol_id),
+                &(_current_scope_id, new_symbol_id),
             );
 
             // The function is getting defined for the current scope:
-            *index = (current_scope_id, new_symbol_id);
+            *index = (_current_scope_id, new_symbol_id);
         }
         // Here we set the variable's index from the already added symbol and catch
         // places where the call comes before the definition.
@@ -211,7 +211,7 @@ pub fn add_symbols(
             ref name,
             ref mut index,
         } => {
-            if let Some(found_index) = symbols.find_index_reachable_from(name, current_scope_id) {
+            if let Some(found_index) = symbols.find_index_reachable_from(name, _current_scope_id) {
                 *index = found_index;
             } else {
                 let msg = format!("use of undeclared or not yet declared variable '{name}'");
@@ -226,7 +226,7 @@ pub fn add_symbols(
             ref mut index,
         } => {
             // First, add symbols for the value expression
-            add_symbols(value, symbols, current_scope_id)?;
+            add_symbols(value, symbols, _current_scope_id)?;
             
             // If no type annotation, try to infer the type
             if matches!(data_type, DataType::Unsolved) {
@@ -242,15 +242,15 @@ pub fn add_symbols(
                 value: value.clone(),
                 index: (0, 0),
             };
-            let new_symbol_id = symbols.add_symbol(var_name, typed_value, current_scope_id)?;
-            *index = (current_scope_id, new_symbol_id);
+            let new_symbol_id = symbols.add_symbol(var_name, typed_value, _current_scope_id)?;
+            *index = (_current_scope_id, new_symbol_id);
         }
-        Expr::Return(ref mut e) => add_symbols(e, symbols, current_scope_id)?,
+        Expr::Return(ref mut e) => add_symbols(e, symbols, _current_scope_id)?,
 
         Expr::ListLiteral { ref mut data, data_type: _ } => {
             // Add symbols for each element in the list
             for elem in data.iter_mut() {
-                add_symbols(elem, symbols, current_scope_id)?;
+                add_symbols(elem, symbols, _current_scope_id)?;
             }
             // Note: data_type here refers to the element type, not the list type itself
             // We don't need to change it in add_symbols - it's handled in typecheck
@@ -258,7 +258,7 @@ pub fn add_symbols(
         Expr::MapLiteral { ref mut data, key_type: _, value_type: _ } => {
             // Add symbols for each value in the map
             for (_, value) in data.iter_mut() {
-                add_symbols(value, symbols, current_scope_id)?;
+                add_symbols(value, symbols, _current_scope_id)?;
             }
             // Note: key_type and value_type are handled in typecheck, not here
         }
@@ -270,7 +270,7 @@ pub fn add_symbols(
 pub fn typecheck(
     expr: &Expr,
     symbols: &SymbolTable,
-    current_scope_id: usize,
+    _current_scope_id: usize,
 ) -> Result<DataType, CompileError> {
     match expr {
         Expr::Literal(l) => Ok(match l {
@@ -288,8 +288,8 @@ pub fn typecheck(
         }),
         
         Expr::BinaryExpr { left, op, right } => {
-            let left_type = typecheck(left, symbols, current_scope_id)?;
-            let right_type = typecheck(right, symbols, current_scope_id)?;
+            let left_type = typecheck(left, symbols, _current_scope_id)?;
+            let right_type = typecheck(right, symbols, _current_scope_id)?;
             
             match op {
                 // Arithmetic operators
@@ -357,7 +357,7 @@ pub fn typecheck(
         }
         
         Expr::UnaryExpr { op, expr } => {
-            let expr_type = typecheck(expr, symbols, current_scope_id)?;
+            let expr_type = typecheck(expr, symbols, _current_scope_id)?;
             match op {
                 Operator::Not => match expr_type {
                     DataType::Bool => Ok(DataType::Bool),
@@ -374,7 +374,7 @@ pub fn typecheck(
         }
         
         Expr::If { cond, then, final_else } => {
-            let cond_type = typecheck(cond, symbols, current_scope_id)?;
+            let cond_type = typecheck(cond, symbols, _current_scope_id)?;
             if !matches!(cond_type, DataType::Bool) {
                 return Err(CompileError::typecheck(
                     &format!("If condition must be boolean, got {cond_type:?}"),
@@ -382,8 +382,8 @@ pub fn typecheck(
                 ));
             }
             
-            let then_type = typecheck(then, symbols, current_scope_id)?;
-            let else_type = typecheck(final_else, symbols, current_scope_id)?;
+            let then_type = typecheck(then, symbols, _current_scope_id)?;
+            let else_type = typecheck(final_else, symbols, _current_scope_id)?;
             
             if types_compatible(&then_type, &else_type) {
                 Ok(then_type)
@@ -396,14 +396,14 @@ pub fn typecheck(
         }
         
         Expr::While { cond, body } => {
-            let cond_type = typecheck(cond, symbols, current_scope_id)?;
+            let cond_type = typecheck(cond, symbols, _current_scope_id)?;
             if !matches!(cond_type, DataType::Bool) {
                 return Err(CompileError::typecheck(
                     &format!("While condition must be boolean, got {cond_type:?}"),
                     (0, 0),
                 ));
             }
-            typecheck(body, symbols, current_scope_id)?;
+            typecheck(body, symbols, _current_scope_id)?;
             Ok(DataType::Unsolved) // While loops don't return a meaningful value
         }
         
@@ -426,7 +426,7 @@ pub fn typecheck(
         }
         
         Expr::Let { var_name, value, data_type, index: _ } => {
-            let value_type = typecheck(value, symbols, current_scope_id)?;
+            let value_type = typecheck(value, symbols, _current_scope_id)?;
             
             // Check if value type is fully resolved
             if matches!(value_type, DataType::Unsolved) {
@@ -453,7 +453,7 @@ pub fn typecheck(
         }
         
         Expr::Assign { name, value, index } => {
-            let value_type = typecheck(value, symbols, current_scope_id)?;
+            let value_type = typecheck(value, symbols, _current_scope_id)?;
             if let Some(var_type) = symbols.get_symbol_type(index) {
                 if types_compatible(&var_type, &value_type) {
                     Ok(value_type)
@@ -481,7 +481,7 @@ pub fn typecheck(
             // Check all elements have compatible types
             let mut element_types = Vec::new();
             for elem in data {
-                element_types.push(typecheck(elem, symbols, current_scope_id)?);
+                element_types.push(typecheck(elem, symbols, _current_scope_id)?);
             }
             
             let first_type = &element_types[0];
@@ -507,7 +507,7 @@ pub fn typecheck(
         
         Expr::MapLiteral { key_type, value_type, data } => {
             for (_key, value) in data {
-                let value_type_actual = typecheck(value, symbols, current_scope_id)?;
+                let value_type_actual = typecheck(value, symbols, _current_scope_id)?;
                 // Check value types match
                 if !types_compatible(value_type, &value_type_actual) {
                     return Err(CompileError::typecheck(
@@ -549,7 +549,7 @@ pub fn typecheck(
                         }
                         
                         for (i, arg) in args.iter().enumerate() {
-                            let arg_type = typecheck(&arg.value, symbols, current_scope_id)?;
+                            let arg_type = typecheck(&arg.value, symbols, _current_scope_id)?;
                             let expected_type = &func.params[i].data_type;
                             if !matches!(expected_type, DataType::Unsolved) && !types_compatible(expected_type, &arg_type) {
                                 return Err(CompileError::typecheck(
@@ -576,7 +576,7 @@ pub fn typecheck(
         
         Expr::Lambda { value: func, .. } => {
             // Type check the body in a new scope
-            let body_type = typecheck(&func.body, symbols, current_scope_id)?;
+            let body_type = typecheck(&func.body, symbols, _current_scope_id)?;
             
             // Check return type matches if specified
             if !matches!(func.return_type, DataType::Unsolved) && !types_compatible(&func.return_type, &body_type) {
@@ -590,7 +590,7 @@ pub fn typecheck(
         }
         
         Expr::DefineFunction { value, .. } => {
-            typecheck(value, symbols, current_scope_id)?;
+            typecheck(value, symbols, _current_scope_id)?;
             Ok(DataType::Unsolved) // Function definitions don't return a value
         }
         
@@ -621,12 +621,12 @@ pub fn typecheck(
         Expr::Output { data } => {
             // Type check all output expressions
             for expr in data {
-                typecheck(expr, symbols, current_scope_id)?;
+                typecheck(expr, symbols, _current_scope_id)?;
             }
             Ok(DataType::Unsolved)
         }
         
-        Expr::Return(expr) => typecheck(expr, symbols, current_scope_id),
+        Expr::Return(expr) => typecheck(expr, symbols, _current_scope_id),
         
         Expr::Match { .. } => Ok(DataType::Unsolved), // TODO: Implement match type checking
         
@@ -691,12 +691,8 @@ pub fn determine_type(expression: &Expr) -> Option<DataType> {
             }
         }
         
-        Expr::UnaryExpr { op, .. } => {
-            match op {
-                Operator::Not => Some(DataType::Bool),
-                _ => None,
-            }
-        }
+        Expr::UnaryExpr { op: Operator::Not, .. } => Some(DataType::Bool),
+        Expr::UnaryExpr { .. } => None,
         
         Expr::ListLiteral { data_type, data } => {
             let element_type = if !matches!(data_type, DataType::Unsolved) {

@@ -156,9 +156,9 @@ impl From<Expr> for LiteralData {
 impl std::fmt::Display for LiteralData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LiteralData::Int(i) => write!(f, "{}", i),
-            LiteralData::Flt(fl) => write!(f, "{}", fl),
-            LiteralData::Bool(b) => write!(f, "{}", b),
+            LiteralData::Int(i) => write!(f, "{i}"),
+            LiteralData::Flt(fl) => write!(f, "{fl}"),
+            LiteralData::Bool(b) => write!(f, "{b}"),
             LiteralData::Str(s) => write!(f, "{}", &s),
         }
     }
@@ -167,8 +167,8 @@ impl std::fmt::Display for LiteralData {
 impl std::fmt::Display for KeyData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            KeyData::Int(i) => write!(f, "{}", i),
-            KeyData::Bool(b) => write!(f, "{}", b),
+            KeyData::Int(i) => write!(f, "{i}"),
+            KeyData::Bool(b) => write!(f, "{b}"),
             KeyData::Str(s) => write!(f, "{}", &s),
         }
     }
