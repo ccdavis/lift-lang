@@ -164,7 +164,7 @@ impl SymbolTable {
                     }
                 }
             }
-            Expr::Lambda { value: func, .. } => Some(DataType::Unsolved), // Functions don't have a simple type yet
+            Expr::Lambda { value: _func, .. } => Some(DataType::Unsolved), // Functions don't have a simple type yet
             Expr::Unit => {
                 // This might be a function parameter placeholder
                 // Look for the parameter's type in the parent scope's function definition

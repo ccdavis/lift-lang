@@ -1,7 +1,6 @@
 use crate::symboltable::SymbolTable;
 use crate::syntax::DataType;
 use crate::syntax::Expr;
-use crate::syntax::Function;
 use crate::syntax::KeyData;
 use crate::syntax::LiteralData;
 use crate::syntax::Operator;
@@ -17,9 +16,9 @@ pub enum CompileErrorType {
 impl CompileErrorType {
     pub fn name(&self) -> String {
         match self {
-            CompileErrorType::TypeCheck { .. } => "Type check Error",
-            CompileErrorType::Name { .. } => "Name Error",
-            CompileErrorType::Structure { .. } => "Structure Error",
+            CompileErrorType::TypeCheck => "Type check Error",
+            CompileErrorType::Name => "Name Error",
+            CompileErrorType::Structure => "Structure Error",
         }
         .to_string()
     }
@@ -88,12 +87,12 @@ pub fn add_symbols(
         Expr::DefineType {
             type_name,
             definition,
-            index,
+            index: _,
         } => {
-            let symbol_id = symbols.add_type(&type_name, &definition, current_scope_id)?;
+            let _symbol_id = symbols.add_type(type_name, definition, current_scope_id)?;
         }
         Expr::Output { ref mut data } => {
-            for mut e in data {
+            for e in data {
                 add_symbols(e, symbols, current_scope_id)?;
             }
         }
@@ -109,7 +108,7 @@ pub fn add_symbols(
         }
         Expr::BinaryExpr {
             ref mut left,
-            ref op,
+            op: _,
             ref mut right,
         } => {
             add_symbols(left, symbols, current_scope_id)?;
@@ -146,8 +145,7 @@ pub fn add_symbols(
                 *index = found_index;
             } else {
                 let msg = format!(
-                    "use of undeclared or not yet declared function '{}' at scope {}",
-                    fn_name, current_scope_id
+                    "use of undeclared or not yet declared function '{fn_name}' at scope {current_scope_id}"
                 );
                 if DEBUG {
                     eprintln!("{}", &msg);
@@ -192,7 +190,7 @@ pub fn add_symbols(
             // At first just create the symbol table entry for the function  and make the value the Unit value...
             let new_symbol_id = symbols.add_symbol(fn_name, Expr::Unit, current_scope_id)?;
             if DEBUG {
-                println!("Added symbol id {} for function {}", new_symbol_id, fn_name);
+                println!("Added symbol id {new_symbol_id} for function {fn_name}");
             }
             // Then update the body (value) with all the right symbol indices including the function itself, to
             // support recursion...
@@ -216,7 +214,7 @@ pub fn add_symbols(
             if let Some(found_index) = symbols.find_index_reachable_from(name, current_scope_id) {
                 *index = found_index;
             } else {
-                let msg = format!("use of undeclared or not yet declared variable '{}'", name);
+                let msg = format!("use of undeclared or not yet declared variable '{name}'");
                 return Err(CompileError::name(&msg, (0, 0)));
             }
         }
@@ -249,7 +247,7 @@ pub fn add_symbols(
         }
         Expr::Return(ref mut e) => add_symbols(e, symbols, current_scope_id)?,
 
-        Expr::ListLiteral { ref mut data, ref mut data_type } => {
+        Expr::ListLiteral { ref mut data, data_type: _ } => {
             // Add symbols for each element in the list
             for elem in data.iter_mut() {
                 add_symbols(elem, symbols, current_scope_id)?;
@@ -257,7 +255,7 @@ pub fn add_symbols(
             // Note: data_type here refers to the element type, not the list type itself
             // We don't need to change it in add_symbols - it's handled in typecheck
         }
-        Expr::MapLiteral { ref mut data, ref mut key_type, ref mut value_type } => {
+        Expr::MapLiteral { ref mut data, key_type: _, value_type: _ } => {
             // Add symbols for each value in the map
             for (_, value) in data.iter_mut() {
                 add_symbols(value, symbols, current_scope_id)?;
@@ -299,7 +297,7 @@ pub fn typecheck(
                     // Check for unsolved types
                     if matches!(left_type, DataType::Unsolved) || matches!(right_type, DataType::Unsolved) {
                         return Err(CompileError::typecheck(
-                            &format!("Cannot perform arithmetic on expressions with unknown types"),
+                            "Cannot perform arithmetic on expressions with unknown types",
                             (0, 0),
                         ));
                     }
@@ -310,7 +308,7 @@ pub fn typecheck(
                         (DataType::Int, DataType::Flt) | (DataType::Flt, DataType::Int) => Ok(DataType::Flt),
                         (DataType::Str, DataType::Str) if matches!(op, Operator::Add) => Ok(DataType::Str),
                         _ => Err(CompileError::typecheck(
-                            &format!("Type mismatch in binary operation {:?}: {:?} and {:?}", op, left_type, right_type),
+                            &format!("Type mismatch in binary operation {op:?}: {left_type:?} and {right_type:?}"),
                             (0, 0),
                         )),
                     }
@@ -319,7 +317,7 @@ pub fn typecheck(
                 Operator::Gt | Operator::Lt | Operator::Gte | Operator::Lte => {
                     if matches!(left_type, DataType::Unsolved) || matches!(right_type, DataType::Unsolved) {
                         return Err(CompileError::typecheck(
-                            &format!("Cannot compare expressions with unknown types"),
+                            "Cannot compare expressions with unknown types",
                             (0, 0),
                         ));
                     }
@@ -328,7 +326,7 @@ pub fn typecheck(
                         (DataType::Int, DataType::Int) | (DataType::Flt, DataType::Flt) |
                         (DataType::Int, DataType::Flt) | (DataType::Flt, DataType::Int) => Ok(DataType::Bool),
                         _ => Err(CompileError::typecheck(
-                            &format!("Cannot compare {:?} and {:?}", left_type, right_type),
+                            &format!("Cannot compare {left_type:?} and {right_type:?}"),
                             (0, 0),
                         )),
                     }
@@ -339,7 +337,7 @@ pub fn typecheck(
                         Ok(DataType::Bool)
                     } else {
                         Err(CompileError::typecheck(
-                            &format!("Cannot compare {:?} and {:?} for equality", left_type, right_type),
+                            &format!("Cannot compare {left_type:?} and {right_type:?} for equality"),
                             (0, 0),
                         ))
                     }
@@ -349,7 +347,7 @@ pub fn typecheck(
                     match (&left_type, &right_type) {
                         (DataType::Bool, DataType::Bool) => Ok(DataType::Bool),
                         _ => Err(CompileError::typecheck(
-                            &format!("Logical operators require boolean operands, got {:?} and {:?}", left_type, right_type),
+                            &format!("Logical operators require boolean operands, got {left_type:?} and {right_type:?}"),
                             (0, 0),
                         )),
                     }
@@ -364,12 +362,12 @@ pub fn typecheck(
                 Operator::Not => match expr_type {
                     DataType::Bool => Ok(DataType::Bool),
                     _ => Err(CompileError::typecheck(
-                        &format!("Not operator requires boolean operand, got {:?}", expr_type),
+                        &format!("Not operator requires boolean operand, got {expr_type:?}"),
                         (0, 0),
                     )),
                 },
                 _ => Err(CompileError::typecheck(
-                    &format!("Invalid unary operator: {:?}", op),
+                    &format!("Invalid unary operator: {op:?}"),
                     (0, 0),
                 )),
             }
@@ -379,7 +377,7 @@ pub fn typecheck(
             let cond_type = typecheck(cond, symbols, current_scope_id)?;
             if !matches!(cond_type, DataType::Bool) {
                 return Err(CompileError::typecheck(
-                    &format!("If condition must be boolean, got {:?}", cond_type),
+                    &format!("If condition must be boolean, got {cond_type:?}"),
                     (0, 0),
                 ));
             }
@@ -391,7 +389,7 @@ pub fn typecheck(
                 Ok(then_type)
             } else {
                 Err(CompileError::typecheck(
-                    &format!("If branches must have compatible types, got {:?} and {:?}", then_type, else_type),
+                    &format!("If branches must have compatible types, got {then_type:?} and {else_type:?}"),
                     (0, 0),
                 ))
             }
@@ -401,7 +399,7 @@ pub fn typecheck(
             let cond_type = typecheck(cond, symbols, current_scope_id)?;
             if !matches!(cond_type, DataType::Bool) {
                 return Err(CompileError::typecheck(
-                    &format!("While condition must be boolean, got {:?}", cond_type),
+                    &format!("While condition must be boolean, got {cond_type:?}"),
                     (0, 0),
                 ));
             }
@@ -414,26 +412,26 @@ pub fn typecheck(
             if let Some(var_type) = symbols.get_symbol_type(index) {
                 match var_type {
                     DataType::Unsolved => Err(CompileError::typecheck(
-                        &format!("Cannot determine type of variable: {}. Consider adding a type annotation.", name),
+                        &format!("Cannot determine type of variable: {name}. Consider adding a type annotation."),
                         (0, 0),
                     )),
                     _ => Ok(var_type),
                 }
             } else {
                 Err(CompileError::name(
-                    &format!("Undefined variable: {}", name),
+                    &format!("Undefined variable: {name}"),
                     (0, 0),
                 ))
             }
         }
         
-        Expr::Let { var_name, value, data_type, index } => {
+        Expr::Let { var_name, value, data_type, index: _ } => {
             let value_type = typecheck(value, symbols, current_scope_id)?;
             
             // Check if value type is fully resolved
             if matches!(value_type, DataType::Unsolved) {
                 return Err(CompileError::typecheck(
-                    &format!("Cannot infer type for '{}'. Please provide a type annotation.", var_name),
+                    &format!("Cannot infer type for '{var_name}'. Please provide a type annotation."),
                     (0, 0),
                 ));
             }
@@ -442,7 +440,7 @@ pub fn typecheck(
             if !matches!(data_type, DataType::Unsolved) {
                 if !types_compatible(data_type, &value_type) {
                     return Err(CompileError::typecheck(
-                        &format!("Type annotation mismatch for {}: expected {:?}, got {:?}", var_name, data_type, value_type),
+                        &format!("Type annotation mismatch for {var_name}: expected {data_type:?}, got {value_type:?}"),
                         (0, 0),
                     ));
                 }
@@ -461,13 +459,13 @@ pub fn typecheck(
                     Ok(value_type)
                 } else {
                     Err(CompileError::typecheck(
-                        &format!("Cannot assign {:?} to variable {} of type {:?}", value_type, name, var_type),
+                        &format!("Cannot assign {value_type:?} to variable {name} of type {var_type:?}"),
                         (0, 0),
                     ))
                 }
             } else {
                 Err(CompileError::name(
-                    &format!("Undefined variable: {}", name),
+                    &format!("Undefined variable: {name}"),
                     (0, 0),
                 ))
             }
@@ -490,7 +488,7 @@ pub fn typecheck(
             for elem_type in &element_types[1..] {
                 if !types_compatible(first_type, elem_type) {
                     return Err(CompileError::typecheck(
-                        &format!("List elements must have compatible types, found {:?} and {:?}", first_type, elem_type),
+                        &format!("List elements must have compatible types, found {first_type:?} and {elem_type:?}"),
                         (0, 0),
                     ));
                 }
@@ -501,19 +499,19 @@ pub fn typecheck(
             })
         }
         
-        Expr::RuntimeList { data_type, data } => {
+        Expr::RuntimeList { data_type, data: _ } => {
             Ok(DataType::List {
                 element_type: Box::new(data_type.clone()),
             })
         }
         
         Expr::MapLiteral { key_type, value_type, data } => {
-            for (key, value) in data {
+            for (_key, value) in data {
                 let value_type_actual = typecheck(value, symbols, current_scope_id)?;
                 // Check value types match
                 if !types_compatible(value_type, &value_type_actual) {
                     return Err(CompileError::typecheck(
-                        &format!("Map value type mismatch: expected {:?}, got {:?}", value_type, value_type_actual),
+                        &format!("Map value type mismatch: expected {value_type:?}, got {value_type_actual:?}"),
                         (0, 0),
                     ));
                 }
@@ -532,7 +530,7 @@ pub fn typecheck(
             })
         }
         
-        Expr::Range(start, end) => {
+        Expr::Range(_start, _end) => {
             // Ranges are Int ranges for now
             Ok(DataType::Range(Box::new(Expr::Literal(LiteralData::Int(0)))))
         }
@@ -564,13 +562,13 @@ pub fn typecheck(
                         Ok(func.return_type.clone())
                     }
                     _ => Err(CompileError::typecheck(
-                        &format!("{} is not a function", fn_name),
+                        &format!("{fn_name} is not a function"),
                         (0, 0),
                     )),
                 }
             } else {
                 Err(CompileError::name(
-                    &format!("Undefined function: {}", fn_name),
+                    &format!("Undefined function: {fn_name}"),
                     (0, 0),
                 ))
             }
@@ -581,19 +579,17 @@ pub fn typecheck(
             let body_type = typecheck(&func.body, symbols, current_scope_id)?;
             
             // Check return type matches if specified
-            if !matches!(func.return_type, DataType::Unsolved) {
-                if !types_compatible(&func.return_type, &body_type) {
-                    return Err(CompileError::typecheck(
-                        &format!("Function body returns {:?} but return type is {:?}", body_type, func.return_type),
-                        (0, 0),
-                    ));
-                }
+            if !matches!(func.return_type, DataType::Unsolved) && !types_compatible(&func.return_type, &body_type) {
+                return Err(CompileError::typecheck(
+                    &format!("Function body returns {body_type:?} but return type is {:?}", func.return_type),
+                    (0, 0),
+                ));
             }
             
             Ok(DataType::Unsolved) // Lambda expressions themselves don't have a simple type representation yet
         }
         
-        Expr::DefineFunction { fn_name, value, .. } => {
+        Expr::DefineFunction { value, .. } => {
             typecheck(value, symbols, current_scope_id)?;
             Ok(DataType::Unsolved) // Function definitions don't return a value
         }

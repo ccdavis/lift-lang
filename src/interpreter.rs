@@ -58,14 +58,14 @@ impl Expr {
         // Analyze  parse tree to index symbols across scopes.
         let result = add_symbols(self, symbols, 0);
         if let Err(ref msg) = result {
-            eprintln!("Error indexing variable and function names: {}", msg);
+            eprintln!("Error indexing variable and function names: {msg}");
             errors.push(msg.clone());
         }
         
         // Type check the expression tree
         let type_result = typecheck(self, symbols, 0);
         if let Err(ref msg) = type_result {
-            eprintln!("Type error: {}", msg);
+            eprintln!("Type error: {msg}");
             errors.push(msg.clone());
         }
 
@@ -151,8 +151,7 @@ impl Expr {
             Expr::RuntimeList { .. } => Ok(self.clone()), // Already in runtime form
             Expr::RuntimeMap { .. } => Ok(self.clone()),  // Already in runtime form
             _ => panic!(
-                "Interpreter error: interpret() not implemented for '{:?}'",
-                self
+                "Interpreter error: interpret() not implemented for '{self:?}'"
             ),
         }
     }
@@ -169,7 +168,7 @@ fn interpret_output(
 ) -> InterpreterResult {
     for e in data {
         let r = e.interpret(symbols, current_scope)?;
-        print!("{} ", r);
+        print!("{r} ");
     }
     println!();
     Ok(Expr::Unit)
@@ -188,7 +187,7 @@ fn interpret_body_or_block(
     for exp in body {
         tmp_expr_result = exp.interpret(symbols, env);
         if let Err(ref err) = tmp_expr_result {
-            eprintln!("Runtime error: {}", err);
+            eprintln!("Runtime error: {err}");
             return tmp_expr_result;
         }
     }
@@ -197,8 +196,8 @@ fn interpret_body_or_block(
 
 fn interpret_let(
     symbols: &mut SymbolTable,
-    var_name: &str,
-    data_type: &DataType,
+    _var_name: &str,
+    _data_type: &DataType,
     value: &Expr,
     index: &(usize, usize),
 ) -> InterpreterResult {
@@ -239,8 +238,7 @@ fn interpret_call(
             if args.len() != value.params.len() {
                 // TODO this should be in the compile pass
                 panic!(
-                    "Interpreter error: Function {} called with wrong number of arguments.",
-                    fn_name
+                    "Interpreter error: Function {fn_name} called with wrong number of arguments."
                 );
             }
 
@@ -258,7 +256,7 @@ fn interpret_call(
             interpret_lambda(symbols, &value, environment)
         }
         _ => {
-            if args.len() > 0 {
+            if !args.is_empty() {
                 // TODO this should really be in the compile pass
                 panic!("Interpreter error: function {} called with {} args but it is a simple expression not a lambda. The type checking pass should have caught this.",fn_name, args.len());
             }
@@ -284,7 +282,7 @@ fn interpret_var(
         Some(value) => value,
         None => {
             return Err(Box::new(RuntimeError::new(
-                &format!("Symbol '{}' not found at runtime", name),
+                &format!("Symbol '{name}' not found at runtime"),
                 None,
                 None,
             )))
@@ -306,7 +304,7 @@ fn interprets_as_true(
     if let Expr::Literal(LiteralData::Bool(b)) = cond.interpret(symbols, current_scope)? {
         Ok(b)
     } else {
-        panic!("Can't use expression '{:?}' as boolean. This is an interpreter bug. The type checker should have caught this.",cond);
+        panic!("Can't use expression '{cond:?}' as boolean. This is an interpreter bug. The type checker should have caught this.");
     }
 }
 
@@ -344,7 +342,7 @@ impl LiteralData {
         let result = match (op, self, rhs) {
             (Add, Int(l), Int(r)) => Int(l + r),
             (Add, Flt(l), Flt(r)) => Flt(l + r),
-            (Add, Str(l), Str(r)) => LiteralData::Str((l.to_string() + &r).into()),
+            (Add, Str(l), Str(r)) => LiteralData::Str((l.to_string() + r).into()),
             (Sub, Int(l), Int(r)) => Int(l - r),
             (Sub, Flt(l), Flt(r)) => Flt(l - r),
             (Mul, Int(l), Int(r)) => Int(l * r),
@@ -378,7 +376,7 @@ impl LiteralData {
             _ => {
                 // The type checker and parser should have prevented us from
                 // reaching this point.
-                let msg = format!("{:?} not allowed on {:?},{:?}", op, self, rhs);
+                let msg = format!("{op:?} not allowed on {self:?},{rhs:?}");
                 return Err(RuntimeError::new(&msg, None, None).into());
             }
         };
@@ -408,10 +406,9 @@ fn interpret_binary(
                 result = l_value.apply_binary_operator(r_value, op);
             } else {
                 let msg = format!(
-                    "Result of {:?} isn't a simple primary expression. Cannot apply {:?} to it.",
-                    left, op
+                    "Result of {left:?} isn't a simple primary expression. Cannot apply {op:?} to it."
                 );
-                error = Some(RuntimeError::new(&msg, None, None).into());
+                error = Some(RuntimeError::new(&msg, None, None));
             }
         }
         (Expr::Literal(l_value), _) => {
@@ -419,8 +416,7 @@ fn interpret_binary(
                 result = l_value.apply_binary_operator(r_value, op);
             } else {
                 let msg = format!(
-                    "Result of {:?} isn't a simple primary expression. Cannot apply {:?} to it.",
-                    right, op
+                    "Result of {right:?} isn't a simple primary expression. Cannot apply {op:?} to it."
                 );
                 error = Some(RuntimeError::new(&msg, None, None));
             }

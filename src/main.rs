@@ -5,7 +5,6 @@ mod syntax;
 use interpreter::InterpreterResult;
 use lalrpop_util::{lalrpop_mod, ParseError};
 use std::error;
-use std::error::Error;
 use std::fs;
 use symboltable::SymbolTable;
 use syntax::*;
@@ -19,7 +18,6 @@ use std::borrow::Cow::{self, Borrowed, Owned};
 use rustyline::highlight::{Highlighter, MatchingBracketHighlighter};
 use rustyline::hint::HistoryHinter;
 use rustyline::validate::MatchingBracketValidator;
-use rustyline::{Cmd, CompletionType, Config, EditMode, Editor, KeyEvent};
 use rustyline::{Completer, Helper, Hinter, Validator};
 
 #[derive(Helper, Completer, Hinter, Validator)]
@@ -349,7 +347,7 @@ pub fn repl() {
             let readline = rl.readline(&prompt);
             match readline {
                 Ok(ref line) => {
-                    if let Some(continuation_line) = line.trim_right().strip_suffix('\\') {
+                    if let Some(continuation_line) = line.trim_end().strip_suffix('\\') {
                         buffer.push_str(continuation_line);
                         prompt = ">>".to_string();
                         continue;
@@ -376,7 +374,7 @@ pub fn repl() {
                             buffer.clear();
                         }
                         Err(ref parse_error) => match parse_error {
-                            ParseError::UnrecognizedEof { location, expected } => {
+                            ParseError::UnrecognizedEof { location: _, expected: _ } => {
                                 buffer.push('\n');
                                 prompt = ">>".to_string();
                             }
@@ -973,11 +971,11 @@ fn test_interpreter_nested_if_else() {
 #[cfg(test)]
 fn run_lift_file(file_path: &str) -> Result<Expr, String> {
     let code = fs::read_to_string(file_path)
-        .map_err(|e| format!("Failed to read file: {}", e))?;
+        .map_err(|e| format!("Failed to read file: {e}"))?;
     
     let parser = grammar::ProgramPartExprParser::new();
     let mut ast = parser.parse(&code)
-        .map_err(|e| format!("Parse error: {}", e))?;
+        .map_err(|e| format!("Parse error: {e}"))?;
     
     let mut symbols = SymbolTable::new();
     
@@ -992,7 +990,7 @@ fn run_lift_file(file_path: &str) -> Result<Expr, String> {
     }
     
     ast.interpret(&mut symbols, 0)
-        .map_err(|e| format!("Runtime error: {}", e))
+        .map_err(|e| format!("Runtime error: {e}"))
 }
 
 #[test]
@@ -1368,7 +1366,7 @@ fn main() {
     } else {
         let program_file = &args[1];
         let code = fs::read_to_string(program_file)
-            .expect(&format!("File at {} unreadable.", program_file));
+            .expect(&format!("File at {program_file} unreadable."));
 
         if let Err(e) = interpret_code(&code) {
             eprintln!("Error: {}", e);
