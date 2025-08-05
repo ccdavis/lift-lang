@@ -1381,6 +1381,34 @@ fn test_lt_file_test_lists_simple() {
 }
 
 #[test]
+fn test_lt_file_list_indexing() {
+    let result = run_lift_file("tests/test_list_indexing_simple.lt").unwrap();
+    // The test file outputs indexed values and returns Unit
+    assert_eq!(result, Expr::Unit);
+}
+
+#[test]
+fn test_lt_file_list_indexing_comprehensive() {
+    let result = run_lift_file("tests/test_list_indexing_final.lt").unwrap();
+    // The test file tests various indexing scenarios and returns Unit
+    assert_eq!(result, Expr::Unit);
+}
+
+#[test]
+fn test_lt_file_map_indexing() {
+    let result = run_lift_file("tests/test_map_indexing_simple.lt").unwrap();
+    // The test file outputs indexed values and returns Unit
+    assert_eq!(result, Expr::Unit);
+}
+
+#[test]
+fn test_lt_file_map_indexing_comprehensive() {
+    let result = run_lift_file("tests/test_map_indexing_comprehensive.lt").unwrap();
+    // The test file tests various map indexing scenarios and returns Unit
+    assert_eq!(result, Expr::Unit);
+}
+
+#[test]
 fn test_lt_file_test_maps() {
     let result = run_lift_file("tests/test_maps.lt").unwrap();
     // The test file outputs various maps and returns Unit
@@ -1484,7 +1512,7 @@ fn test_empty_collection_type_errors() {
     let result2 = ast2.prepare(&mut symbols2);
     assert!(result2.is_err());
     let errors2 = result2.unwrap_err();
-    assert!(errors2[0].to_string().contains("Cannot infer type for empty map"));
+    assert!(errors2[0].to_string().contains("Cannot infer key type for empty map"));
     
     // Test 3: Empty list with type annotation should succeed
     let mut symbols3 = SymbolTable::new();
@@ -1502,6 +1530,275 @@ fn test_empty_collection_type_errors() {
     } else {
         panic!("Expected List type, got {:?}", nums_type);
     }
+}
+
+#[test]
+fn test_list_indexing() {
+    let parser = grammar::ProgramPartExprParser::new();
+    let mut symbols = SymbolTable::new();
+    
+    // Test basic indexing
+    let mut ast = parser.parse("[10, 20, 30][0]").unwrap();
+    ast.prepare(&mut symbols).unwrap();
+    let result = ast.interpret(&mut symbols, 0).unwrap();
+    assert_eq!(result, Expr::Literal(LiteralData::Int(10)));
+    
+    // Test indexing with expression
+    let mut ast = parser.parse("[10, 20, 30][1 + 1]").unwrap();
+    ast.prepare(&mut symbols).unwrap();
+    let result = ast.interpret(&mut symbols, 0).unwrap();
+    assert_eq!(result, Expr::Literal(LiteralData::Int(30)));
+    
+    // Test indexing with variable
+    let program = grammar::ProgramParser::new();
+    let mut ast = program.parse("let nums = [100, 200, 300]; let i = 1; nums[i]").unwrap();
+    ast.prepare(&mut symbols).unwrap();
+    let result = ast.interpret(&mut symbols, 0).unwrap();
+    assert_eq!(result, Expr::Literal(LiteralData::Int(200)));
+    
+    // Test string list indexing
+    let mut ast = parser.parse("['hello', 'world', 'lift'][1]").unwrap();
+    ast.prepare(&mut symbols).unwrap();
+    let result = ast.interpret(&mut symbols, 0).unwrap();
+    assert_eq!(result, Expr::Literal(LiteralData::Str("'world'".into())));
+    
+    // Test nested list indexing
+    let mut ast = parser.parse("[[1, 2], [3, 4]][0][1]").unwrap();
+    ast.prepare(&mut symbols).unwrap();
+    let result = ast.interpret(&mut symbols, 0).unwrap();
+    assert_eq!(result, Expr::Literal(LiteralData::Int(2)));
+}
+
+#[test]
+fn test_list_indexing_type_checking() {
+    let parser = grammar::ProgramPartExprParser::new();
+    let mut symbols = SymbolTable::new();
+    
+    // Test type inference through indexing
+    let program = grammar::ProgramParser::new();
+    let mut ast = program.parse("let nums = [1, 2, 3]; let x = nums[0]").unwrap();
+    ast.prepare(&mut symbols).unwrap();
+    
+    // Check that x has type Int
+    let x_index = symbols.find_index_reachable_from("x", 0).unwrap();
+    let x_type = symbols.get_symbol_type(&x_index).unwrap();
+    assert_eq!(x_type, DataType::Int);
+    
+    // Test indexing type must be Int
+    let mut ast = parser.parse("[1, 2, 3][1.5]").unwrap();
+    let result = ast.prepare(&mut symbols);
+    assert!(result.is_err());
+    assert!(result.unwrap_err()[0].to_string().contains("List index must be of type Int"));
+    
+    // Test can only index lists
+    let mut ast = parser.parse("42[0]").unwrap();
+    let result = ast.prepare(&mut symbols);
+    assert!(result.is_err());
+    assert!(result.unwrap_err()[0].to_string().contains("Cannot index into type"));
+}
+
+#[test]
+fn test_list_indexing_runtime_errors() {
+    let parser = grammar::ProgramPartExprParser::new();
+    let mut symbols = SymbolTable::new();
+    
+    // Test index out of bounds
+    let mut ast = parser.parse("[10, 20, 30][5]").unwrap();
+    ast.prepare(&mut symbols).unwrap();
+    let result = ast.interpret(&mut symbols, 0);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("Index 5 out of bounds for list of length 3"));
+    
+    // Test negative index
+    let mut ast = parser.parse("[10, 20, 30][-1]").unwrap();
+    ast.prepare(&mut symbols).unwrap();
+    let result = ast.interpret(&mut symbols, 0);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("Index -1 out of bounds"));
+}
+
+#[test]
+fn test_map_indexing() {
+    let parser = grammar::ProgramPartExprParser::new();
+    let mut symbols = SymbolTable::new();
+    
+    // Test basic map indexing with integer keys
+    let mut ast = parser.parse("#{1: 'one', 2: 'two', 3: 'three'}[2]").unwrap();
+    ast.prepare(&mut symbols).unwrap();
+    let result = ast.interpret(&mut symbols, 0).unwrap();
+    assert_eq!(result, Expr::Literal(LiteralData::Str("'two'".into())));
+    
+    // Test map indexing with string keys
+    let mut ast = parser.parse("#{'a': 10, 'b': 20, 'c': 30}['b']").unwrap();
+    ast.prepare(&mut symbols).unwrap();
+    let result = ast.interpret(&mut symbols, 0).unwrap();
+    assert_eq!(result, Expr::Literal(LiteralData::Int(20)));
+    
+    // Test map indexing with boolean keys
+    let mut ast = parser.parse("#{true: 'yes', false: 'no'}[false]").unwrap();
+    ast.prepare(&mut symbols).unwrap();
+    let result = ast.interpret(&mut symbols, 0).unwrap();
+    assert_eq!(result, Expr::Literal(LiteralData::Str("'no'".into())));
+    
+    // Test map indexing with variable
+    let program = grammar::ProgramParser::new();
+    let mut ast = program.parse("let m = #{'x': 100, 'y': 200}; let k = 'x'; m[k]").unwrap();
+    ast.prepare(&mut symbols).unwrap();
+    let result = ast.interpret(&mut symbols, 0).unwrap();
+    assert_eq!(result, Expr::Literal(LiteralData::Int(100)));
+    
+    // Test nested map indexing
+    let mut ast = parser.parse("#{'outer': #{'inner': 42}}['outer']['inner']").unwrap();
+    ast.prepare(&mut symbols).unwrap();
+    let result = ast.interpret(&mut symbols, 0).unwrap();
+    assert_eq!(result, Expr::Literal(LiteralData::Int(42)));
+}
+
+#[test]
+fn test_map_indexing_type_checking() {
+    let parser = grammar::ProgramPartExprParser::new();
+    let mut symbols = SymbolTable::new();
+    
+    // Test type inference through map indexing
+    let program = grammar::ProgramParser::new();
+    let mut ast = program.parse("let m = #{'a': 123}; let v = m['a']").unwrap();
+    ast.prepare(&mut symbols).unwrap();
+    
+    // Check that v has type Int
+    let v_index = symbols.find_index_reachable_from("v", 0).unwrap();
+    let v_type = symbols.get_symbol_type(&v_index).unwrap();
+    assert_eq!(v_type, DataType::Int);
+    
+    // Test wrong key type
+    let mut ast = parser.parse("#{1: 'one', 2: 'two'}['key']").unwrap();
+    let result = ast.prepare(&mut symbols);
+    assert!(result.is_err());
+    assert!(result.unwrap_err()[0].to_string().contains("Map key must be of type Int"));
+    
+    // Test float key error
+    let mut ast = parser.parse("#{'a': 1}[1.5]").unwrap();
+    let result = ast.prepare(&mut symbols);
+    assert!(result.is_err());
+    assert!(result.unwrap_err()[0].to_string().contains("Map key must be of type Str"));
+}
+
+#[test]
+fn test_map_indexing_runtime_errors() {
+    let parser = grammar::ProgramPartExprParser::new();
+    let mut symbols = SymbolTable::new();
+    
+    // Test key not found
+    let mut ast = parser.parse("#{1: 'one', 2: 'two'}[3]").unwrap();
+    ast.prepare(&mut symbols).unwrap();
+    let result = ast.interpret(&mut symbols, 0);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("Key Int(3) not found in map"));
+    
+    // Test float key runtime error
+    let program = grammar::ProgramParser::new();
+    let mut ast = program.parse("let k: Flt = 1.5; #{'a': 1}['a']").unwrap(); // This should pass type check since we're using 'a' not k
+    ast.prepare(&mut symbols).unwrap();
+    let result = ast.interpret(&mut symbols, 0).unwrap();
+    assert_eq!(result, Expr::Literal(LiteralData::Int(1)));
+}
+
+#[test]
+fn test_not_operator() {
+    let parser = grammar::ProgramParser::new();
+    let mut symbols = SymbolTable::new();
+    
+    // Test basic not operation
+    let mut ast = parser.parse("not true").unwrap();
+    ast.prepare(&mut symbols).unwrap();
+    let result = ast.interpret(&mut symbols, 0).unwrap();
+    assert_eq!(result, Expr::Literal(LiteralData::Bool(false)));
+    
+    // Test double not
+    let mut ast = parser.parse("not not false").unwrap();
+    ast.prepare(&mut symbols).unwrap();
+    let result = ast.interpret(&mut symbols, 0).unwrap();
+    assert_eq!(result, Expr::Literal(LiteralData::Bool(false)));
+    
+    // Test not with comparison
+    let mut ast = parser.parse("not (5 > 10)").unwrap();
+    ast.prepare(&mut symbols).unwrap();
+    let result = ast.interpret(&mut symbols, 0).unwrap();
+    assert_eq!(result, Expr::Literal(LiteralData::Bool(true)));
+    
+    // Test not with logical operators
+    let mut ast = parser.parse("not (true and false)").unwrap();
+    ast.prepare(&mut symbols).unwrap();
+    let result = ast.interpret(&mut symbols, 0).unwrap();
+    assert_eq!(result, Expr::Literal(LiteralData::Bool(true)));
+    
+    // Test type checking - not with non-boolean should fail
+    let mut ast = parser.parse("not 42").unwrap();
+    let result = ast.prepare(&mut symbols);
+    assert!(result.is_err());
+    assert!(result.unwrap_err()[0].to_string().contains("Not operator requires boolean operand"));
+}
+
+#[test]
+fn test_indexing_from_inner_scopes() {
+    let parser = grammar::ProgramParser::new();
+    let mut symbols = SymbolTable::new();
+    
+    // Test list indexing from if expression
+    let mut ast = parser.parse("
+        let nums = [10, 20, 30];
+        let result: Int = if true { nums[1] } else { nums[0] };
+        result
+    ").unwrap();
+    ast.prepare(&mut symbols).unwrap();
+    let result = ast.interpret(&mut symbols, 0).unwrap();
+    assert_eq!(result, Expr::Literal(LiteralData::Int(20)));
+    
+    // Test map indexing from nested blocks
+    let mut symbols2 = SymbolTable::new();
+    let mut ast = parser.parse("
+        let map = #{'a': 100, 'b': 200};
+        let result: Int = {
+            let key = 'b';
+            { map[key] }
+        };
+        result
+    ").unwrap();
+    ast.prepare(&mut symbols2).unwrap();
+    let result = ast.interpret(&mut symbols2, 0).unwrap();
+    assert_eq!(result, Expr::Literal(LiteralData::Int(200)));
+    
+    // Test accessing outer scope from deeply nested blocks
+    let mut symbols3 = SymbolTable::new();
+    let mut ast = parser.parse("
+        let outer = [1, 2, 3, 4, 5];
+        let result: Int = {
+            let a = 2;
+            {
+                let b = 3;
+                { outer[b] }
+            }
+        };
+        result
+    ").unwrap();
+    ast.prepare(&mut symbols3).unwrap();
+    let result = ast.interpret(&mut symbols3, 0).unwrap();
+    assert_eq!(result, Expr::Literal(LiteralData::Int(4)));
+    
+    // Test mixed list and map access across scopes
+    let mut symbols4 = SymbolTable::new();
+    let mut ast = parser.parse("
+        let list = [10, 20, 30];
+        let map = #{1: 100, 2: 200};
+        let result: Int = {
+            let idx = 2;
+            let key = 1;
+            list[idx] + map[key]  // 30 + 100 = 130
+        };
+        result
+    ").unwrap();
+    ast.prepare(&mut symbols4).unwrap();
+    let result = ast.interpret(&mut symbols4, 0).unwrap();
+    assert_eq!(result, Expr::Literal(LiteralData::Int(130)));
 }
 
 #[test]
@@ -1543,8 +1840,15 @@ fn test_lt_file_comments() {
 #[test]
 fn test_lt_file_negative_numbers() {
     let result = run_lift_file("tests/test_negative_numbers.lt").unwrap();
-    // The test file tests negative numbers and returns -62 (sum of x, sum, product, quotient)
-    assert_eq!(result, Expr::Literal(LiteralData::Int(-62)));
+    // The test file tests negative numbers and returns -64 (sum of x, sum, product, quotient)
+    assert_eq!(result, Expr::Literal(LiteralData::Int(-64)));
+}
+
+#[test]
+fn test_lt_file_not_operator() {
+    let result = run_lift_file("tests/test_not_operator.lt").unwrap();
+    // The test file tests the not operator and returns 42
+    assert_eq!(result, Expr::Literal(LiteralData::Int(42)));
 }
 
 fn main() {

@@ -283,6 +283,10 @@ pub enum Expr {
     },
     Return(Box<Expr>),
     Unit,
+    Index {
+        expr: Box<Expr>,
+        index: Box<Expr>,
+    },
 }
 impl std::fmt::Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -334,6 +338,9 @@ impl std::fmt::Display for Expr {
             }
             Expr::Range(start, end) => {
                 write!(f, "{}..{}", start, end)
+            }
+            Expr::Index { expr, index } => {
+                write!(f, "{}[{}]", expr, index)
             }
             _ => write!(f, "{:?}", &self),
         }

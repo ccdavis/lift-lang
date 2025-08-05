@@ -96,8 +96,14 @@ AssignResult: Expr  = {
 
 ExprLogicOr = ExprInfix<ExprLogicOr, OpLogicOr, ExprLogicAnd>;
 OpLogicOr: Operator = "or" => Operator::Or;
-ExprLogicAnd = ExprInfix<ExprLogicAnd, OpLogicAnd, ExprEquality>;
+ExprLogicAnd = ExprInfix<ExprLogicAnd, OpLogicAnd, ExprLogicNot>;
 OpLogicAnd: Operator = "and" => Operator::And;
+
+ExprLogicNot: Expr = {
+    "not" <e:ExprLogicNot> => Expr::UnaryExpr { op: Operator::Not, expr: Box::new(e) },
+    ExprEquality,
+};
+
 ExprEquality = ExprInfix<ExprEquality, OpEquality, ExprComparison>;
 
 OpEquality: Operator = {
@@ -153,8 +159,7 @@ Factor: Expr = {
 };
 
 Term: Expr = {
-    "(" <e:ProgramPartExpr> ")" => e,    
-    LiteralData => Expr::Literal(<>),
+    Postfix,
     "-" <t:Term> => {
         match &t {
             Expr::Literal(LiteralData::Int(n)) => Expr::Literal(LiteralData::Int(-n)),
@@ -162,6 +167,16 @@ Term: Expr = {
             _ => Expr::sub(Expr::Literal(LiteralData::Int(0)), t),
         }
     },
+};
+
+Postfix: Expr = {
+    <e:Postfix> "[" <i:ProgramPartExpr> "]" => Expr::Index { expr: Box::new(e), index: Box::new(i) },
+    Atom,
+};
+
+Atom: Expr = {
+    "(" <e:ProgramPartExpr> ")" => e,    
+    LiteralData => Expr::Literal(<>),
     "[" <elements:CommaSeparated<ProgramPartExpr>> "]" => {
         Expr::ListLiteral {
             data_type: DataType::Unsolved,

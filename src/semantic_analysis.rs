@@ -293,6 +293,15 @@ pub fn add_symbols(
         Expr::Range(..) => {
             // Range literals don't need symbol processing
         }
+        Expr::Index { ref mut expr, ref mut index } => {
+            // Add symbols for both the expression being indexed and the index itself
+            add_symbols(expr, symbols, _current_scope_id)?;
+            add_symbols(index, symbols, _current_scope_id)?;
+        }
+        Expr::UnaryExpr { ref mut expr, .. } => {
+            // Process the inner expression to handle any variables
+            add_symbols(expr, symbols, _current_scope_id)?;
+        }
         _ => (),
     }
     Ok(())
@@ -619,28 +628,49 @@ pub fn typecheck(
         }
         
         Expr::MapLiteral { key_type, value_type, data } => {
-            // Check for empty maps with unsolved types
-            if data.is_empty() && (matches!(key_type, DataType::Unsolved) || matches!(value_type, DataType::Unsolved)) {
+            // Infer key type if not specified
+            let actual_key_type = if !matches!(key_type, DataType::Unsolved) {
+                key_type.clone()
+            } else if !data.is_empty() {
+                // Determine key type from first entry
+                match &data[0].0 {
+                    KeyData::Int(_) => DataType::Int,
+                    KeyData::Str(_) => DataType::Str,
+                    KeyData::Bool(_) => DataType::Bool,
+                }
+            } else {
                 return Err(CompileError::typecheck(
-                    "Cannot infer type for empty map. Please provide a type annotation.",
+                    "Cannot infer key type for empty map. Please provide a type annotation.",
                     (0, 0),
                 ));
-            }
+            };
             
+            // Infer value type if not specified
+            let actual_value_type = if !matches!(value_type, DataType::Unsolved) {
+                value_type.clone()
+            } else if let Some((_, first_value)) = data.first() {
+                typecheck(first_value, symbols, _current_scope_id)?
+            } else {
+                return Err(CompileError::typecheck(
+                    "Cannot infer value type for empty map. Please provide a type annotation.",
+                    (0, 0),
+                ));
+            };
+            
+            // Check all values match the inferred type
             for (_key, value) in data {
                 let value_type_actual = typecheck(value, symbols, _current_scope_id)?;
-                // Check value types match
-                if !types_compatible(value_type, &value_type_actual) {
+                if !types_compatible(&actual_value_type, &value_type_actual) {
                     return Err(CompileError::typecheck(
-                        &format!("Map value type mismatch: expected {value_type:?}, got {value_type_actual:?}"),
+                        &format!("Map value type mismatch: expected {:?}, got {:?}", actual_value_type, value_type_actual),
                         (0, 0),
                     ));
                 }
             }
             
             Ok(DataType::Map {
-                key_type: Box::new(key_type.clone()),
-                value_type: Box::new(value_type.clone()),
+                key_type: Box::new(actual_key_type),
+                value_type: Box::new(actual_value_type),
             })
         }
         
@@ -758,6 +788,50 @@ pub fn typecheck(
         Expr::Match { .. } => Ok(DataType::Unsolved), // TODO: Implement match type checking
         
         Expr::Unit => Ok(DataType::Unsolved), // Unit type could be a specific type in the future
+        
+        Expr::Index { expr, index } => {
+            let expr_type = typecheck(expr, symbols, _current_scope_id)?;
+            let index_type = typecheck(index, symbols, _current_scope_id)?;
+            
+            // Handle different collection types
+            match expr_type {
+                DataType::List { element_type } => {
+                    // For lists, index must be Int
+                    if index_type != DataType::Int {
+                        return Err(CompileError::typecheck(
+                            &format!("List index must be of type Int, found {:?}", index_type),
+                            (0, 0),
+                        ));
+                    }
+                    Ok(*element_type)
+                },
+                DataType::Map { key_type, value_type } => {
+                    // For maps, index must match key type
+                    if index_type != *key_type {
+                        return Err(CompileError::typecheck(
+                            &format!("Map key must be of type {:?}, found {:?}", key_type, index_type),
+                            (0, 0),
+                        ));
+                    }
+                    // Maps can only have Int, Str, or Bool keys (not Float)
+                    match &index_type {
+                        DataType::Int | DataType::Str | DataType::Bool => Ok(*value_type),
+                        DataType::Flt => Err(CompileError::typecheck(
+                            "Map keys cannot be of type Flt",
+                            (0, 0),
+                        )),
+                        _ => Err(CompileError::typecheck(
+                            &format!("Invalid map key type: {:?}", index_type),
+                            (0, 0),
+                        ))
+                    }
+                },
+                _ => Err(CompileError::typecheck(
+                    &format!("Cannot index into type {:?}, only List and Map types can be indexed", expr_type),
+                    (0, 0),
+                ))
+            }
+        }
     }
 }
 
@@ -840,6 +914,14 @@ pub fn determine_type_with_symbols(
                 }
             } else {
                 None
+            }
+        }
+        
+        Expr::Index { expr, .. } => {
+            match determine_type_with_symbols(expr, symbols, scope)? {
+                DataType::List { element_type } => Some(*element_type),
+                DataType::Map { value_type, .. } => Some(*value_type),
+                _ => None,
             }
         }
         
@@ -964,6 +1046,14 @@ pub fn determine_type(expression: &Expr) -> Option<DataType> {
         Expr::Range(start, end) => {
             match (start, end) {
                 (LiteralData::Int(_), LiteralData::Int(_)) => Some(DataType::Range(Box::new(Expr::Range(start.clone(), end.clone())))),
+                _ => None,
+            }
+        }
+        
+        Expr::Index { expr, .. } => {
+            match determine_type(expr)? {
+                DataType::List { element_type } => Some(*element_type),
+                DataType::Map { value_type, .. } => Some(*value_type),
                 _ => None,
             }
         }

@@ -150,6 +150,87 @@ impl Expr {
             Expr::RuntimeList { .. } => Ok(self.clone()), // Already in runtime form
             Expr::RuntimeMap { .. } => Ok(self.clone()),  // Already in runtime form
             Expr::Range(..) => Ok(self.clone()), // Range is a value type
+            Expr::Index { expr, index } => {
+                let evaluated_expr = expr.interpret(symbols, current_scope)?;
+                let evaluated_index = index.interpret(symbols, current_scope)?;
+                
+                // Perform indexing based on expression type
+                match &evaluated_expr {
+                    Expr::RuntimeList { data, .. } => {
+                        // For lists, index must be an integer
+                        let index_value = match &evaluated_index {
+                            Expr::Literal(LiteralData::Int(i)) | Expr::RuntimeData(LiteralData::Int(i)) => *i,
+                            _ => return Err(Box::new(RuntimeError::new(
+                                "List index must be an integer", 
+                                None, 
+                                None
+                            ))),
+                        };
+                        
+                        if index_value < 0 || index_value as usize >= data.len() {
+                            return Err(Box::new(RuntimeError::new(
+                                &format!("Index {} out of bounds for list of length {}", index_value, data.len()),
+                                None,
+                                None
+                            )));
+                        }
+                        Ok(data[index_value as usize].clone())
+                    },
+                    Expr::RuntimeMap { data, .. } => {
+                        // For maps, convert the index to a KeyData
+                        let key = match &evaluated_index {
+                            Expr::Literal(lit) | Expr::RuntimeData(lit) => {
+                                match lit {
+                                    LiteralData::Int(i) => crate::syntax::KeyData::Int(*i),
+                                    LiteralData::Str(s) => crate::syntax::KeyData::Str(s.clone()),
+                                    LiteralData::Bool(b) => crate::syntax::KeyData::Bool(*b),
+                                    LiteralData::Flt(_) => return Err(Box::new(RuntimeError::new(
+                                        "Map keys cannot be of type Float",
+                                        None,
+                                        None
+                                    ))),
+                                }
+                            },
+                            _ => return Err(Box::new(RuntimeError::new(
+                                "Map key must be a literal value",
+                                None,
+                                None
+                            ))),
+                        };
+                        
+                        // Look up the key in the map
+                        match data.get(&key) {
+                            Some(value) => Ok(value.clone()),
+                            None => Err(Box::new(RuntimeError::new(
+                                &format!("Key {:?} not found in map", key),
+                                None,
+                                None
+                            )))
+                        }
+                    },
+                    _ => Err(Box::new(RuntimeError::new(
+                        &format!("Cannot index into {:?}", evaluated_expr),
+                        None,
+                        None
+                    )))
+                }
+            },
+            Expr::UnaryExpr { op, expr } => {
+                match op {
+                    Operator::Not => {
+                        let evaluated = expr.interpret(symbols, current_scope)?;
+                        match evaluated {
+                            Expr::Literal(LiteralData::Bool(b)) => Ok(Expr::Literal(LiteralData::Bool(!b))),
+                            _ => Err(Box::new(RuntimeError::new(
+                                &format!("'not' operator requires a boolean value, got {:?}", evaluated),
+                                None,
+                                None
+                            )))
+                        }
+                    },
+                    _ => panic!("Interpreter error: UnaryExpr operator {:?} not implemented", op)
+                }
+            },
             _ => panic!(
                 "Interpreter error: interpret() not implemented for '{self:?}'"
             ),
