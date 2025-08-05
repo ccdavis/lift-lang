@@ -1851,6 +1851,51 @@ fn test_lt_file_not_operator() {
     assert_eq!(result, Expr::Literal(LiteralData::Int(42)));
 }
 
+#[test]
+fn test_if_expression_type_inference() {
+    let parser = grammar::ProgramParser::new();
+    let mut symbols = SymbolTable::new();
+    
+    // Test 1: Basic if-else type inference
+    let mut ast = parser.parse("let x = if true { 42 } else { 100 }").unwrap();
+    ast.prepare(&mut symbols).unwrap();
+    let result = ast.interpret(&mut symbols, 0).unwrap();
+    assert_eq!(result, Expr::Unit);
+    
+    // Test 2: String type inference
+    let mut ast = parser.parse("let y = if false { 'hello' } else { 'world' }").unwrap();
+    ast.prepare(&mut symbols).unwrap();
+    
+    // Test 3: Type mismatch should fail
+    let mut ast = parser.parse("let z = if true { 42 } else { 'string' }").unwrap();
+    let result = ast.prepare(&mut symbols);
+    assert!(result.is_err());
+    assert!(result.unwrap_err()[0].to_string().contains("Cannot infer type"));
+    
+    // Test 4: If without else cannot be used in let
+    let mut symbols2 = SymbolTable::new();
+    let mut ast = parser.parse("let w = if true { 42 }").unwrap();
+    let result = ast.prepare(&mut symbols2);
+    assert!(result.is_err());
+    assert!(result.unwrap_err()[0].to_string().contains("Cannot infer type"));
+    
+    // Test 5: If expression in function return type
+    let mut symbols3 = SymbolTable::new();
+    let mut ast = parser.parse("function test(): Int { if true { 1 } else { 2 } }").unwrap();
+    ast.prepare(&mut symbols3).unwrap();
+    
+    // Test 6: Nested if expressions
+    let mut ast = parser.parse("let grade = if 85 >= 90 { 'A' } else if 85 >= 80 { 'B' } else { 'C' }").unwrap();
+    ast.prepare(&mut symbols).unwrap();
+}
+
+#[test] 
+fn test_lt_file_if_type_inference() {
+    let result = run_lift_file("tests/test_if_type_inference.lt").unwrap();
+    // The test file tests if expression type inference and returns 42
+    assert_eq!(result, Expr::Literal(LiteralData::Int(42)));
+}
+
 fn main() {
     let args = std::env::args().collect::<Vec<String>>();
     if args.len() < 2 {

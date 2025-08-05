@@ -553,17 +553,26 @@ pub fn typecheck(
                 Ok(resolved_type)
             } else {
                 // No type annotation, must infer from value
-                let value_type = typecheck(value, symbols, _current_scope_id)?;
-                
-                // Check if value type is fully resolved
-                if matches!(value_type, DataType::Unsolved) {
-                    return Err(CompileError::typecheck(
+                // First try to infer using determine_type_with_symbols which handles special cases
+                if let Some(inferred_type) = determine_type_with_symbols(value, symbols, _current_scope_id) {
+                    // Then verify with full typecheck
+                    let value_type = typecheck(value, symbols, _current_scope_id)?;
+                    if !matches!(value_type, DataType::Unsolved) {
+                        Ok(value_type)
+                    } else {
+                        Err(CompileError::typecheck(
+                            &format!("Cannot infer type for '{var_name}'. Please provide a type annotation."),
+                            (0, 0),
+                        ))
+                    }
+                } else {
+                    // determine_type_with_symbols returned None, which means type cannot be inferred
+                    // This handles cases like if without else
+                    Err(CompileError::typecheck(
                         &format!("Cannot infer type for '{var_name}'. Please provide a type annotation."),
                         (0, 0),
-                    ));
+                    ))
                 }
-                
-                Ok(value_type)
             }
         }
         
@@ -924,6 +933,35 @@ pub fn determine_type_with_symbols(
                 _ => None,
             }
         }
+        
+        Expr::If { then, final_else, .. } => {
+            // If expression type is the type of its branches
+            // Check if there's no else branch (Unit represents missing else)
+            if matches!(final_else.as_ref(), Expr::Unit) {
+                // Cannot use if without else in contexts requiring type inference
+                return None;
+            }
+            
+            let then_type = determine_type_with_symbols(then, symbols, scope)?;
+            let else_type = determine_type_with_symbols(final_else, symbols, scope)?;
+            
+            if types_compatible(&then_type, &else_type) {
+                Some(then_type)
+            } else {
+                None
+            }
+        }
+        
+        Expr::Block { body, .. } => {
+            // Block type is the type of its last expression
+            if let Some(last_expr) = body.last() {
+                determine_type_with_symbols(last_expr, symbols, scope)
+            } else {
+                Some(DataType::Unsolved) // Empty block returns Unit
+            }
+        }
+        
+        Expr::UnaryExpr { op: Operator::Not, .. } => Some(DataType::Bool),
         
         _ => determine_type(expression), // Fall back to original for other cases
     }
