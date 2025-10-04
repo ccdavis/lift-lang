@@ -1,0 +1,75 @@
+// Test: User-defined string formatting methods
+// Expected: Various string transformations should work correctly
+
+type PersonName = Str;
+type Title = Str;
+type Message = Str;
+
+// Name formatting methods
+function PersonName.formal(): Str {
+    'Mr./Ms. ' + self
+};
+
+function PersonName.casual(): Str {
+    'Hey ' + self + '!'
+};
+
+function PersonName.shout(): Str {
+    self.upper() + '!!!'
+};
+
+// Title methods
+function Title.with_prefix(): Str {
+    'Title: ' + self
+};
+
+function Title.book_format(): Str {
+    '"' + self + '"'
+};
+
+// Message methods
+function Message.exclaim(): Message {
+    self + '!'
+};
+
+function Message.question(): Message {
+    self + '?'
+};
+
+function Message.whisper(): Str {
+    '(' + self.lower() + ')'
+};
+
+// Test name formatting
+let name1: PersonName = 'Alice';
+output('Formal:', name1.formal());              // 'Mr./Ms. Alice'
+output('Casual:', name1.casual());              // 'Hey Alice!'
+output('Shout:', name1.shout());                // 'ALICE!!!'
+
+let name2: PersonName = 'Bob';
+output('Bob casual:', name2.casual());          // 'Hey Bob!'
+
+// Test title formatting
+let title1: Title = 'The Great Adventure';
+output('With prefix:', title1.with_prefix());   // 'Title: The Great Adventure'
+output('Book format:', title1.book_format());   // '"The Great Adventure"'
+
+// Test message formatting
+let msg1: Message = 'Hello';
+output('Exclaim:', msg1.exclaim());             // 'Hello!'
+output('Question:', msg1.question());           // 'Hello?'
+output('Whisper:', msg1.whisper());             // '(hello)'
+
+// Test method chaining
+let msg2: Message = 'test';
+output('Chain 1:', msg2.exclaim().upper());     // 'TEST!'
+
+let name3: PersonName = 'charlie';
+output('Chain 2:', name3.shout());              // 'CHARLIE!!!'
+
+// Test built-in + custom combination
+let msg3: Message = 'world';
+let result = msg3.upper().exclaim();
+output('Built-in + custom:', result);           // 'WORLD!'
+
+output('String formatting tests completed')

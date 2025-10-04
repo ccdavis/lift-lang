@@ -1,0 +1,54 @@
+// Test custom user-defined methods on type aliases
+
+// Define type aliases
+type Angle = Flt;
+type Temperature = Flt;
+type Name = Str;
+type Age = Int;
+
+// Define custom methods on type aliases
+
+// Custom method on Angle (Flt alias)
+function Angle.double(): Angle {
+    self * 2.0
+};
+
+// Custom method on Temperature (Flt alias)
+function Temperature.to_celsius(): Temperature {
+    (self - 32.0) / 1.8
+};
+
+// Custom method on Name (Str alias)
+function Name.greet(): Str {
+    'Hello, ' + self + '!'
+};
+
+// Custom method on Age (Int alias)
+function Age.is_adult(): Bool {
+    self >= 18
+};
+
+// Test the custom methods
+let angle1: Angle = 45.0;
+output('Double 45:', angle1.double());
+
+let temp: Temperature = 98.6;
+output('98.6 F to Celsius:', temp.to_celsius());
+
+let name1: Name = 'Alice';
+output(name1.greet());
+
+let name2: Name = 'Bob';
+output(name2.greet());
+
+let age1: Age = 25;
+output('Is 25 an adult?', age1.is_adult());
+
+let age2: Age = 15;
+output('Is 15 an adult?', age2.is_adult());
+
+// Test combining custom methods with built-in methods
+let msg: Name = 'hello';
+output('Custom + built-in:', msg.greet().upper());
+
+output('All tests passed!')

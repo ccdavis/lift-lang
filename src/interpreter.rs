@@ -55,6 +55,11 @@ impl Expr {
     pub fn prepare(&mut self, symbols: &mut SymbolTable) -> Result<(), Vec<CompileError>> {
         let mut errors = Vec::new();
 
+        // Add built-in methods to the symbol table
+        if let Err(err) = symbols.add_builtins() {
+            errors.push(err);
+        }
+
         // Analyze  parse tree to index symbols across scopes.
         let result = add_symbols(self, symbols, 0);
         if let Err(ref msg) = result {
@@ -93,6 +98,7 @@ impl Expr {
                 ref value,
                 ref index,
                 ref data_type,
+                mutable: _,
             } => interpret_let(symbols, var_name, data_type, value, index),
             Expr::BinaryExpr {
                 ref left,
@@ -115,7 +121,61 @@ impl Expr {
                 ref fn_name,
                 ref index,
                 ref args,
-            } => interpret_call(symbols, current_scope, fn_name, *index, args),
+            } => {
+                // Generic call handling - works for both regular functions and UFCS method calls
+                interpret_call(symbols, current_scope, fn_name, *index, args)
+            },
+            Expr::MethodCall {
+                ref receiver,
+                ref method_name,
+                ref fn_index,
+                ref args,
+            } => {
+                // Evaluate the receiver
+                let receiver_value = receiver.interpret(symbols, current_scope)?;
+
+                // Look up the method from the symbol table and extract builtin info
+                let builtin_method = if let Some(fn_expr) = symbols.get_symbol_value(fn_index) {
+                    match fn_expr {
+                        Expr::DefineFunction { value, .. } => {
+                            match value.as_ref() {
+                                Expr::Lambda { value: func, .. } => {
+                                    func.builtin.clone()
+                                }
+                                _ => None
+                            }
+                        }
+                        _ => None
+                    }
+                } else {
+                    return Err(Box::new(RuntimeError::new(
+                        &format!("Method '{}' not found in symbol table", method_name),
+                        None, None
+                    )));
+                };
+
+                // Now handle the method call based on whether it's built-in or user-defined
+                if let Some(builtin) = builtin_method {
+                    // Evaluate all arguments
+                    let mut evaluated_args = Vec::new();
+                    for arg in args {
+                        evaluated_args.push(arg.value.interpret(symbols, current_scope)?);
+                    }
+
+                    // Execute the built-in method
+                    builtin.execute(receiver_value, evaluated_args)
+                        .map_err(|e| Box::new(RuntimeError::new(&e.to_string(), None, None)) as Box<dyn std::error::Error>)
+                } else {
+                    // User-defined method - construct args with self
+                    let mut all_args = vec![KeywordArg {
+                        name: "self".to_string(),
+                        value: receiver_value,
+                    }];
+                    all_args.extend_from_slice(args);
+
+                    interpret_call(symbols, current_scope, method_name, *fn_index, &all_args)
+                }
+            },
             Expr::Lambda {
                 ref value,
                 environment,
@@ -231,6 +291,31 @@ impl Expr {
                     _ => panic!("Interpreter error: UnaryExpr operator {:?} not implemented", op)
                 }
             },
+            Expr::Len { expr } => {
+                let evaluated = expr.interpret(symbols, current_scope)?;
+                match evaluated {
+                    Expr::RuntimeList { data, .. } => Ok(Expr::Literal(LiteralData::Int(data.len() as i64))),
+                    Expr::RuntimeMap { data, .. } => Ok(Expr::Literal(LiteralData::Int(data.len() as i64))),
+                    Expr::Literal(LiteralData::Str(s)) | Expr::RuntimeData(LiteralData::Str(s)) => {
+                        // String length without quotes
+                        let len = s.trim_matches('\'').len() as i64;
+                        Ok(Expr::Literal(LiteralData::Int(len)))
+                    },
+                    _ => Err(Box::new(RuntimeError::new(
+                        &format!("len() requires a string, list, or map, got {:?}", evaluated),
+                        None,
+                        None
+                    )))
+                }
+            },
+            Expr::Assign { name: _, value, index } => {
+                // Evaluate the value expression
+                let evaluated_value = value.interpret(symbols, current_scope)?;
+                // Update the runtime value in the symbol table
+                symbols.update_runtime_value(evaluated_value, index);
+                // Assignment expressions return Unit
+                Ok(Expr::Unit)
+            },
             _ => panic!(
                 "Interpreter error: interpret() not implemented for '{self:?}'"
             ),
@@ -315,26 +400,119 @@ fn interpret_call(
     // If the call has no arguments, the expression bound to this "function" doesn't need to be a lambda;
     // we just evaluate it in the function's captured scope (the index).
     match lm {
-        Expr::Lambda { value, environment } => {
-            if args.len() != value.params.len() {
-                // TODO this should be in the compile pass
-                panic!(
-                    "Interpreter error: Function {fn_name} called with wrong number of arguments."
-                );
-            }
+        Expr::DefineFunction { value, .. } => {
+            // Unwrap the Lambda from DefineFunction
+            match value.as_ref() {
+                Expr::Lambda { value: func, environment } => {
+                    // Check if this is a built-in method
+                    if let Some(ref builtin) = func.builtin {
+                        if args.len() != func.params.len() {
+                            panic!(
+                                "Interpreter error: Function {fn_name} called with wrong number of arguments."
+                            );
+                        }
 
-            for a in args {
-                let arg_value = a.value.interpret(symbols, current_scope)?;
+                        // Evaluate all arguments
+                        let mut evaluated_args = Vec::new();
+                        let mut receiver = None;
 
-                // TODO this part should be done in a compiler pass, it's sort of slow this way.
-                if let Some(assign_to_index) = symbols.get_index_in_scope(&a.name, environment) {
-                    symbols.update_runtime_value(arg_value, &(environment, assign_to_index));
-                } else {
-                    panic!("Interpreter error: Keyword arg names must match the function definition parameters.");
+                        for (i, a) in args.iter().enumerate() {
+                            let arg_value = a.value.interpret(symbols, current_scope)?;
+
+                            // First argument should be "self" for methods
+                            if i == 0 && a.name == "self" {
+                                receiver = Some(arg_value);
+                            } else {
+                                evaluated_args.push(arg_value);
+                            }
+                        }
+
+                        if let Some(recv) = receiver {
+                            // Execute built-in method
+                            builtin.execute(recv, evaluated_args)
+                                .map_err(|e| Box::new(RuntimeError::new(&e.to_string(), None, None)) as Box<dyn std::error::Error>)
+                        } else {
+                            panic!("Interpreter error: Built-in method {fn_name} called without 'self' argument");
+                        }
+                    } else {
+                        // Regular user-defined function
+                        if args.len() != func.params.len() {
+                            panic!(
+                                "Interpreter error: Function {fn_name} called with wrong number of arguments."
+                            );
+                        }
+
+                        for a in args {
+                            let arg_value = a.value.interpret(symbols, current_scope)?;
+
+                            if let Some(assign_to_index) = symbols.get_index_in_scope(&a.name, *environment) {
+                                symbols.update_runtime_value(arg_value, &(*environment, assign_to_index));
+                            } else {
+                                panic!("Interpreter error: Keyword arg names must match the function definition parameters.");
+                            }
+                        }
+
+                        interpret_lambda(symbols, func, *environment)
+                    }
+                }
+                _ => {
+                    panic!("Interpreter error: Expected Lambda inside DefineFunction for {fn_name}");
                 }
             }
+        }
+        Expr::Lambda { value, environment } => {
+            // Check if this is a built-in method
+            if let Some(ref builtin) = value.builtin {
+                if args.len() != value.params.len() {
+                    panic!(
+                        "Interpreter error: Function {fn_name} called with wrong number of arguments."
+                    );
+                }
 
-            interpret_lambda(symbols, &value, environment)
+                // Evaluate all arguments
+                let mut evaluated_args = Vec::new();
+                let mut receiver = None;
+
+                for (i, a) in args.iter().enumerate() {
+                    let arg_value = a.value.interpret(symbols, current_scope)?;
+
+                    // First argument should be "self" for methods
+                    if i == 0 && a.name == "self" {
+                        receiver = Some(arg_value);
+                    } else {
+                        evaluated_args.push(arg_value);
+                    }
+                }
+
+                if let Some(recv) = receiver {
+                    // Execute built-in method
+                    builtin.execute(recv, evaluated_args)
+                        .map_err(|e| Box::new(RuntimeError::new(&e.to_string(), None, None)) as Box<dyn std::error::Error>)
+                } else {
+                    panic!("Interpreter error: Built-in method {fn_name} called without 'self' argument");
+                }
+            } else {
+                // Regular user-defined function
+                if args.len() != value.params.len() {
+                    // TODO this should be in the compile pass
+                    panic!(
+                        "Interpreter error: Function {fn_name} called with wrong number of arguments."
+                    );
+                }
+
+                for a in args {
+                    let arg_value = a.value.interpret(symbols, current_scope)?;
+
+                    // TODO this part should be done in a compiler pass, it's sort of slow this way.
+                    if let Some(assign_to_index) = symbols.get_index_in_scope(&a.name, environment) {
+                        symbols.update_runtime_value(arg_value, &(environment, assign_to_index));
+                    } else {
+                        panic!("Interpreter error: Keyword arg names must match the function definition parameters.");
+                    }
+                }
+
+                interpret_lambda(symbols, &value, environment)
+            }
         }
         _ => {
             if !args.is_empty() {

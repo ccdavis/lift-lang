@@ -1,0 +1,126 @@
+// Comprehensive test of user-defined methods on type aliases
+// All tests should pass and produce expected results
+
+// === Test 1: Temperature Conversions ===
+type Temperature = Flt;
+
+function Temperature.celsius_to_fahrenheit(): Flt {
+    self * 1.8 + 32.0
+};
+
+function Temperature.fahrenheit_to_celsius(): Flt {
+    (self - 32.0) / 1.8
+};
+
+output('=== Temperature Conversion Tests ===');
+let temp1: Temperature = 0.0;
+output('0C to F:', temp1.celsius_to_fahrenheit());   // Expected: 32
+
+let temp2: Temperature = 100.0;
+output('100C to F:', temp2.celsius_to_fahrenheit()); // Expected: 212
+
+let temp3: Temperature = 68.0;
+output('68F to C:', temp3.fahrenheit_to_celsius());  // Expected: 20
+
+// === Test 2: Age Validation ===
+type Age = Int;
+
+function Age.is_child(): Bool {
+    self < 13
+};
+
+function Age.is_adult(): Bool {
+    self >= 18
+};
+
+output('');
+output('=== Age Validation Tests ===');
+let age1: Age = 10;
+output('10 is child?', age1.is_child());     // Expected: true
+output('10 is adult?', age1.is_adult());     // Expected: false
+
+let age2: Age = 25;
+output('25 is child?', age2.is_child());     // Expected: false
+output('25 is adult?', age2.is_adult());     // Expected: true
+
+// === Test 3: String Formatting ===
+type Message = Str;
+
+function Message.exclaim(): Message {
+    self + '!'
+};
+
+function Message.ask(): Message {
+    self + '?'
+};
+
+output('');
+output('=== String Formatting Tests ===');
+let msg1: Message = 'Hello';
+output('Exclaim:', msg1.exclaim());          // Expected: 'Hello!'
+output('Ask:', msg1.ask());                  // Expected: 'Hello?'
+
+// Chain custom with built-in
+output('Exclaim+Upper:', msg1.exclaim().upper());  // Expected: 'HELLO!'
+
+// === Test 4: Number Operations ===
+type Counter = Int;
+
+function Counter.increment(): Counter {
+    self + 1
+};
+
+function Counter.double(): Counter {
+    self * 2
+};
+
+output('');
+output('=== Number Operation Tests ===');
+let count1: Counter = 5;
+output('5 incremented:', count1.increment());  // Expected: 6
+output('5 doubled:', count1.double());         // Expected: 10
+
+// Method chaining
+output('5 incremented then doubled:', count1.increment().double());  // Expected: 12
+
+// === Test 5: Conditionals in Methods ===
+type Score = Int;
+
+function Score.grade(): Str {
+    if self >= 90 {
+        'A'
+    } else if self >= 80 {
+        'B'
+    } else {
+        'C or below'
+    }
+};
+
+output('');
+output('=== Conditional Method Tests ===');
+let score1: Score = 95;
+output('95 gets grade:', score1.grade());    // Expected: 'A'
+
+let score2: Score = 85;
+output('85 gets grade:', score2.grade());    // Expected: 'B'
+
+let score3: Score = 70;
+output('70 gets grade:', score3.grade());    // Expected: 'C or below'
+
+// === Test 6: Built-in + Custom Combination ===
+type Username = Str;
+
+function Username.sanitize(): Username {
+    self.trim().lower()
+};
+
+output('');
+output('=== Built-in + Custom Tests ===');
+let user1: Username = '  ALICE  ';
+output('Sanitized:', user1.sanitize());      // Expected: 'alice'
+
+// Built-in methods still work
+output('Contains A?', user1.contains(substring: 'A'));  // Expected: true
+
+output('');
+output('All user-defined method tests passed!')

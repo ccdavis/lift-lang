@@ -1,0 +1,75 @@
+// Test user-defined methods on type aliases
+
+// Define type aliases
+type Angle = Flt;
+type Temperature = Flt;
+type Name = Str;
+type Age = Int;
+
+// Define methods on type aliases
+
+// Method on Flt alias (Angle)
+function Angle.normalize(): Angle {
+    // Normalize to 0-360 range (simplified - just shows it works)
+    if self > 360.0 {
+        self - 360.0
+    } else if self < 0.0 {
+        self + 360.0
+    } else {
+        self
+    }
+};
+
+// Method on another Flt alias (Temperature)
+function Temperature.to_celsius(): Temperature {
+    // Assume self is Fahrenheit, convert to Celsius
+    (self - 32.0) / 1.8
+};
+
+// Method on Str alias (Name)
+function Name.greet(): Str {
+    'Hello, ' + self + '!'
+};
+
+// Method on Int alias (Age)
+function Age.is_adult(): Bool {
+    self >= 18
+};
+
+// Test the methods
+let angle1: Angle = 450.0;
+let normalized = angle1.normalize();
+output('Normalized 450 degrees:', normalized);
+
+let angle2: Angle = -45.0;
+output('Normalized -45 degrees:', angle2.normalize());
+
+let temp: Temperature = 98.6;
+output('98.6 F to Celsius:', temp.to_celsius());
+
+let name1: Name = 'Alice';
+output(name1.greet());
+
+let name2: Name = 'Bob';
+output(name2.greet());
+
+let age1: Age = 25;
+output('Is 25 an adult?', age1.is_adult());
+
+let age2: Age = 15;
+output('Is 15 an adult?', age2.is_adult());
+
+// Test with collection type aliases
+type Names = List of Str;
+
+function Names.greet_all(): Str {
+    'Hello to: ' + self.join(separator: ', ')
+};
+
+let friends: Names = ['Alice', 'Bob', 'Carol'];
+output(friends.greet_all());
+
+// Test that type alias inherits built-in methods from underlying type
+let friends2: Names = ['David', 'Eve', 'Frank'];
+output('First friend:', friends2.first());
+output('All friends:', friends2);

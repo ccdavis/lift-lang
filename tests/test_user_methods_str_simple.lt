@@ -1,0 +1,14 @@
+// Test: Two user-defined string methods
+type Message = Str;
+
+function Message.exclaim(): Message {
+    self + '!'
+};
+
+function Message.question(): Message {
+    self + '?'
+};
+
+let msg1: Message = 'Hello';
+output('Exclaim:', msg1.exclaim());
+output('Question:', msg1.question())

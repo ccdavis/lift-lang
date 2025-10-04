@@ -1,0 +1,82 @@
+// Test: User-defined validation methods
+// Expected: Boolean methods should return correct true/false values
+
+type Age = Int;
+type Score = Int;
+type Email = Str;
+
+// Age validation methods
+function Age.is_child(): Bool {
+    self < 13
+};
+
+function Age.is_teen(): Bool {
+    self >= 13 and self < 20
+};
+
+function Age.is_adult(): Bool {
+    self >= 18
+};
+
+function Age.is_senior(): Bool {
+    self >= 65
+};
+
+// Score grading methods
+function Score.is_passing(): Bool {
+    self >= 60
+};
+
+function Score.is_excellent(): Bool {
+    self >= 90
+};
+
+// Email validation (simple)
+function Email.has_at_symbol(): Bool {
+    self.contains(substring: '@')
+};
+
+// Test age validations
+let age1: Age = 10;
+output('Age 10 is child?', age1.is_child());      // true
+output('Age 10 is teen?', age1.is_teen());        // false
+output('Age 10 is adult?', age1.is_adult());      // false
+
+let age2: Age = 16;
+output('Age 16 is child?', age2.is_child());      // false
+output('Age 16 is teen?', age2.is_teen());        // true
+output('Age 16 is adult?', age2.is_adult());      // false
+
+let age3: Age = 25;
+output('Age 25 is teen?', age3.is_teen());        // false
+output('Age 25 is adult?', age3.is_adult());      // true
+output('Age 25 is senior?', age3.is_senior());    // false
+
+let age4: Age = 70;
+output('Age 70 is adult?', age4.is_adult());      // true
+output('Age 70 is senior?', age4.is_senior());    // true
+
+// Test score validations
+let score1: Score = 45;
+output('Score 45 is passing?', score1.is_passing());      // false
+output('Score 45 is excellent?', score1.is_excellent());  // false
+
+let score2: Score = 75;
+output('Score 75 is passing?', score2.is_passing());      // true
+output('Score 75 is excellent?', score2.is_excellent());  // false
+
+let score3: Score = 95;
+output('Score 95 is passing?', score3.is_passing());      // true
+output('Score 95 is excellent?', score3.is_excellent());  // true
+
+// Test email validation
+let email1: Email = 'user@example.com';
+output('user@example.com has @?', email1.has_at_symbol());  // true
+
+let email2: Email = 'invalid-email';
+output('invalid-email has @?', email2.has_at_symbol());     // false
+
+let email3: Email = 'test@domain';
+output('test@domain has @?', email3.has_at_symbol());       // true
+
+output('Validation tests completed')

@@ -1,0 +1,33 @@
+// Test all new list methods
+
+let numbers = [10, 20, 30, 40, 50];
+
+// Test first and last
+output(numbers.first());        // 10
+output(numbers.last());         // 50
+
+// Test contains
+output(numbers.contains(item: 30));    // true
+output(numbers.contains(item: 99));    // false
+
+// Test slice
+let sliced = numbers.slice(start: 1, end: 4);
+output(sliced);                 // [20, 30, 40]
+
+// Test reverse
+let reversed = numbers.reverse();
+output(reversed);               // [50, 40, 30, 20, 10]
+
+// Test join (with string list)
+let words = ['Hello', 'World', 'from', 'Lift'];
+let sentence = words.join(separator: ' ');
+output(sentence);               // 'Hello World from Lift'
+
+// Test is_empty
+output(numbers.is_empty());     // false
+let empty: List of Int = [];
+output(empty.is_empty());       // true
+
+// Test method chaining
+let result = [5, 1, 3, 2, 4].reverse().slice(start: 1, end: 4);
+output(result)                  // [3, 2, 1]

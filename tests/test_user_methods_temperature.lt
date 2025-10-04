@@ -1,0 +1,39 @@
+// Test: User-defined methods for temperature conversion
+// Expected: All conversions should be accurate
+
+type Temperature = Flt;
+
+// Define conversion methods
+function Temperature.to_fahrenheit(): Flt {
+    self * 1.8 + 32.0
+};
+
+function Temperature.to_celsius(): Flt {
+    (self - 32.0) / 1.8
+};
+
+// Test celsius to fahrenheit
+let temp_c: Temperature = 0.0;
+let result1 = temp_c.to_fahrenheit();
+output('0C to F:', result1);  // Should be 32
+
+// Test boiling point
+let temp_c2: Temperature = 100.0;
+let result2 = temp_c2.to_fahrenheit();
+output('100C to F:', result2);  // Should be 212
+
+// Treat as Fahrenheit for reverse conversion
+let temp_f: Temperature = 68.0;
+let result3 = temp_f.to_celsius();
+output('68F to C:', result3);  // Should be 20
+
+// Test body temperature
+let temp_f2: Temperature = 98.6;
+let result4 = temp_f2.to_celsius();
+output('98.6F to C:', result4);  // Should be ~37
+
+// Note: Round trip works but returns Flt since methods return Flt
+let start_c: Temperature = 25.0;
+output('25C to F:', start_c.to_fahrenheit());  // Should be 77
+
+output('Temperature conversion tests completed')

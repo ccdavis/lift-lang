@@ -4,6 +4,7 @@ use crate::syntax::Expr;
 use crate::syntax::KeyData;
 use crate::syntax::LiteralData;
 use crate::syntax::Operator;
+use crate::syntax::Param;
 
 const DEBUG: bool = false;
 
@@ -154,28 +155,188 @@ pub fn add_symbols(
             ref mut index,
             ref mut args,
         } => {
-            if let Some(found_index) = symbols.find_index_reachable_from(fn_name, _current_scope_id)
-            {
+            // Try to find the function directly
+            let found_directly = symbols.find_index_reachable_from(fn_name, _current_scope_id);
+
+            if let Some(found_index) = found_directly {
                 if DEBUG {
                     println!("DEBUG: During semantic analysis phase found index '{},{}' for '{}' function call.",
-                    found_index.0, found_index.1,fn_name 
+                    found_index.0, found_index.1,fn_name
                 );
                 }
                 *index = found_index;
             } else {
-                let msg = format!(
-                    "use of undeclared or not yet declared function '{fn_name}' at scope {_current_scope_id}"
-                );
-                if DEBUG {
-                    eprintln!("{}", &msg);
+                // UFCS: Try to find it as a method Type.fn_name
+                // Process first argument to determine type
+                let mut ufcs_found = false;
+                if let Some(first_arg) = args.first_mut() {
+                    // Process the first argument to enable type determination
+                    if let Err(ref err) = add_symbols(&mut first_arg.value, symbols, _current_scope_id) {
+                        let new_msg = format!("Error on argument '{}': {}", first_arg.name, err.clone());
+                        return Err(CompileError::structure(&new_msg, (0, 0)));
+                    }
+
+                    if let Some(arg_type) = determine_type_with_symbols(&first_arg.value, symbols, _current_scope_id) {
+                        let type_name = match arg_type {
+                            DataType::Str => "Str",
+                            DataType::Int => "Int",
+                            DataType::Flt => "Flt",
+                            DataType::Bool => "Bool",
+                            DataType::List { .. } => "List",
+                            DataType::Map { .. } => "Map",
+                            DataType::Range(_) => "Range",
+                            _ => "",
+                        };
+
+                        if !type_name.is_empty() {
+                            let method_name = format!("{}.{}", type_name, fn_name);
+
+                            // Check if it's a built-in method
+                            let is_builtin = matches!(fn_name.as_str(), "upper" | "lower" | "first" | "last");
+
+                            if let Some(found_index) = symbols.find_index_reachable_from(&method_name, _current_scope_id) {
+                                if DEBUG {
+                                    println!("DEBUG: UFCS - found method '{}' for call '{}'", method_name, fn_name);
+                                }
+                                *index = found_index;
+                                ufcs_found = true;
+                            } else if is_builtin {
+                                // Built-in methods don't need to be in symbol table
+                                *index = (0, 0);
+                                ufcs_found = true;
+                            }
+                        }
+                    }
                 }
-                return Err(CompileError::name(&msg, (0, 0)));
+
+                if !ufcs_found {
+                    // If still not found, error
+                    let msg = format!(
+                        "use of undeclared or not yet declared function '{fn_name}' at scope {_current_scope_id}"
+                    );
+                    if DEBUG {
+                        eprintln!("{}", &msg);
+                    }
+                    return Err(CompileError::name(&msg, (0, 0)));
+                }
             }
+
+            // Process remaining arguments
             for a in args {
                 if let Err(ref err) = add_symbols(&mut a.value, symbols, _current_scope_id) {
                     let new_msg = format!("Error on argument '{}': {}", a.name, err.clone());
                     return Err(CompileError::structure(&new_msg, (0, 0)));
                 }
+            }
+        }
+        Expr::MethodCall {
+            ref mut receiver,
+            ref method_name,
+            ref mut fn_index,
+            ref mut args,
+        } => {
+            // Process the receiver expression
+            add_symbols(receiver, symbols, _current_scope_id)?;
+
+            if DEBUG {
+                println!("DEBUG: MethodCall - receiver after add_symbols: {:?}", receiver);
+            }
+
+            // Determine the receiver's type to find the right method
+            let receiver_type = determine_type_with_symbols(receiver, symbols, _current_scope_id)
+                .ok_or_else(|| {
+                    if DEBUG {
+                        println!("DEBUG: Failed to determine receiver type for: {:?}", receiver);
+                    }
+                    CompileError::typecheck("Cannot determine receiver type for method call", (0, 0))
+                })?;
+
+            if DEBUG {
+                println!("DEBUG: MethodCall - receiver_type: {:?}", receiver_type);
+            }
+
+            // Build the full method name: TypeName.methodName
+            // First, try with the type alias name if it's a TypeRef
+            let mut method_found = false;
+
+            // Clone receiver_type for later use in error messages
+            let receiver_type_clone = receiver_type.clone();
+
+            if let DataType::TypeRef(alias_name) = &receiver_type {
+                // Try to find method on the type alias itself
+                let full_method_name = format!("{}.{}", alias_name, method_name);
+
+                if DEBUG {
+                    println!("DEBUG: Looking for method '{}' on type alias", full_method_name);
+                }
+
+                if let Some(found_index) = symbols.find_index_reachable_from(&full_method_name, _current_scope_id) {
+                    if DEBUG {
+                        println!("DEBUG: Found method '{}' at index {:?}", full_method_name, found_index);
+                    }
+                    *fn_index = found_index;
+                    method_found = true;
+                }
+            }
+
+            // If not found on type alias, resolve to underlying type and try again
+            if !method_found {
+                // Resolve TypeRef to underlying type if needed
+                let resolved_type = if matches!(&receiver_type, DataType::TypeRef(_)) {
+                    resolve_type(&receiver_type, symbols, _current_scope_id)?
+                } else {
+                    receiver_type
+                };
+
+                let type_name = match resolved_type {
+                    DataType::Str => "Str",
+                    DataType::Int => "Int",
+                    DataType::Flt => "Flt",
+                    DataType::Bool => "Bool",
+                    DataType::List { .. } => "List",
+                    DataType::Map { .. } => "Map",
+                    DataType::Range(_) => "Range",
+                    _ => return Err(CompileError::typecheck(&format!("Cannot call methods on type {:?}", resolved_type), (0, 0))),
+                };
+
+                let full_method_name = format!("{}.{}", type_name, method_name);
+
+                if DEBUG {
+                    println!("DEBUG: Looking for method '{}'", full_method_name);
+                }
+
+                // Look up the method
+                if let Some(found_index) = symbols.find_index_reachable_from(&full_method_name, _current_scope_id) {
+                    if DEBUG {
+                        println!("DEBUG: Found method '{}' at index {:?}", full_method_name, found_index);
+                    }
+                    *fn_index = found_index;
+                    method_found = true;
+                }
+            }
+
+            if !method_found {
+                let type_display = match &receiver_type_clone {
+                    DataType::TypeRef(name) => name.as_str(),
+                    DataType::Str => "Str",
+                    DataType::Int => "Int",
+                    DataType::Flt => "Flt",
+                    DataType::Bool => "Bool",
+                    DataType::List { .. } => "List",
+                    DataType::Map { .. } => "Map",
+                    DataType::Range(_) => "Range",
+                    _ => "Unknown",
+                };
+
+                return Err(CompileError::name(
+                    &format!("Method '{}' not found for type '{}'", method_name, type_display),
+                    (0, 0)
+                ));
+            }
+
+            // Process arguments
+            for a in args {
+                add_symbols(&mut a.value, symbols, _current_scope_id)?;
             }
         }
         Expr::Lambda {
@@ -188,18 +349,66 @@ pub fn add_symbols(
 
             // Resolve function return type
             value.return_type = resolve_type(&value.return_type, symbols, _current_scope_id)?;
-            
+
+            // For methods, auto-inject 'self' parameter at the beginning
+            if let Some(ref receiver_type_name) = value.receiver_type {
+                let self_type = match receiver_type_name.as_str() {
+                    "Str" => DataType::Str,
+                    "Int" => DataType::Int,
+                    "Flt" => DataType::Flt,
+                    "Bool" => DataType::Bool,
+                    "List" => return Err(CompileError::typecheck("Method on generic List requires type parameter", (0, 0))),
+                    "Map" => return Err(CompileError::typecheck("Method on generic Map requires type parameter", (0, 0))),
+                    custom => DataType::TypeRef(custom.to_string()),
+                };
+
+                // Create self parameter
+                let self_param = Param {
+                    name: "self".to_string(),
+                    data_type: self_type.clone(),
+                    default: None,
+                    index: (0, 0),
+                    copy: false, // self is immutable by default
+                };
+
+                // Add self as a symbol in the function scope
+                let self_expr = Expr::Let {
+                    var_name: "self".to_string(),
+                    data_type: self_type,
+                    value: Box::new(Expr::Unit),
+                    index: (0, 0),
+                    mutable: false,
+                };
+                let self_symbol_id = symbols.add_symbol("self", self_expr, new_scope_id)?;
+
+                // Update self param index and insert at beginning
+                let mut self_param_with_index = self_param;
+                self_param_with_index.index = (new_scope_id, self_symbol_id);
+                value.params.insert(0, self_param_with_index);
+            }
+
             // Add params to the new environment with their types
             for p in &mut value.params {
-                // Resolve any TypeRef in parameter types
-                p.data_type = resolve_type(&p.data_type, symbols, _current_scope_id)?;
-                
+                // Skip self if it was already added
+                if p.name == "self" && value.receiver_type.is_some() {
+                    continue;
+                }
+                // Validate that TypeRef exists (but don't resolve it - keep the alias)
+                // This preserves the association between methods and type aliases
+                if matches!(&p.data_type, DataType::TypeRef(_)) {
+                    resolve_type(&p.data_type, symbols, _current_scope_id)?;
+                    // Note: We validate but don't store the resolved type
+                }
+
                 // Create a typed parameter representation
+                // Parameters are immutable by default (pass by reference)
+                // Only 'cpy' parameters are mutable (pass by value/copy)
                 let param_expr = Expr::Let {
                     var_name: p.name.clone(),
                     data_type: p.data_type.clone(),
                     value: Box::new(Expr::Unit),
                     index: (0, 0),
+                    mutable: p.copy,  // Only mutable if marked with 'cpy'
                 };
                 let new_symbol_id = symbols.add_symbol(&p.name, param_expr, new_scope_id)?;
                 p.index = (new_scope_id, new_symbol_id);
@@ -249,6 +458,7 @@ pub fn add_symbols(
             ref mut value,
             ref mut data_type,
             ref mut index,
+            ref mutable,
         } => {
             // First, add symbols for the value expression
             add_symbols(value, symbols, _current_scope_id)?;
@@ -258,10 +468,9 @@ pub fn add_symbols(
                 if let Some(inferred_type) = determine_type_with_symbols(value, symbols, _current_scope_id) {
                     *data_type = inferred_type;
                 }
-            } else {
-                // Resolve any TypeRef in the data_type
-                *data_type = resolve_type(data_type, symbols, _current_scope_id)?;
             }
+            // Note: We keep TypeRef as-is for variables so that methods on type aliases work
+            // Type compatibility checking is done during typecheck phase
             
             // Create a typed symbol with the resolved type
             let typed_value = Expr::Let {
@@ -269,6 +478,7 @@ pub fn add_symbols(
                 data_type: data_type.clone(),
                 value: value.clone(),
                 index: (0, 0),
+                mutable: *mutable,
             };
             let new_symbol_id = symbols.add_symbol(var_name, typed_value, _current_scope_id)?;
             *index = (_current_scope_id, new_symbol_id);
@@ -301,6 +511,24 @@ pub fn add_symbols(
         Expr::UnaryExpr { ref mut expr, .. } => {
             // Process the inner expression to handle any variables
             add_symbols(expr, symbols, _current_scope_id)?;
+        }
+        Expr::Len { ref mut expr } => {
+            // Process the inner expression to handle any variables
+            add_symbols(expr, symbols, _current_scope_id)?;
+        }
+        Expr::Assign { ref name, ref mut value, ref mut index } => {
+            // Process the value expression first
+            add_symbols(value, symbols, _current_scope_id)?;
+
+            // Find the variable in current or parent scopes
+            if let Some(found_index) = symbols.find_index_reachable_from(name, _current_scope_id) {
+                *index = found_index;
+            } else {
+                return Err(CompileError::name(
+                    &format!("Cannot assign to undeclared variable '{}'", name),
+                    (0, 0)
+                ));
+            }
         }
         _ => (),
     }
@@ -373,7 +601,19 @@ pub fn typecheck(
         Expr::BinaryExpr { left, op, right } => {
             let left_type = typecheck(left, symbols, _current_scope_id)?;
             let right_type = typecheck(right, symbols, _current_scope_id)?;
-            
+
+            // Resolve type aliases to underlying types for comparison
+            let left_type = if matches!(left_type, DataType::TypeRef(_)) {
+                resolve_type(&left_type, symbols, _current_scope_id)?
+            } else {
+                left_type
+            };
+            let right_type = if matches!(right_type, DataType::TypeRef(_)) {
+                resolve_type(&right_type, symbols, _current_scope_id)?
+            } else {
+                right_type
+            };
+
             match op {
                 // Arithmetic operators
                 Operator::Add | Operator::Sub | Operator::Mul | Operator::Div => {
@@ -482,8 +722,21 @@ pub fn typecheck(
             
             let then_type = typecheck(then, symbols, _current_scope_id)?;
             let else_type = typecheck(final_else, symbols, _current_scope_id)?;
-            
-            if types_compatible(&then_type, &else_type) {
+
+            // Resolve TypeRefs for comparison
+            let resolved_then = if matches!(&then_type, DataType::TypeRef(_)) {
+                resolve_type(&then_type, symbols, _current_scope_id)?
+            } else {
+                then_type.clone()
+            };
+            let resolved_else = if matches!(&else_type, DataType::TypeRef(_)) {
+                resolve_type(&else_type, symbols, _current_scope_id)?
+            } else {
+                else_type.clone()
+            };
+
+            if types_compatible(&resolved_then, &resolved_else) {
+                // Return the then_type (which may be a TypeRef) for better error messages
                 Ok(then_type)
             } else {
                 Err(CompileError::typecheck(
@@ -523,7 +776,7 @@ pub fn typecheck(
             }
         }
         
-        Expr::Let { var_name, value, data_type, index: _ } => {
+        Expr::Let { var_name, value, data_type, index: _, mutable: _ } => {
             // If a type is specified, use it and check the value is compatible
             if !matches!(data_type, DataType::Unsolved) {
                 // Resolve any TypeRef in the data_type
@@ -577,6 +830,14 @@ pub fn typecheck(
         }
         
         Expr::Assign { name, value, index } => {
+            // Check if the variable is mutable
+            if !symbols.is_mutable(index) {
+                return Err(CompileError::typecheck(
+                    &format!("Cannot assign to immutable variable '{}'. Use 'let var' to declare mutable variables.", name),
+                    (0, 0),
+                ));
+            }
+
             let value_type = typecheck(value, symbols, _current_scope_id)?;
             if let Some(var_type) = symbols.get_symbol_type(index) {
                 if types_compatible(&var_type, &value_type) {
@@ -704,37 +965,204 @@ pub fn typecheck(
         Expr::Call { fn_name, index, args } => {
             // Get function type from symbol table
             if let Some(fn_expr) = symbols.get_symbol_value(index) {
-                match fn_expr {
-                    Expr::Lambda { value: func, .. } => {
-                        // Check argument types
-                        if args.len() != func.params.len() {
-                            return Err(CompileError::typecheck(
-                                &format!("Function {} expects {} arguments, got {}", fn_name, func.params.len(), args.len()),
+                // Extract the function from either DefineFunction or Lambda
+                let func = match fn_expr {
+                    Expr::DefineFunction { value, .. } => {
+                        match value.as_ref() {
+                            Expr::Lambda { value: f, .. } => f,
+                            _ => return Err(CompileError::typecheck(
+                                &format!("{fn_name} is not a function"),
                                 (0, 0),
-                            ));
+                            ))
                         }
-                        
-                        for (i, arg) in args.iter().enumerate() {
-                            let arg_type = typecheck(&arg.value, symbols, _current_scope_id)?;
-                            let expected_type = &func.params[i].data_type;
-                            if !matches!(expected_type, DataType::Unsolved) && !types_compatible(expected_type, &arg_type) {
-                                return Err(CompileError::typecheck(
-                                    &format!("Argument {} type mismatch: expected {:?}, got {:?}", i+1, expected_type, arg_type),
-                                    (0, 0),
-                                ));
-                            }
-                        }
-                        
-                        Ok(func.return_type.clone())
                     }
-                    _ => Err(CompileError::typecheck(
+                    Expr::Lambda { value: f, .. } => f,
+                    _ => return Err(CompileError::typecheck(
                         &format!("{fn_name} is not a function"),
                         (0, 0),
-                    )),
+                    ))
+                };
+
+                // Check if this is a UFCS call (method called with function syntax)
+                // If the function has a receiver_type, it's a method
+                let is_ufcs_call = func.receiver_type.is_some();
+
+                let expected_arg_count = func.params.len();
+                if args.len() != expected_arg_count {
+                    return Err(CompileError::typecheck(
+                        &format!("Function {} expects {} arguments, got {}", fn_name, expected_arg_count, args.len()),
+                        (0, 0),
+                    ));
                 }
+
+                for (i, arg) in args.iter().enumerate() {
+                    let arg_type = typecheck(&arg.value, symbols, _current_scope_id)?;
+                    let expected_type = &func.params[i].data_type;
+                    if !matches!(expected_type, DataType::Unsolved) && !types_compatible(expected_type, &arg_type) {
+                        // Special message for UFCS where first arg is self
+                        let arg_num_display = if is_ufcs_call && i == 0 {
+                            "receiver (self)".to_string()
+                        } else if is_ufcs_call {
+                            format!("argument {}", i)
+                        } else {
+                            format!("argument {}", i + 1)
+                        };
+                        return Err(CompileError::typecheck(
+                            &format!("{} type mismatch: expected {:?}, got {:?}", arg_num_display, expected_type, arg_type),
+                            (0, 0),
+                        ));
+                    }
+                }
+
+                Ok(func.return_type.clone())
             } else {
                 Err(CompileError::name(
                     &format!("Undefined function: {fn_name}"),
+                    (0, 0),
+                ))
+            }
+        }
+
+        Expr::MethodCall { receiver, method_name, fn_index, args } => {
+            if DEBUG {
+                println!("DEBUG: typecheck MethodCall - receiver: {:?}", receiver);
+            }
+            // Type check the receiver
+            let receiver_type = typecheck(receiver, symbols, _current_scope_id)?;
+            if DEBUG {
+                println!("DEBUG: typecheck MethodCall - receiver_type: {:?}", receiver_type);
+            }
+
+            // Resolve TypeRef for type checking (keep original for error messages)
+            let resolved_receiver_type = if matches!(&receiver_type, DataType::TypeRef(_)) {
+                resolve_type(&receiver_type, symbols, _current_scope_id)?
+            } else {
+                receiver_type.clone()
+            };
+
+            // Check if it's a built-in method
+            let is_builtin = matches!(method_name.as_str(), "upper" | "lower" | "first" | "last");
+
+            if is_builtin {
+                // Type check built-in methods using resolved type
+                match method_name.as_str() {
+                    "upper" | "lower" => {
+                        if !matches!(resolved_receiver_type, DataType::Str) {
+                            return Err(CompileError::typecheck(
+                                &format!("{} can only be called on Str, got {:?}", method_name, receiver_type),
+                                (0, 0),
+                            ));
+                        }
+                        if !args.is_empty() {
+                            return Err(CompileError::typecheck(
+                                &format!("{} expects no arguments, got {}", method_name, args.len()),
+                                (0, 0),
+                            ));
+                        }
+                        Ok(DataType::Str)
+                    }
+                    "first" | "last" => {
+                        match resolved_receiver_type {
+                            DataType::List { element_type } => {
+                                if !args.is_empty() {
+                                    return Err(CompileError::typecheck(
+                                        &format!("{} expects no arguments, got {}", method_name, args.len()),
+                                        (0, 0),
+                                    ));
+                                }
+                                Ok(*element_type)
+                            }
+                            _ => Err(CompileError::typecheck(
+                                &format!("{} can only be called on List, got {:?}", method_name, receiver_type),
+                                (0, 0),
+                            ))
+                        }
+                    }
+                    _ => Ok(DataType::Unsolved)
+                }
+            } else if let Some(fn_expr) = symbols.get_symbol_value(fn_index) {
+                // Extract the function from either DefineFunction or Lambda
+                let func = match fn_expr {
+                    Expr::DefineFunction { value, .. } => {
+                        match value.as_ref() {
+                            Expr::Lambda { value: f, .. } => f,
+                            _ => return Err(CompileError::typecheck(
+                                &format!("{method_name} is not a method"),
+                                (0, 0),
+                            ))
+                        }
+                    }
+                    Expr::Lambda { value: f, .. } => f,
+                    _ => return Err(CompileError::typecheck(
+                        &format!("{method_name} is not a method"),
+                        (0, 0),
+                    ))
+                };
+
+                // For methods, first param is implicit self
+                // Check that we have the right number of explicit args (params - 1 for self)
+                let expected_arg_count = if func.receiver_type.is_some() {
+                    func.params.len().saturating_sub(1)
+                } else {
+                    func.params.len()
+                };
+
+                if args.len() != expected_arg_count {
+                    return Err(CompileError::typecheck(
+                        &format!("Method {} expects {} arguments, got {}", method_name, expected_arg_count, args.len()),
+                        (0, 0),
+                    ));
+                }
+
+                // Check receiver type matches self parameter
+                if func.receiver_type.is_some() && !func.params.is_empty() {
+                    let self_param_type = &func.params[0].data_type;
+
+                    // Resolve both types for comparison
+                    let resolved_self_type = if matches!(self_param_type, DataType::TypeRef(_)) {
+                        resolve_type(self_param_type, symbols, _current_scope_id)?
+                    } else {
+                        self_param_type.clone()
+                    };
+
+                    if !types_compatible(&resolved_self_type, &resolved_receiver_type) {
+                        return Err(CompileError::typecheck(
+                            &format!("Method receiver type mismatch: expected {:?}, got {:?}", self_param_type, receiver_type),
+                            (0, 0),
+                        ));
+                    }
+                }
+
+                // Check explicit argument types (skip first param which is self)
+                let param_offset = if func.receiver_type.is_some() { 1 } else { 0 };
+                for (i, arg) in args.iter().enumerate() {
+                    let arg_type = typecheck(&arg.value, symbols, _current_scope_id)?;
+                    let expected_type = &func.params[i + param_offset].data_type;
+
+                    // Resolve TypeRefs for comparison
+                    let resolved_expected = if matches!(expected_type, DataType::TypeRef(_)) {
+                        resolve_type(expected_type, symbols, _current_scope_id)?
+                    } else {
+                        expected_type.clone()
+                    };
+                    let resolved_arg = if matches!(&arg_type, DataType::TypeRef(_)) {
+                        resolve_type(&arg_type, symbols, _current_scope_id)?
+                    } else {
+                        arg_type.clone()
+                    };
+
+                    if !matches!(expected_type, DataType::Unsolved) && !types_compatible(&resolved_expected, &resolved_arg) {
+                        return Err(CompileError::typecheck(
+                            &format!("Argument {} type mismatch: expected {:?}, got {:?}", i+1, expected_type, arg_type),
+                            (0, 0),
+                        ));
+                    }
+                }
+
+                Ok(func.return_type.clone())
+            } else {
+                Err(CompileError::name(
+                    &format!("Unknown method: {method_name}"),
                     (0, 0),
                 ))
             }
@@ -798,10 +1226,23 @@ pub fn typecheck(
         
         Expr::Unit => Ok(DataType::Unsolved), // Unit type could be a specific type in the future
         
+        Expr::Len { expr } => {
+            let expr_type = typecheck(expr, symbols, _current_scope_id)?;
+
+            // len() works on Str, List, and Map types
+            match expr_type {
+                DataType::Str | DataType::List { .. } | DataType::Map { .. } => Ok(DataType::Int),
+                _ => Err(CompileError::typecheck(
+                    &format!("len() requires Str, List, or Map argument, found {:?}", expr_type),
+                    (0, 0),
+                ))
+            }
+        }
+
         Expr::Index { expr, index } => {
             let expr_type = typecheck(expr, symbols, _current_scope_id)?;
             let index_type = typecheck(index, symbols, _current_scope_id)?;
-            
+
             // Handle different collection types
             match expr_type {
                 DataType::List { element_type } => {
@@ -864,6 +1305,8 @@ fn types_compatible(t1: &DataType, t2: &DataType) -> bool {
             // In the future we might want to check the bounds
             true
         }
+        // TypeRef compatibility - same name means compatible
+        (DataType::TypeRef(name1), DataType::TypeRef(name2)) => name1 == name2,
         _ => false,
     }
 }
@@ -882,9 +1325,13 @@ pub fn determine_type_with_symbols(
             LiteralData::Bool(_) => DataType::Bool,
         }),
         
-        Expr::Variable { index, .. } => {
+        Expr::Variable { index, name } => {
             // Look up the variable type from the symbol table
-            symbols.get_symbol_type(index)
+            let var_type = symbols.get_symbol_type(index);
+            if DEBUG {
+                println!("DEBUG: determine_type_with_symbols - Variable '{}' with index {:?} has type {:?}", name, index, var_type);
+            }
+            var_type
         }
         
         Expr::BinaryExpr { left, op, right } => {
@@ -918,10 +1365,99 @@ pub fn determine_type_with_symbols(
             // Look up function return type
             if let Some(fn_expr) = symbols.get_symbol_value(index) {
                 match fn_expr {
+                    Expr::DefineFunction { value, .. } => {
+                        match value.as_ref() {
+                            Expr::Lambda { value: func, .. } => Some(func.return_type.clone()),
+                            _ => None
+                        }
+                    }
                     Expr::Lambda { value: func, .. } => Some(func.return_type.clone()),
                     _ => None,
                 }
             } else {
+                None
+            }
+        }
+
+        Expr::MethodCall { fn_index, method_name, receiver, .. } => {
+            if DEBUG {
+                println!("DEBUG: determine_type_with_symbols - MethodCall '{}' with fn_index {:?}", method_name, fn_index);
+            }
+            // Look up method return type
+            if let Some(fn_expr) = symbols.get_symbol_value(fn_index) {
+                if DEBUG {
+                    println!("DEBUG: Found symbol for method call: {:?}", fn_expr);
+                }
+                match fn_expr {
+                    Expr::DefineFunction { value, .. } => {
+                        match value.as_ref() {
+                            Expr::Lambda { value: func, .. } => {
+                                let return_type = func.return_type.clone();
+                                if DEBUG {
+                                    println!("DEBUG: Method '{}' returns {:?}", method_name, return_type);
+                                }
+                                // For List methods, we need to infer from the receiver
+                                match return_type {
+                                    DataType::Unsolved => {
+                                        // Methods that return the element type (first, last)
+                                        if let Some(receiver_type) = determine_type_with_symbols(receiver, symbols, scope) {
+                                            if let DataType::List { element_type } = receiver_type {
+                                                return Some(*element_type);
+                                            }
+                                        }
+                                        Some(DataType::Unsolved)
+                                    }
+                                    DataType::List { ref element_type } if matches!(**element_type, DataType::Unsolved) => {
+                                        // Methods that return a list with the same element type (slice, reverse)
+                                        if let Some(receiver_type) = determine_type_with_symbols(receiver, symbols, scope) {
+                                            if let DataType::List { element_type } = receiver_type {
+                                                return Some(DataType::List { element_type });
+                                            }
+                                        }
+                                        Some(return_type)
+                                    }
+                                    _ => Some(return_type)
+                                }
+                            }
+                            _ => None
+                        }
+                    }
+                    Expr::Lambda { value: func, .. } => {
+                        let return_type = func.return_type.clone();
+                        // For List methods, we need to infer from the receiver
+                        match return_type {
+                            DataType::Unsolved => {
+                                // Methods that return the element type (first, last)
+                                if let Some(receiver_type) = determine_type_with_symbols(receiver, symbols, scope) {
+                                    if let DataType::List { element_type } = receiver_type {
+                                        return Some(*element_type);
+                                    }
+                                }
+                                Some(DataType::Unsolved)
+                            }
+                            DataType::List { ref element_type } if matches!(**element_type, DataType::Unsolved) => {
+                                // Methods that return a list with the same element type (slice, reverse)
+                                if let Some(receiver_type) = determine_type_with_symbols(receiver, symbols, scope) {
+                                    if let DataType::List { element_type } = receiver_type {
+                                        return Some(DataType::List { element_type });
+                                    }
+                                }
+                                Some(return_type)
+                            }
+                            _ => Some(return_type)
+                        }
+                    }
+                    _ => {
+                        if DEBUG {
+                            println!("DEBUG: Symbol is not a DefineFunction or Lambda: {:?}", fn_expr);
+                        }
+                        None
+                    }
+                }
+            } else {
+                if DEBUG {
+                    println!("DEBUG: No symbol found for fn_index {:?}", fn_index);
+                }
                 None
             }
         }
@@ -962,7 +1498,9 @@ pub fn determine_type_with_symbols(
         }
         
         Expr::UnaryExpr { op: Operator::Not, .. } => Some(DataType::Bool),
-        
+
+        Expr::Len { .. } => Some(DataType::Int),
+
         _ => determine_type(expression), // Fall back to original for other cases
     }
 }
@@ -1018,7 +1556,9 @@ pub fn determine_type(expression: &Expr) -> Option<DataType> {
         
         Expr::UnaryExpr { op: Operator::Not, .. } => Some(DataType::Bool),
         Expr::UnaryExpr { .. } => None,
-        
+
+        Expr::Len { .. } => Some(DataType::Int),
+
         Expr::ListLiteral { data_type, data } => {
             let element_type = if !matches!(data_type, DataType::Unsolved) {
                 data_type.clone()

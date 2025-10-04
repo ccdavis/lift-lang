@@ -1,0 +1,26 @@
+// Test all new map methods
+
+let ages = #{'Alice': 25, 'Bob': 30, 'Carol': 35};
+
+// Test keys
+let names = ages.keys();
+output(names);              // ['Alice', 'Bob', 'Carol'] (sorted)
+
+// Test values
+let ageList = ages.values();
+output(ageList);            // [25, 30, 35] (corresponding to sorted keys)
+
+// Test contains_key
+output(ages.contains_key(key: 'Alice'));    // true
+output(ages.contains_key(key: 'Dave'));     // false
+
+// Test is_empty
+output(ages.is_empty());    // false
+let empty: Map of Str to Int = #{};
+output(empty.is_empty());   // true
+
+// Test with integer keys
+let scores = #{1: 'A', 2: 'B', 3: 'C'};
+output(scores.keys());      // [1, 2, 3]
+output(scores.values());    // ['A', 'B', 'C']
+output(scores.contains_key(key: 2))     // true

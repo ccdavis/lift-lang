@@ -1,0 +1,21 @@
+// Test two custom methods on different type aliases
+type Angle = Flt;
+type Temperature = Flt;
+
+function Angle.normalize(): Angle {
+    if self > 360.0 {
+        self - 360.0
+    } else {
+        self
+    }
+};
+
+function Temperature.to_celsius(): Temperature {
+    (self - 32.0) / 1.8
+};
+
+let angle1: Angle = 450.0;
+output('Angle normalized:', angle1.normalize());
+
+let temp: Temperature = 98.6;
+output('Temp in C:', temp.to_celsius())

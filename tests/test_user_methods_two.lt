@@ -1,0 +1,14 @@
+// Test: Two methods on one type alias
+type Temperature = Flt;
+
+function Temperature.double(): Temperature {
+    self * 2.0
+};
+
+function Temperature.triple(): Temperature {
+    self * 3.0
+};
+
+let temp1: Temperature = 5.0;
+output('5 doubled:', temp1.double());
+output('5 tripled:', temp1.triple())

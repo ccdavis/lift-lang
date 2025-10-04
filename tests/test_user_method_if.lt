@@ -1,0 +1,16 @@
+// Test: Method with if expression
+type Number = Int;
+
+function Number.classify(): Str {
+    if self > 0 {
+        'positive'
+    } else {
+        'not positive'
+    }
+};
+
+let num1: Number = 5;
+output('5 is:', num1.classify());
+
+let num2: Number = -3;
+output('-3 is:', num2.classify())

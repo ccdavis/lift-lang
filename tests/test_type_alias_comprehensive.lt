@@ -1,0 +1,116 @@
+// Comprehensive test of user-defined methods on type aliases
+
+// === Define type aliases ===
+type Celsius = Flt;
+type Fahrenheit = Flt;
+type Angle = Flt;
+type PersonName = Str;
+type Age = Int;
+type Score = Int;
+
+// === Custom methods on Float aliases ===
+function Celsius.to_fahrenheit(): Fahrenheit {
+    self * 1.8 + 32.0
+};
+
+function Fahrenheit.to_celsius(): Celsius {
+    (self - 32.0) / 1.8
+};
+
+function Angle.normalize(): Angle {
+    if self > 360.0 {
+        self - 360.0
+    } else if self < 0.0 {
+        self + 360.0
+    } else {
+        self
+    }
+};
+
+// === Custom methods on String aliases ===
+function PersonName.formal_greeting(): Str {
+    'Dear ' + self + ','
+};
+
+function PersonName.casual_greeting(): Str {
+    'Hey ' + self + '!'
+};
+
+// === Custom methods on Int aliases ===
+function Age.is_adult(): Bool {
+    self >= 18
+};
+
+function Age.is_senior(): Bool {
+    self >= 65
+};
+
+function Score.letter_grade(): Str {
+    if self >= 90 {
+        'A'
+    } else if self >= 80 {
+        'B'
+    } else if self >= 70 {
+        'C'
+    } else if self >= 60 {
+        'D'
+    } else {
+        'F'
+    }
+};
+
+// === Test custom methods ===
+output('=== Temperature Conversion ===');
+let temp_c: Celsius = 20.0;
+output('20 C to F:', temp_c.to_fahrenheit());
+
+let temp_f: Fahrenheit = 68.0;
+output('68 F to C:', temp_f.to_celsius());
+
+output('');
+output('=== Angle Normalization ===');
+let angle1: Angle = 450.0;
+output('450 degrees normalized:', angle1.normalize());
+
+let angle2: Angle = -45.0;
+output('-45 degrees normalized:', angle2.normalize());
+
+output('');
+output('=== Name Greetings ===');
+let name: PersonName = 'Alice';
+output(name.formal_greeting());
+output(name.casual_greeting());
+
+output('');
+output('=== Age Checks ===');
+let age1: Age = 25;
+output('25 is adult?', age1.is_adult());
+output('25 is senior?', age1.is_senior());
+
+let age2: Age = 70;
+output('70 is adult?', age2.is_adult());
+output('70 is senior?', age2.is_senior());
+
+output('');
+output('=== Grade Calculation ===');
+let score1: Score = 95;
+output('Score 95 gets:', score1.letter_grade());
+
+let score2: Score = 75;
+output('Score 75 gets:', score2.letter_grade());
+
+// === Test combining custom and built-in methods ===
+output('');
+output('=== Combining Custom + Built-in Methods ===');
+let msg: PersonName = 'bob';
+output('Custom then built-in:', msg.casual_greeting().upper());
+
+// === Test that type aliases still work with built-in methods ===
+output('');
+output('=== Type Aliases Inherit Built-in Methods ===');
+let name2: PersonName = 'Charlie Brown';
+output('Contains "Brown"?', name2.contains(substring: 'Brown'));
+output('Uppercase:', name2.upper());
+
+output('');
+output('All tests completed successfully!')

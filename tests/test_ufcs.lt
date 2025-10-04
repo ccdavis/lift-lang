@@ -1,0 +1,27 @@
+// Test Uniform Function Call Syntax (UFCS)
+
+function Str.double(): Str {
+    self + self
+};
+
+function Str.add_suffix(suffix: Str): Str {
+    self + suffix
+};
+
+// Method syntax
+let msg1 = 'Hello'.double();
+output(msg1);  // HelloHello
+
+// UFCS: function syntax with object as first argument
+let msg2 = double(self: 'World');
+output(msg2);  // WorldWorld
+
+// UFCS with additional parameters
+let msg3 = add_suffix(self: 'Hi', suffix: '!');
+output(msg3);  // Hi!
+
+// Both syntaxes are equivalent
+let a = 'Test'.add_suffix(suffix: '123');
+let b = add_suffix(self: 'Test', suffix: '123');
+output(a);
+output(b)  // Both should be Test123

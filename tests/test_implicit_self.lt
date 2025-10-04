@@ -1,0 +1,23 @@
+// Test implicit self parameter in methods
+
+// Define method without explicit self parameter
+function Str.double(): Str {
+    self + self
+};
+
+// Call it without passing self
+let message = 'Hello';
+let doubled = message.double();
+output(doubled);  // Should output 'HelloHello'
+
+// Method with parameters
+function Str.add_suffix(suffix: Str): Str {
+    self + suffix
+};
+
+let with_suffix = 'Hello'.add_suffix(suffix: ' World');
+output(with_suffix);  // Should output 'Hello World'
+
+// Test method chaining
+let chained = 'A'.double().add_suffix(suffix: '!');
+output(chained)  // Should output 'AA!'

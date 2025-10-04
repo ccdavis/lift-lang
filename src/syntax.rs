@@ -19,6 +19,7 @@ arg-list := EPSILON
 #![allow(unused_variables)]
 
 use std::collections::HashMap;
+use std::error::Error;
 use std::fmt::Debug;
 use std::rc::Rc;
 
@@ -46,6 +47,7 @@ pub struct Param {
     pub data_type: DataType,
     pub default: Option<Expr>,
     pub index: (usize, usize),
+    pub copy: bool,  // true = pass by value (mutable inside function), false = pass by reference (immutable)
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -176,11 +178,493 @@ impl std::fmt::Display for KeyData {
     }
 }
 
+/// Built-in methods for String, List, and Map types
+#[derive(Clone, Debug, PartialEq)]
+pub enum BuiltinMethod {
+    // String methods (10)
+    StrUpper,
+    StrLower,
+    StrSubstring,
+    StrContains,
+    StrTrim,
+    StrSplit,
+    StrReplace,
+    StrStartsWith,
+    StrEndsWith,
+    StrIsEmpty,
+
+    // List methods (7)
+    ListFirst,
+    ListLast,
+    ListContains,
+    ListSlice,
+    ListReverse,
+    ListJoin,
+    ListIsEmpty,
+
+    // Map methods (4)
+    MapKeys,
+    MapValues,
+    MapContainsKey,
+    MapIsEmpty,
+}
+
+impl BuiltinMethod {
+    /// Create a BuiltinMethod from type and method names
+    pub fn from_name(type_name: &str, method_name: &str) -> Option<Self> {
+        match (type_name, method_name) {
+            // String methods
+            ("Str", "upper") => Some(BuiltinMethod::StrUpper),
+            ("Str", "lower") => Some(BuiltinMethod::StrLower),
+            ("Str", "substring") => Some(BuiltinMethod::StrSubstring),
+            ("Str", "contains") => Some(BuiltinMethod::StrContains),
+            ("Str", "trim") => Some(BuiltinMethod::StrTrim),
+            ("Str", "split") => Some(BuiltinMethod::StrSplit),
+            ("Str", "replace") => Some(BuiltinMethod::StrReplace),
+            ("Str", "starts_with") => Some(BuiltinMethod::StrStartsWith),
+            ("Str", "ends_with") => Some(BuiltinMethod::StrEndsWith),
+            ("Str", "is_empty") => Some(BuiltinMethod::StrIsEmpty),
+
+            // List methods
+            ("List", "first") => Some(BuiltinMethod::ListFirst),
+            ("List", "last") => Some(BuiltinMethod::ListLast),
+            ("List", "contains") => Some(BuiltinMethod::ListContains),
+            ("List", "slice") => Some(BuiltinMethod::ListSlice),
+            ("List", "reverse") => Some(BuiltinMethod::ListReverse),
+            ("List", "join") => Some(BuiltinMethod::ListJoin),
+            ("List", "is_empty") => Some(BuiltinMethod::ListIsEmpty),
+
+            // Map methods
+            ("Map", "keys") => Some(BuiltinMethod::MapKeys),
+            ("Map", "values") => Some(BuiltinMethod::MapValues),
+            ("Map", "contains_key") => Some(BuiltinMethod::MapContainsKey),
+            ("Map", "is_empty") => Some(BuiltinMethod::MapIsEmpty),
+
+            _ => None,
+        }
+    }
+
+    /// Execute this built-in method with the given receiver and arguments
+    pub fn execute(&self, receiver: Expr, args: Vec<Expr>) -> Result<Expr, Box<dyn Error>> {
+        match self {
+            // === String Methods ===
+            BuiltinMethod::StrUpper => {
+                match receiver {
+                    Expr::Literal(LiteralData::Str(ref s)) | Expr::RuntimeData(LiteralData::Str(ref s)) => {
+                        let upper = s.trim_matches('\'').to_uppercase();
+                        Ok(Expr::RuntimeData(LiteralData::Str(format!("'{}'", upper).into())))
+                    }
+                    _ => Err("upper() can only be called on strings".into())
+                }
+            }
+
+            BuiltinMethod::StrLower => {
+                match receiver {
+                    Expr::Literal(LiteralData::Str(ref s)) | Expr::RuntimeData(LiteralData::Str(ref s)) => {
+                        let lower = s.trim_matches('\'').to_lowercase();
+                        Ok(Expr::RuntimeData(LiteralData::Str(format!("'{}'", lower).into())))
+                    }
+                    _ => Err("lower() can only be called on strings".into())
+                }
+            }
+
+            BuiltinMethod::StrSubstring => {
+                match receiver {
+                    Expr::Literal(LiteralData::Str(ref s)) | Expr::RuntimeData(LiteralData::Str(ref s)) => {
+                        if args.len() != 2 {
+                            return Err("substring() requires exactly 2 arguments".into());
+                        }
+
+                        let str_content = s.trim_matches('\'');
+                        let (start_idx, end_idx) = match (&args[0], &args[1]) {
+                            (Expr::Literal(LiteralData::Int(start)) | Expr::RuntimeData(LiteralData::Int(start)),
+                             Expr::Literal(LiteralData::Int(end)) | Expr::RuntimeData(LiteralData::Int(end))) => {
+                                (*start, *end)
+                            }
+                            _ => return Err("substring() requires integer arguments".into())
+                        };
+
+                        let start_usize = start_idx.max(0) as usize;
+                        let end_usize = end_idx.max(0) as usize;
+
+                        if start_usize <= end_usize && end_usize <= str_content.len() {
+                            let substring = &str_content[start_usize..end_usize];
+                            Ok(Expr::RuntimeData(LiteralData::Str(format!("'{}'", substring).into())))
+                        } else {
+                            Err(format!("substring indices out of bounds: start={}, end={}, length={}",
+                                start_usize, end_usize, str_content.len()).into())
+                        }
+                    }
+                    _ => Err("substring() can only be called on strings".into())
+                }
+            }
+
+            BuiltinMethod::StrContains => {
+                match receiver {
+                    Expr::Literal(LiteralData::Str(ref s)) | Expr::RuntimeData(LiteralData::Str(ref s)) => {
+                        if args.len() != 1 {
+                            return Err("contains() requires exactly 1 argument".into());
+                        }
+
+                        let str_content = s.trim_matches('\'');
+                        match &args[0] {
+                            Expr::Literal(LiteralData::Str(ref needle)) | Expr::RuntimeData(LiteralData::Str(ref needle)) => {
+                                let needle_content = needle.trim_matches('\'');
+                                let contains = str_content.contains(needle_content);
+                                Ok(Expr::RuntimeData(LiteralData::Bool(contains)))
+                            }
+                            _ => Err("contains() requires a string argument".into())
+                        }
+                    }
+                    _ => Err("contains() can only be called on strings".into())
+                }
+            }
+
+            BuiltinMethod::StrTrim => {
+                match receiver {
+                    Expr::Literal(LiteralData::Str(ref s)) | Expr::RuntimeData(LiteralData::Str(ref s)) => {
+                        let trimmed = s.trim_matches('\'').trim();
+                        Ok(Expr::RuntimeData(LiteralData::Str(format!("'{}'", trimmed).into())))
+                    }
+                    _ => Err("trim() can only be called on strings".into())
+                }
+            }
+
+            BuiltinMethod::StrSplit => {
+                match receiver {
+                    Expr::Literal(LiteralData::Str(ref s)) | Expr::RuntimeData(LiteralData::Str(ref s)) => {
+                        if args.len() != 1 {
+                            return Err("split() requires exactly 1 argument".into());
+                        }
+
+                        let str_content = s.trim_matches('\'');
+                        match &args[0] {
+                            Expr::Literal(LiteralData::Str(ref delim)) | Expr::RuntimeData(LiteralData::Str(ref delim)) => {
+                                let delim_content = delim.trim_matches('\'');
+                                let parts: Vec<Expr> = str_content
+                                    .split(delim_content)
+                                    .map(|part| Expr::RuntimeData(LiteralData::Str(format!("'{}'", part).into())))
+                                    .collect();
+                                Ok(Expr::RuntimeList {
+                                    data_type: DataType::Str,
+                                    data: parts,
+                                })
+                            }
+                            _ => Err("split() requires a string delimiter".into())
+                        }
+                    }
+                    _ => Err("split() can only be called on strings".into())
+                }
+            }
+
+            BuiltinMethod::StrReplace => {
+                match receiver {
+                    Expr::Literal(LiteralData::Str(ref s)) | Expr::RuntimeData(LiteralData::Str(ref s)) => {
+                        if args.len() != 2 {
+                            return Err("replace() requires exactly 2 arguments".into());
+                        }
+
+                        let str_content = s.trim_matches('\'');
+                        match (&args[0], &args[1]) {
+                            (Expr::Literal(LiteralData::Str(ref old)) | Expr::RuntimeData(LiteralData::Str(ref old)),
+                             Expr::Literal(LiteralData::Str(ref new)) | Expr::RuntimeData(LiteralData::Str(ref new))) => {
+                                let old_content = old.trim_matches('\'');
+                                let new_content = new.trim_matches('\'');
+                                let replaced = str_content.replace(old_content, new_content);
+                                Ok(Expr::RuntimeData(LiteralData::Str(format!("'{}'", replaced).into())))
+                            }
+                            _ => Err("replace() requires two string arguments".into())
+                        }
+                    }
+                    _ => Err("replace() can only be called on strings".into())
+                }
+            }
+
+            BuiltinMethod::StrStartsWith => {
+                match receiver {
+                    Expr::Literal(LiteralData::Str(ref s)) | Expr::RuntimeData(LiteralData::Str(ref s)) => {
+                        if args.len() != 1 {
+                            return Err("starts_with() requires exactly 1 argument".into());
+                        }
+
+                        let str_content = s.trim_matches('\'');
+                        match &args[0] {
+                            Expr::Literal(LiteralData::Str(ref prefix)) | Expr::RuntimeData(LiteralData::Str(ref prefix)) => {
+                                let prefix_content = prefix.trim_matches('\'');
+                                let starts = str_content.starts_with(prefix_content);
+                                Ok(Expr::RuntimeData(LiteralData::Bool(starts)))
+                            }
+                            _ => Err("starts_with() requires a string argument".into())
+                        }
+                    }
+                    _ => Err("starts_with() can only be called on strings".into())
+                }
+            }
+
+            BuiltinMethod::StrEndsWith => {
+                match receiver {
+                    Expr::Literal(LiteralData::Str(ref s)) | Expr::RuntimeData(LiteralData::Str(ref s)) => {
+                        if args.len() != 1 {
+                            return Err("ends_with() requires exactly 1 argument".into());
+                        }
+
+                        let str_content = s.trim_matches('\'');
+                        match &args[0] {
+                            Expr::Literal(LiteralData::Str(ref suffix)) | Expr::RuntimeData(LiteralData::Str(ref suffix)) => {
+                                let suffix_content = suffix.trim_matches('\'');
+                                let ends = str_content.ends_with(suffix_content);
+                                Ok(Expr::RuntimeData(LiteralData::Bool(ends)))
+                            }
+                            _ => Err("ends_with() requires a string argument".into())
+                        }
+                    }
+                    _ => Err("ends_with() can only be called on strings".into())
+                }
+            }
+
+            BuiltinMethod::StrIsEmpty => {
+                match receiver {
+                    Expr::Literal(LiteralData::Str(ref s)) | Expr::RuntimeData(LiteralData::Str(ref s)) => {
+                        let str_content = s.trim_matches('\'');
+                        Ok(Expr::RuntimeData(LiteralData::Bool(str_content.is_empty())))
+                    }
+                    _ => Err("is_empty() can only be called on strings".into())
+                }
+            }
+
+            // === List Methods ===
+            BuiltinMethod::ListFirst => {
+                match receiver {
+                    Expr::RuntimeList { ref data, .. } => {
+                        if let Some(first_item) = data.first() {
+                            Ok(first_item.clone())
+                        } else {
+                            Err("first() called on empty list".into())
+                        }
+                    }
+                    _ => Err("first() can only be called on lists".into())
+                }
+            }
+
+            BuiltinMethod::ListLast => {
+                match receiver {
+                    Expr::RuntimeList { ref data, .. } => {
+                        if let Some(last_item) = data.last() {
+                            Ok(last_item.clone())
+                        } else {
+                            Err("last() called on empty list".into())
+                        }
+                    }
+                    _ => Err("last() can only be called on lists".into())
+                }
+            }
+
+            BuiltinMethod::ListContains => {
+                match receiver {
+                    Expr::RuntimeList { ref data, .. } => {
+                        if args.len() != 1 {
+                            return Err("contains() requires exactly 1 argument".into());
+                        }
+
+                        let item_to_find = &args[0];
+                        let found = data.iter().any(|elem| {
+                            match (elem, item_to_find) {
+                                (Expr::Literal(a) | Expr::RuntimeData(a), Expr::Literal(b) | Expr::RuntimeData(b)) => a == b,
+                                _ => false
+                            }
+                        });
+                        Ok(Expr::RuntimeData(LiteralData::Bool(found)))
+                    }
+                    _ => Err("contains() can only be called on lists".into())
+                }
+            }
+
+            BuiltinMethod::ListSlice => {
+                match receiver {
+                    Expr::RuntimeList { ref data, ref data_type } => {
+                        if args.len() != 2 {
+                            return Err("slice() requires exactly 2 arguments".into());
+                        }
+
+                        let (start_idx, end_idx) = match (&args[0], &args[1]) {
+                            (Expr::Literal(LiteralData::Int(start)) | Expr::RuntimeData(LiteralData::Int(start)),
+                             Expr::Literal(LiteralData::Int(end)) | Expr::RuntimeData(LiteralData::Int(end))) => {
+                                (*start, *end)
+                            }
+                            _ => return Err("slice() requires integer arguments".into())
+                        };
+
+                        let start_usize = start_idx.max(0) as usize;
+                        let end_usize = end_idx.max(0) as usize;
+
+                        if start_usize <= end_usize && end_usize <= data.len() {
+                            let sliced = data[start_usize..end_usize].to_vec();
+                            Ok(Expr::RuntimeList {
+                                data_type: data_type.clone(),
+                                data: sliced,
+                            })
+                        } else {
+                            Err(format!("slice indices out of bounds: start={}, end={}, length={}",
+                                start_usize, end_usize, data.len()).into())
+                        }
+                    }
+                    _ => Err("slice() can only be called on lists".into())
+                }
+            }
+
+            BuiltinMethod::ListReverse => {
+                match receiver {
+                    Expr::RuntimeList { ref data, ref data_type } => {
+                        let mut reversed = data.clone();
+                        reversed.reverse();
+                        Ok(Expr::RuntimeList {
+                            data_type: data_type.clone(),
+                            data: reversed,
+                        })
+                    }
+                    _ => Err("reverse() can only be called on lists".into())
+                }
+            }
+
+            BuiltinMethod::ListJoin => {
+                match receiver {
+                    Expr::RuntimeList { ref data, .. } => {
+                        if args.len() != 1 {
+                            return Err("join() requires exactly 1 argument".into());
+                        }
+
+                        match &args[0] {
+                            Expr::Literal(LiteralData::Str(ref sep)) | Expr::RuntimeData(LiteralData::Str(ref sep)) => {
+                                let sep_content = sep.trim_matches('\'');
+
+                                let strings: Result<Vec<String>, Box<dyn Error>> = data.iter().map(|elem| {
+                                    match elem {
+                                        Expr::Literal(LiteralData::Str(s)) | Expr::RuntimeData(LiteralData::Str(s)) => {
+                                            Ok(s.trim_matches('\'').to_string())
+                                        }
+                                        _ => Err("join() can only be called on lists of strings".into())
+                                    }
+                                }).collect();
+
+                                match strings {
+                                    Ok(str_vec) => {
+                                        let joined = str_vec.join(sep_content);
+                                        Ok(Expr::RuntimeData(LiteralData::Str(format!("'{}'", joined).into())))
+                                    }
+                                    Err(e) => Err(e)
+                                }
+                            }
+                            _ => Err("join() requires a string separator".into())
+                        }
+                    }
+                    _ => Err("join() can only be called on lists".into())
+                }
+            }
+
+            BuiltinMethod::ListIsEmpty => {
+                match receiver {
+                    Expr::RuntimeList { ref data, .. } => {
+                        Ok(Expr::RuntimeData(LiteralData::Bool(data.is_empty())))
+                    }
+                    _ => Err("is_empty() can only be called on lists".into())
+                }
+            }
+
+            // === Map Methods ===
+            BuiltinMethod::MapKeys => {
+                match receiver {
+                    Expr::RuntimeMap { ref data, ref key_type, .. } => {
+                        let mut keys_vec: Vec<Expr> = data.keys().map(|key| {
+                            match key {
+                                KeyData::Int(i) => Expr::RuntimeData(LiteralData::Int(*i)),
+                                KeyData::Str(s) => Expr::RuntimeData(LiteralData::Str(s.clone())),
+                                KeyData::Bool(b) => Expr::RuntimeData(LiteralData::Bool(*b)),
+                            }
+                        }).collect();
+
+                        // Sort keys for consistent output
+                        keys_vec.sort_by(|a, b| {
+                            match (a, b) {
+                                (Expr::RuntimeData(LiteralData::Int(x)), Expr::RuntimeData(LiteralData::Int(y))) => x.cmp(y),
+                                (Expr::RuntimeData(LiteralData::Str(x)), Expr::RuntimeData(LiteralData::Str(y))) => x.cmp(y),
+                                (Expr::RuntimeData(LiteralData::Bool(x)), Expr::RuntimeData(LiteralData::Bool(y))) => x.cmp(y),
+                                _ => std::cmp::Ordering::Equal
+                            }
+                        });
+
+                        Ok(Expr::RuntimeList {
+                            data_type: key_type.clone(),
+                            data: keys_vec,
+                        })
+                    }
+                    _ => Err("keys() can only be called on maps".into())
+                }
+            }
+
+            BuiltinMethod::MapValues => {
+                match receiver {
+                    Expr::RuntimeMap { ref data, ref value_type, .. } => {
+                        // Extract values - order matches sorted keys
+                        let mut key_value_pairs: Vec<_> = data.iter().collect();
+                        key_value_pairs.sort_by(|(a, _), (b, _)| {
+                            match (a, b) {
+                                (KeyData::Int(x), KeyData::Int(y)) => x.cmp(y),
+                                (KeyData::Str(x), KeyData::Str(y)) => x.cmp(y),
+                                (KeyData::Bool(x), KeyData::Bool(y)) => x.cmp(y),
+                                _ => std::cmp::Ordering::Equal
+                            }
+                        });
+
+                        let values_vec: Vec<Expr> = key_value_pairs.iter().map(|(_, v)| (*v).clone()).collect();
+                        Ok(Expr::RuntimeList {
+                            data_type: value_type.clone(),
+                            data: values_vec,
+                        })
+                    }
+                    _ => Err("values() can only be called on maps".into())
+                }
+            }
+
+            BuiltinMethod::MapContainsKey => {
+                match receiver {
+                    Expr::RuntimeMap { ref data, .. } => {
+                        if args.len() != 1 {
+                            return Err("contains_key() requires exactly 1 argument".into());
+                        }
+
+                        let key_data = match &args[0] {
+                            Expr::Literal(LiteralData::Int(i)) | Expr::RuntimeData(LiteralData::Int(i)) => KeyData::Int(*i),
+                            Expr::Literal(LiteralData::Str(s)) | Expr::RuntimeData(LiteralData::Str(s)) => KeyData::Str(s.clone()),
+                            Expr::Literal(LiteralData::Bool(b)) | Expr::RuntimeData(LiteralData::Bool(b)) => KeyData::Bool(*b),
+                            _ => return Err("contains_key() key must be Int, Str, or Bool".into())
+                        };
+
+                        let contains = data.contains_key(&key_data);
+                        Ok(Expr::RuntimeData(LiteralData::Bool(contains)))
+                    }
+                    _ => Err("contains_key() can only be called on maps".into())
+                }
+            }
+
+            BuiltinMethod::MapIsEmpty => {
+                match receiver {
+                    Expr::RuntimeMap { ref data, .. } => {
+                        Ok(Expr::RuntimeData(LiteralData::Bool(data.is_empty())))
+                    }
+                    _ => Err("is_empty() can only be called on maps".into())
+                }
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Function {
     pub params: Vec<Param>,
     pub return_type: DataType,
     pub body: Box<Expr>,
+    pub receiver_type: Option<String>,  // Some("TypeName") for methods, None for regular functions
+    pub builtin: Option<BuiltinMethod>,  // Some(...) for built-in methods, None for user-defined
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -248,6 +732,12 @@ pub enum Expr {
         index: (usize, usize),
         args: Vec<KeywordArg>,
     },
+    MethodCall {
+        receiver: Box<Expr>,      // The object (e.g., mystring)
+        method_name: String,       // The method name (e.g., upper)
+        fn_index: (usize, usize),  // Index of the function in symbol table
+        args: Vec<KeywordArg>,     // Arguments (not including self)
+    },
     DefineFunction {
         fn_name: String,
         index: (usize, usize),
@@ -262,6 +752,7 @@ pub enum Expr {
         index: (usize, usize),
         data_type: DataType,
         value: Box<Expr>,
+        mutable: bool,
     },
     DefineType {
         type_name: String,
@@ -286,6 +777,9 @@ pub enum Expr {
     Index {
         expr: Box<Expr>,
         index: Box<Expr>,
+    },
+    Len {
+        expr: Box<Expr>,
     },
 }
 impl std::fmt::Display for Expr {
@@ -341,6 +835,17 @@ impl std::fmt::Display for Expr {
             }
             Expr::Index { expr, index } => {
                 write!(f, "{}[{}]", expr, index)
+            }
+            Expr::Len { expr } => {
+                write!(f, "len({})", expr)
+            }
+            Expr::MethodCall { receiver, method_name, args, .. } => {
+                write!(f, "{}.{}(", receiver, method_name)?;
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}: {}", arg.name, arg.value)?;
+                }
+                write!(f, ")")
             }
             _ => write!(f, "{:?}", &self),
         }

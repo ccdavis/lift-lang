@@ -1,0 +1,14 @@
+// Test: How many methods can we define on one type?
+type Number = Int;
+
+function Number.add_one(): Number {
+    self + 1
+};
+
+function Number.add_two(): Number {
+    self + 2
+};
+
+let num: Number = 5;
+output('5 + 1:', num.add_one());
+output('5 + 2:', num.add_two())

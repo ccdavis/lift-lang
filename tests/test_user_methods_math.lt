@@ -1,0 +1,86 @@
+// Test: User-defined mathematical methods
+// Expected: Math operations should produce correct results
+
+type Angle = Flt;
+type Distance = Flt;
+type Percentage = Flt;
+
+// Angle methods
+function Angle.normalize(): Angle {
+    if self > 360.0 {
+        self - 360.0
+    } else if self < 0.0 {
+        self + 360.0
+    } else {
+        self
+    }
+};
+
+function Angle.double(): Angle {
+    self * 2.0
+};
+
+function Angle.half(): Angle {
+    self / 2.0
+};
+
+// Distance methods
+function Distance.to_kilometers(): Distance {
+    self / 1000.0
+};
+
+function Distance.to_miles(): Distance {
+    self * 0.000621371
+};
+
+// Percentage methods
+function Percentage.of(amount: Flt): Flt {
+    amount * (self / 100.0)
+};
+
+function Percentage.as_decimal(): Flt {
+    self / 100.0
+};
+
+// Test angle normalization
+let angle1: Angle = 450.0;
+output('450 normalized:', angle1.normalize());     // 90.0
+
+let angle2: Angle = -45.0;
+output('-45 normalized:', angle2.normalize());     // 315.0
+
+let angle3: Angle = 180.0;
+output('180 normalized:', angle3.normalize());     // 180.0
+
+// Test angle operations
+let angle4: Angle = 45.0;
+output('45 doubled:', angle4.double());            // 90.0
+output('45 halved:', angle4.half());               // 22.5
+
+let angle5: Angle = 90.0;
+output('90 doubled then normalized:', angle5.double().normalize());  // 180.0
+
+// Test distance conversions
+let dist1: Distance = 5000.0;
+output('5000m to km:', dist1.to_kilometers());     // 5.0
+
+let dist2: Distance = 1609.34;
+output('1609.34m to miles:', dist2.to_miles());    // ~1.0
+
+// Test percentage calculations
+let pct1: Percentage = 50.0;
+output('50% of 100:', pct1.of(amount: 100.0));     // 50.0
+output('50% as decimal:', pct1.as_decimal());      // 0.5
+
+let pct2: Percentage = 25.0;
+output('25% of 200:', pct2.of(amount: 200.0));     // 50.0
+
+let pct3: Percentage = 10.0;
+output('10% of 80:', pct3.of(amount: 80.0));       // 8.0
+
+// Test chaining
+let angle6: Angle = 30.0;
+let result = angle6.double().double();
+output('30 doubled twice:', result);               // 120.0
+
+output('Math tests completed')

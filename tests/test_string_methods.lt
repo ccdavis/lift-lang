@@ -1,0 +1,48 @@
+// Test all new string methods
+
+let text = 'Hello World';
+
+// Test upper and lower
+output(text.upper());          // 'HELLO WORLD'
+output(text.lower());          // 'hello world'
+
+// Test substring
+let sub = text.substring(start: 0, end: 5);
+output(sub);                   // 'Hello'
+
+let sub2 = text.substring(start: 6, end: 11);
+output(sub2);                  // 'World'
+
+// Test contains
+output(text.contains(substring: 'World'));  // true
+output(text.contains(substring: 'world'));  // false
+output(text.contains(substring: 'Hello'));  // true
+output(text.contains(substring: 'xyz'));    // false
+
+// Test trim
+let padded = '  trimmed  ';
+output(padded.trim());         // 'trimmed'
+
+// Test split
+let parts = text.split(delimiter: ' ');
+output(parts);                 // ['Hello', 'World']
+
+// Test replace
+let replaced = text.replace(old: 'World', new: 'Lift');
+output(replaced);              // 'Hello Lift'
+
+// Test starts_with
+output(text.starts_with(prefix: 'Hello'));  // true
+output(text.starts_with(prefix: 'World'));  // false
+
+// Test ends_with
+output(text.ends_with(suffix: 'World'));    // true
+output(text.ends_with(suffix: 'Hello'));    // false
+
+// Test is_empty
+output(text.is_empty());       // false
+output(''.is_empty());         // true
+
+// Test method chaining
+let result = 'hello'.upper().replace(old: 'E', new: '3');
+output(result)                 // 'H3LLO'

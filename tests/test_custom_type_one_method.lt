@@ -1,0 +1,15 @@
+// Test one custom method on Angle
+type Angle = Flt;
+
+function Angle.normalize(): Angle {
+    if self > 360.0 {
+        self - 360.0
+    } else if self < 0.0 {
+        self + 360.0
+    } else {
+        self
+    }
+};
+
+let angle1: Angle = 450.0;
+output('Testing:', angle1.normalize())

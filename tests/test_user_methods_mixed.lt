@@ -1,0 +1,117 @@
+// Test: Mixed user-defined and built-in methods
+// Expected: Custom methods should work alongside built-in methods
+
+type Username = Str;
+type Password = Str;
+type Level = Int;
+type Multiplier = Flt;
+
+// Username methods
+function Username.is_valid_length(): Bool {
+    // Username must be between 3 and 20 characters (simplified)
+    let trimmed = self.trim();
+    let has_content = not trimmed.is_empty();
+    has_content
+};
+
+function Username.sanitize(): Username {
+    self.trim().lower()
+};
+
+// Password methods
+function Password.is_strong(): Bool {
+    // Simple check: must contain @ symbol (as proxy for special char)
+    self.contains(substring: '@')
+};
+
+function Password.obfuscate(): Str {
+    '****'
+};
+
+// Level methods
+function Level.next_level(): Level {
+    self + 1
+};
+
+function Level.is_max(): Bool {
+    self >= 100
+};
+
+function Level.with_bonus(bonus: Int): Level {
+    self + bonus
+};
+
+// Multiplier methods
+function Multiplier.apply_to(value: Flt): Flt {
+    value * self
+};
+
+function Multiplier.increase(): Multiplier {
+    self + 0.5
+};
+
+// Test username validation and sanitization
+let user1: Username = '  Alice  ';
+output('Username valid?', user1.is_valid_length());        // true
+output('Sanitized:', user1.sanitize());                     // 'alice'
+
+let user2: Username = 'BOB';
+output('BOB sanitized:', user2.sanitize());                 // 'bob'
+
+// Test combining built-in contains with custom method
+let user3: Username = 'charlie123';
+let has_numbers = user3.contains(substring: '123');
+output('Has numbers?', has_numbers);                        // true
+
+// Test password methods
+let pass1: Password = 'secret@123';
+output('Password strong?', pass1.is_strong());              // true
+output('Password obfuscated:', pass1.obfuscate());          // '****'
+
+let pass2: Password = 'weakpass';
+output('Weak password strong?', pass2.is_strong());         // false
+
+// Test level progression
+let level1: Level = 5;
+output('Level 5 next:', level1.next_level());               // 6
+output('Level 5 is max?', level1.is_max());                 // false
+
+let level2: Level = 100;
+output('Level 100 is max?', level2.is_max());               // true
+
+let level3: Level = 10;
+output('Level 10 + 5 bonus:', level3.with_bonus(bonus: 5)); // 15
+
+// Test multiplier
+let mult1: Multiplier = 2.0;
+output('2x of 10:', mult1.apply_to(value: 10.0));          // 20.0
+
+let mult2: Multiplier = 1.5;
+output('1.5x increased:', mult2.increase());                // 2.0
+
+let mult3 = mult2.increase();
+output('1.5x increased, applied to 8:', mult3.apply_to(value: 8.0));  // 16.0
+
+// Test chaining custom and built-in
+let user4: Username = '  MixedCase  ';
+let result1 = user4.sanitize();
+output('Sanitized MixedCase:', result1);                    // 'mixedcase'
+
+// Test that type aliases work with if expressions
+let level4: Level = 50;
+let status = if level4.is_max() {
+    'MAX'
+} else {
+    'NORMAL'
+};
+output('Level 50 status:', status);                         // 'NORMAL'
+
+let level5: Level = 100;
+let status2 = if level5.is_max() {
+    'MAX'
+} else {
+    'NORMAL'
+};
+output('Level 100 status:', status2);                       // 'MAX'
+
+output('Mixed method tests completed')

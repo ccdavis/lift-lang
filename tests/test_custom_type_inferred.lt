@@ -1,0 +1,14 @@
+// Test type inference with custom type alias method
+type Angle = Flt;
+
+function Angle.normalize(): Angle {
+    if self > 360.0 {
+        self - 360.0
+    } else {
+        self
+    }
+};
+
+let angle1: Angle = 450.0;
+let normalized = angle1.normalize();
+output('Normalized:', normalized)

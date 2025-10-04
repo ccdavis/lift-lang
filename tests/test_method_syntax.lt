@@ -1,0 +1,11 @@
+// Test method syntax with explicit self parameter (temporary approach)
+
+// Define a method on Str that takes explicit self
+function Str.double(self: Str): Str {
+    self + self
+};
+
+// Call it using method syntax
+let message = 'Hello';
+let doubled = message.double(self: message);
+output(doubled)  // Should output 'HelloHello'

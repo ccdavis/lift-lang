@@ -1,0 +1,30 @@
+// Test: Single type alias with multiple methods
+// Expected: Multiple methods on one alias should all work
+
+type Temperature = Flt;
+
+function Temperature.double(): Temperature {
+    self * 2.0
+};
+
+function Temperature.triple(): Temperature {
+    self * 3.0
+};
+
+function Temperature.add_ten(): Temperature {
+    self + 10.0
+};
+
+let temp1: Temperature = 5.0;
+output('5 doubled:', temp1.double());         // 10.0
+output('5 tripled:', temp1.triple());         // 15.0
+output('5 + 10:', temp1.add_ten());           // 15.0
+
+let temp2: Temperature = 20.0;
+output('20 doubled:', temp2.double());        // 40.0
+
+// Test chaining
+let temp3: Temperature = 3.0;
+output('3 doubled then add 10:', temp3.double().add_ten());  // 16.0
+
+output('Single alias tests completed')

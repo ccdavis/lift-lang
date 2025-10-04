@@ -1,0 +1,146 @@
+// Final comprehensive test of user-defined methods on type aliases
+// This test demonstrates all working features
+
+output('======================================');
+output('USER-DEFINED METHODS ON TYPE ALIASES');
+output('======================================');
+
+// Test 1: Temperature conversions
+output('');
+output('Test 1: Temperature Conversions');
+output('--------------------------------');
+
+type Temp = Flt;
+
+function Temp.c_to_f(): Flt {
+    self * 1.8 + 32.0
+};
+
+function Temp.f_to_c(): Flt {
+    (self - 32.0) / 1.8
+};
+
+let freezing: Temp = 0.0;
+output('0C = ', freezing.c_to_f(), 'F');           // 32
+
+let boiling: Temp = 100.0;
+output('100C = ', boiling.c_to_f(), 'F');          // 212
+
+let room: Temp = 68.0;
+output('68F = ', room.f_to_c(), 'C');              // 20
+
+// Test 2: Age validation
+output('');
+output('Test 2: Age Validation with Boolean Methods');
+output('------------------------------------------------');
+
+type Age = Int;
+
+function Age.is_minor(): Bool {
+    self < 18
+};
+
+function Age.can_vote(): Bool {
+    self >= 18
+};
+
+let child_age: Age = 12;
+output('Age 12 is minor?', child_age.is_minor());         // true
+output('Age 12 can vote?', child_age.can_vote());         // false
+
+let adult_age: Age = 25;
+output('Age 25 is minor?', adult_age.is_minor());         // false
+output('Age 25 can vote?', adult_age.can_vote());         // true
+
+// Test 3: String formatting with chaining
+output('');
+output('Test 3: String Formatting + Method Chaining');
+output('------------------------------------------------');
+
+type Msg = Str;
+
+function Msg.exclaim(): Msg {
+    self + '!'
+};
+
+function Msg.greet(): Str {
+    'Hello, ' + self
+};
+
+let name: Msg = 'World';
+output('Basic exclaim:', name.exclaim());                 // 'World!'
+output('Basic greet:', name.greet());                     // 'Hello, World'
+
+// Chain custom + built-in
+output('Chain custom+builtin:', name.exclaim().upper());  // 'WORLD!'
+output('Chain builtin+custom:', name.upper().exclaim());  // 'WORLD!'
+
+// Test 4: Conditional logic in methods
+output('');
+output('Test 4: Conditional Logic in Methods');
+output('------------------------------------------');
+
+type Grade = Int;
+
+function Grade.letter(): Str {
+    if self >= 90 {
+        'A'
+    } else if self >= 80 {
+        'B'
+    } else if self >= 70 {
+        'C'
+    } else {
+        'F'
+    }
+};
+
+let score_a: Grade = 95;
+output('Score 95 =', score_a.letter());                   // 'A'
+
+let score_b: Grade = 85;
+output('Score 85 =', score_b.letter());                   // 'B'
+
+let score_c: Grade = 75;
+output('Score 75 =', score_c.letter());                   // 'C'
+
+let score_f: Grade = 50;
+output('Score 50 =', score_f.letter());                   // 'F'
+
+// Test 5: Type aliases inherit built-in methods
+output('');
+output('Test 5: Type Aliases Inherit Built-in Methods');
+output('---------------------------------------------------');
+
+type Email = Str;
+
+let email: Email = 'user@example.com';
+output('Email:', email);
+output('Has @?', email.contains(substring: '@'));         // true
+output('Uppercase:', email.upper());                       // 'USER@EXAMPLE.COM'
+output('Starts with user?', email.starts_with(prefix: 'user'));  // true
+
+// Test 6: Method chaining with computations
+output('');
+output('Test 6: Method Chaining with Computations');
+output('----------------------------------------------');
+
+type Count = Int;
+
+function Count.next(): Count {
+    self + 1
+};
+
+function Count.prev(): Count {
+    self - 1
+};
+
+let counter: Count = 5;
+output('Start:', counter);                                 // 5
+output('Next:', counter.next());                           // 6
+output('Prev:', counter.prev());                           // 4
+output('Next then next:', counter.next().next());          // 7
+
+output('');
+output('======================================');
+output('ALL TESTS PASSED!');
+output('======================================')

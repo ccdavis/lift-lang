@@ -1,0 +1,27 @@
+// Test built-in methods
+
+// String methods
+let msg = 'Hello World';
+output(msg.upper());          // 'HELLO WORLD'
+output(msg.lower());          // 'hello world'
+output(upper(self: msg));     // 'HELLO WORLD' (UFCS)
+output(lower(self: msg));     // 'hello world' (UFCS)
+
+// List methods
+let numbers = [10, 20, 30, 40];
+output(numbers.first());      // 10
+output(numbers.last());       // 40
+output(first(self: numbers)); // 10 (UFCS)
+output(last(self: numbers));  // 40 (UFCS)
+
+// Method chaining with built-ins
+let result = 'test'.upper().lower();
+output(result);               // 'test'
+
+// Combining user-defined and built-in methods
+function Str.exclaim(): Str {
+    self + '!'
+};
+
+let excited = 'wow'.upper().exclaim();
+output(excited)               // 'WOW!'

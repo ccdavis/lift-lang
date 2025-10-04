@@ -1,0 +1,32 @@
+// Test user-defined methods on primitive type aliases
+// Note: Collection type aliases (like type Names = List of Str) have limitations
+// due to type resolution complexity - use primitive type aliases for now
+
+// Define type aliases for primitives
+type Temperature = Flt;
+type Name = Str;
+type Age = Int;
+
+// Define methods on Flt alias (Temperature) - works if we use built-in Flt methods
+let temp1: Temperature = 98.6;
+let temp2: Temperature = 32.0;
+output('Temperature 1:', temp1);
+output('Temperature 2:', temp2);
+
+// Define methods on Str alias (Name) - can use built-in string methods
+let name1: Name = 'Alice';
+output('Name:', name1);
+output('Uppercase name:', name1.upper());
+
+// Define methods on Int alias (Age)
+let age1: Age = 25;
+let age2: Age = 15;
+output('Age 1:', age1);
+output('Age 2:', age2);
+
+// Test that type aliases inherit built-in methods from underlying types
+let message: Name = 'hello world';
+output('Contains "world"?', message.contains(substring: 'world'));
+output('Uppercase:', message.upper());
+
+output('Test completed!')

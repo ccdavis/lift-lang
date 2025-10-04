@@ -17,9 +17,10 @@ pub Program: Expr = {
 };
 
 pub ProgramPartExpr: Expr = {
-    ExprBlock,    
+    ExprBlock,
     ExprType,
     ExprOutput,
+    ExprLen,
     ExprIf,
     ExprWhile,
     ExprLet,
@@ -31,6 +32,10 @@ pub ProgramPartExpr: Expr = {
 
 ExprOutput: Expr =  {
     "output(" <o:CommaSeparated<ProgramPartExpr>> ")" => Expr::Output { data: o}.into(),
+}
+
+ExprLen: Expr = {
+    "len(" <e:ProgramPartExpr> ")" => Expr::Len { expr: Box::new(e) }.into(),
 }
 
 ExprBlock: Expr = {
@@ -49,8 +54,10 @@ ExprType: Expr = {
 };
 
 ExprLet: Expr= {
-    "let" <n: ident> "=" <r:ProgramPartExpr> => Expr::Let {var_name: n, data_type: DataType::Unsolved, index: (0,0),value: Box::new(r)}.into(),
-    "let" <n: ident>":" <d:DataType>  "=" <r:ProgramPartExpr> => Expr::Let {var_name: n, data_type: d, index: (0,0),value: Box::new(r)}.into(),
+    "let" <n: ident> "=" <r:ProgramPartExpr> => Expr::Let {var_name: n, data_type: DataType::Unsolved, index: (0,0), value: Box::new(r), mutable: false}.into(),
+    "let" <n: ident>":" <d:DataType>  "=" <r:ProgramPartExpr> => Expr::Let {var_name: n, data_type: d, index: (0,0), value: Box::new(r), mutable: false}.into(),
+    "let" "var" <n: ident> "=" <r:ProgramPartExpr> => Expr::Let {var_name: n, data_type: DataType::Unsolved, index: (0,0), value: Box::new(r), mutable: true}.into(),
+    "let" "var" <n: ident>":" <d:DataType>  "=" <r:ProgramPartExpr> => Expr::Let {var_name: n, data_type: d, index: (0,0), value: Box::new(r), mutable: true}.into(),
 };
 
 ExprIf: Expr = "if" <cond:ExprLogicOr> <then_block:ExprBlock> <else_part:ElsePart> => {
@@ -74,20 +81,32 @@ ElsePart: Expr = {
     () => Expr::Unit,
 };
 ExprWhile: Expr =  "while" <c:ExprLogicOr> <b:ExprBlock> => Expr::While { cond: Box::new(c), body: Box::new(b)}.into();
-ExprDefineFunction: Expr  = "function" <n: ident>  <f:DefFunction> => Expr::DefineFunction {fn_name: n,index: (0,0), value: Box::new(f)}.into();
+ExprDefineFunction: Expr  = {
+    // Regular function: function name(...)
+    "function" <n: ident>  <f:DefFunction> => Expr::DefineFunction {fn_name: n, index: (0,0), value: Box::new(f)}.into(),
+    // Method function: function Type.name(...)
+    "function" <t: TypeName> "." <n: ident> <f:MethodDefFunction> => {
+        let mut func_expr = f;
+        if let Expr::Lambda { ref mut value, .. } = func_expr {
+            value.receiver_type = Some(t.clone());
+        }
+        Expr::DefineFunction {fn_name: format!("{}.{}", t, n), index: (0,0), value: Box::new(func_expr)}.into()
+    },
+};
 ExprLambda: Expr = "Lambda" <f:LambdaFunction> => Expr::Lambda { value: f, environment: 0}.into();
 
-DefFunction: Expr = "(" <pm:CommaSeparated<Param>> ")" ":" <rt:DataType> <b:ExprBlock> => Expr::Lambda { value: Function { body: Box::new(b), params: pm, return_type: rt}, environment: 0}.into();
-LambdaFunction: Function = "(" <lpm:CommaSeparated<Param>> ")"  ":" <dt:DataType> <b:ExprBlock> => Function { params: lpm, body: Box::new(b), return_type: dt };  
+DefFunction: Expr = "(" <pm:CommaSeparated<Param>> ")" ":" <rt:DataType> <b:ExprBlock> => Expr::Lambda { value: Function { body: Box::new(b), params: pm, return_type: rt, receiver_type: None, builtin: None}, environment: 0}.into();
+MethodDefFunction: Expr = "(" <pm:CommaSeparated<Param>> ")" ":" <rt:DataType> <b:ExprBlock> => Expr::Lambda { value: Function { body: Box::new(b), params: pm, return_type: rt, receiver_type: None, builtin: None}, environment: 0}.into();
+LambdaFunction: Function = "(" <lpm:CommaSeparated<Param>> ")"  ":" <dt:DataType> <b:ExprBlock> => Function { params: lpm, body: Box::new(b), return_type: dt, receiver_type: None, builtin: None };  
   
-ExprAssign = {  
+ExprAssign = {
     //DiscardResult,
     AssignResult,
     ExprLogicOr,
 };
 
 AssignResult: Expr  = {
-    <v:ident> ":=" <p:ProgramPartExpr> ";" => Expr::Assign { name: v.to_string(), value: Box::new(p), index: (0,0)}.into(),
+    <v:ident> ":=" <p:ProgramPartExpr> => Expr::Assign { name: v.to_string(), value: Box::new(p), index: (0,0)}.into(),
 };
 
 //DiscardResult: Expr = {
@@ -171,6 +190,12 @@ Term: Expr = {
 
 Postfix: Expr = {
     <e:Postfix> "[" <i:ProgramPartExpr> "]" => Expr::Index { expr: Box::new(e), index: Box::new(i) },
+    <e:Postfix> "." <method:ident> "(" <args:CommaSeparated<KeywordArg>> ")" => Expr::MethodCall {
+        receiver: Box::new(e),
+        method_name: method,
+        fn_index: (0, 0),
+        args
+    },
     Atom,
 };
 
@@ -210,15 +235,17 @@ MapPair: (KeyData, Expr) = {
 }
 
 Param:  Param = {
-    <p:ident> ":" <t:DataType> => Param { name: p.to_string(),data_type: t, default: None, index: (0,0)}, 
+    <p:ident> ":" <t:DataType> => Param { name: p.to_string(), data_type: t, default: None, index: (0,0), copy: false},
+    "cpy" <p:ident> ":" <t:DataType> => Param { name: p.to_string(), data_type: t, default: None, index: (0,0), copy: true},
 }
 
 pub DataType : DataType = {
     "Int" => DataType::Int,
     "Flt" => DataType::Flt,
     "Str" => DataType::Str,
-    "Bool" => DataType::Bool,    
+    "Bool" => DataType::Bool,
     "List of" <e: DataType> => DataType::List { element_type: Box::new(e)},
+    "Map of" <k: DataType> "to" <v: DataType> => DataType::Map { key_type: Box::new(k), value_type: Box::new(v)},
     <i:ident> => DataType::TypeRef(i), // Custom type reference
 };
 
@@ -260,6 +287,17 @@ bool: bool = {
 
 ident: String = {
   <i:r"[a-zA-Z][a-zA-Z0-9_-]*"> => i.to_string(),
+};
+
+TypeName: String = {
+    "Str" => "Str".to_string(),
+    "Int" => "Int".to_string(),
+    "Flt" => "Flt".to_string(),
+    "Bool" => "Bool".to_string(),
+    "List" => "List".to_string(),
+    "Map" => "Map".to_string(),
+    "Range" => "Range".to_string(),
+    <i:ident> => i,
 };
 
 ExprInfix<Lt, Op, Rt>: Expr = {

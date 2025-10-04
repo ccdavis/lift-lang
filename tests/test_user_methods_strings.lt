@@ -1,0 +1,31 @@
+// Test: User-defined string methods
+// Expected: String transformations work correctly
+
+type Message = Str;
+
+function Message.exclaim(): Message {
+    self + '!'
+};
+
+function Message.question(): Message {
+    self + '?'
+};
+
+function Message.shout(): Str {
+    self.upper()
+};
+
+// Test message methods
+let msg1: Message = 'Hello';
+output('Exclaim:', msg1.exclaim());           // 'Hello!'
+output('Question:', msg1.question());          // 'Hello?'
+output('Shout:', msg1.shout());                // 'HELLO'
+
+// Test method chaining
+let msg2: Message = 'test';
+output('Chain exclaim+upper:', msg2.exclaim().upper());  // 'TEST!'
+
+let msg3: Message = 'world';
+output('Upper then exclaim:', msg3.shout().exclaim());   // 'WORLD!'
+
+output('String method tests completed')
