@@ -788,6 +788,9 @@ impl std::fmt::Display for Expr {
             Expr::Literal(d) => {
                 write!(f, "{}", d)
             }
+            Expr::RuntimeData(d) => {
+                write!(f, "{}", d)
+            }
             Expr::ListLiteral { data_type, data } => {
                 let printed_items = data
                     .iter()
@@ -864,7 +867,7 @@ impl Expr {
                 ref data,
             } => {
                 let upgraded_items = data
-                    .into_iter()
+                    .iter()
                     .map(|i| i.copy_to_runtime_data())
                     .collect::<Vec<Expr>>();
                 Expr::RuntimeList {
@@ -878,7 +881,7 @@ impl Expr {
                 data,
             } => {
                 let upgraded_values = data
-                    .into_iter()
+                    .iter()
                     .map(|item| (item.0.clone(), item.1.copy_to_runtime_data()))
                     .collect::<HashMap<KeyData, Expr>>();
                 Expr::RuntimeMap {
@@ -894,17 +897,14 @@ impl Expr {
 
     pub fn has_value(&self, value: &LiteralData) -> bool {
         if let (Expr::Literal(l), r) = (self, value) {
-            return l == r;
+            l == r
         } else {
             false
         }
     }
 
     pub fn is_data(&self) -> bool {
-        match self {
-            Expr::Literal(_) | Expr::MapLiteral { .. } | Expr::ListLiteral { .. } => true,
-            _ => false,
-        }
+        matches!(self, Expr::Literal(_) | Expr::MapLiteral { .. } | Expr::ListLiteral { .. })
     }
 
     pub fn equal(l: Expr, r: Expr) -> Expr {

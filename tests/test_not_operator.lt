@@ -1,0 +1,65 @@
+// Test the 'not' operator comprehensively
+{
+    // Basic boolean negation
+    let t = true;
+    let f = false;
+    
+    output(not t);      // Should output: false
+    output(not f);      // Should output: true
+    
+    // Double negation
+    output(not not t);  // Should output: true
+    output(not not f);  // Should output: false
+    
+    // Not with comparisons
+    let x = 5;
+    let y = 10;
+    
+    output(not (x > y));    // Should output: true (since 5 > 10 is false)
+    output(not (x < y));    // Should output: false (since 5 < 10 is true)
+    output(not (x = x));    // Should output: false (since 5 = 5 is true)
+    output(not (x <> y));   // Should output: false (since 5 <> 10 is true)
+    
+    // Not with logical operators
+    output(not (true and false));   // Should output: true
+    output(not (true or false));    // Should output: false
+    output(not (false and false));  // Should output: true
+    output(not (true and true));    // Should output: false
+    
+    // Not in if expressions
+    if not false {
+        output(100);  // Should output: 100
+    } else {
+        output(200);
+    };
+    
+    if not true {
+        output(300);
+    } else {
+        output(400);  // Should output: 400
+    };
+    
+    // Complex expressions with not
+    let a = 15;
+    let b = 20;
+    let c = 25;
+    
+    let result1 = not (a < b and b < c);  // false (since both conditions are true)
+    let result2 = not (a > b or b > c);   // true (since both conditions are false)
+    let result3 = not (a < b) or not (b < c); // false (both nots are false)
+    
+    output(result1);
+    output(result2);
+    output(result3);
+    
+    // Not with function results
+    function isEven(n: Int): Bool {
+        n / 2 * 2 = n
+    };
+    
+    output(not isEven(n: 5));   // Should output: true (5 is not even)
+    output(not isEven(n: 6));   // Should output: false (6 is even)
+    
+    // Return a value to verify the test completed
+    42
+}

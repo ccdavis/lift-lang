@@ -1,0 +1,51 @@
+// Comprehensive test for map indexing
+
+// Nested maps - separate name and age maps to avoid mixed types
+let names = #{
+    'user1': 'Alice',
+    'user2': 'Bob'
+};
+let ages = #{
+    'user1': 30,
+    'user2': 25
+};
+output(names['user1']);  // Should print 'Alice'
+output(ages['user2']);   // Should print 25
+
+// Map with list values - separate maps for different list types
+let numbers_map = #{
+    'first': [1, 2, 3],
+    'second': [4, 5, 6]
+};
+let letters_map = #{
+    'first': ['a', 'b', 'c'],
+    'second': ['x', 'y', 'z']
+};
+output(numbers_map['first'][0]);  // Should print 1
+output(letters_map['first'][2]);  // Should print 'c'
+
+// List with map elements - separate lists for different map types
+let user_ids = [
+    #{1: 'User1', 2: 'User2'},
+    #{3: 'User3', 4: 'User4'}
+];
+output(user_ids[0][1]);  // Should print 'User1'
+output(user_ids[1][4]);  // Should print 'User4'
+
+// Expression as key
+let base = 10;
+let lookup = #{10: 'ten', 20: 'twenty', 30: 'thirty'};
+output(lookup[base]);       // Should print 'ten'
+output(lookup[base + 10]);  // Should print 'twenty'
+output(lookup[base * 3]);   // Should print 'thirty'
+
+// Type inference with map indexing
+let scores = #{'math': 95, 'english': 88};
+let math_score = scores['math'];
+output(math_score);  // Should print 95
+
+// Boolean expressions as keys
+let flags = #{true: 100, false: 0};
+let condition = 5 > 3;
+output(flags[condition]);  // Should print 100
+output(flags[1 > 2]);  // Should print 0

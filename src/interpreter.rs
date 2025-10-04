@@ -280,7 +280,9 @@ impl Expr {
                     Operator::Not => {
                         let evaluated = expr.interpret(symbols, current_scope)?;
                         match evaluated {
-                            Expr::Literal(LiteralData::Bool(b)) => Ok(Expr::Literal(LiteralData::Bool(!b))),
+                            Expr::Literal(LiteralData::Bool(b)) | Expr::RuntimeData(LiteralData::Bool(b)) => {
+                                Ok(Expr::RuntimeData(LiteralData::Bool(!b)))
+                            }
                             _ => Err(Box::new(RuntimeError::new(
                                 &format!("'not' operator requires a boolean value, got {:?}", evaluated),
                                 None,
@@ -601,7 +603,12 @@ impl LiteralData {
         let result = match (op, self, rhs) {
             (Add, Int(l), Int(r)) => Int(l + r),
             (Add, Flt(l), Flt(r)) => Flt(l + r),
-            (Add, Str(l), Str(r)) => LiteralData::Str((l.to_string() + r).into()),
+            (Add, Str(l), Str(r)) => {
+                // Strip quotes from both strings, concatenate, then add quotes back
+                let l_content = l.trim_matches('\'');
+                let r_content = r.trim_matches('\'');
+                LiteralData::Str(format!("'{}{}'", l_content, r_content).into())
+            },
             (Sub, Int(l), Int(r)) => Int(l - r),
             (Sub, Flt(l), Flt(r)) => Flt(l - r),
             (Mul, Int(l), Int(r)) => Int(l * r),
@@ -680,36 +687,46 @@ fn interpret_binary(
             result = l_value.apply_binary_operator(r_value, op)
         }
         (_, Expr::Literal(r_value)) => {
-            if let Expr::Literal(ref l_value) = left.interpret(symbols, current_scope)? {
-                result = l_value.apply_binary_operator(r_value, op);
-            } else {
-                let msg = format!(
-                    "Result of {left:?} isn't a simple primary expression. Cannot apply {op:?} to it."
-                );
-                error = Some(RuntimeError::new(&msg, None, None));
+            match left.interpret(symbols, current_scope)? {
+                Expr::Literal(ref l_value) | Expr::RuntimeData(ref l_value) => {
+                    result = l_value.apply_binary_operator(r_value, op);
+                }
+                _ => {
+                    let msg = format!(
+                        "Result of {left:?} isn't a simple primary expression. Cannot apply {op:?} to it."
+                    );
+                    error = Some(RuntimeError::new(&msg, None, None));
+                }
             }
         }
         (Expr::Literal(l_value), _) => {
-            if let Expr::Literal(ref r_value) = right.interpret(symbols, current_scope)? {
-                result = l_value.apply_binary_operator(r_value, op);
-            } else {
-                let msg = format!(
-                    "Result of {right:?} isn't a simple primary expression. Cannot apply {op:?} to it."
-                );
-                error = Some(RuntimeError::new(&msg, None, None));
+            match right.interpret(symbols, current_scope)? {
+                Expr::Literal(ref r_value) | Expr::RuntimeData(ref r_value) => {
+                    result = l_value.apply_binary_operator(r_value, op);
+                }
+                _ => {
+                    let msg = format!(
+                        "Result of {right:?} isn't a simple primary expression. Cannot apply {op:?} to it."
+                    );
+                    error = Some(RuntimeError::new(&msg, None, None));
+                }
             }
         }
         (_, _) => {
             let l_value = left.interpret(symbols, current_scope)?;
             let r_value = right.interpret(symbols, current_scope)?;
-            if let (Expr::Literal(ref l_data), Expr::Literal(ref r_data)) = (l_value, r_value) {
-                result = l_data.apply_binary_operator(r_data, op);
-            } else {
-                let msg = format!(
-                    "Expressions don't evaluate to anything applicable to a binary operator: {:?}, {:?}",
-                    &left, &right
-                );
-                error = Some(RuntimeError::new(&msg, None, None));
+            match (&l_value, &r_value) {
+                (Expr::Literal(ref l_data) | Expr::RuntimeData(ref l_data),
+                 Expr::Literal(ref r_data) | Expr::RuntimeData(ref r_data)) => {
+                    result = l_data.apply_binary_operator(r_data, op);
+                }
+                _ => {
+                    let msg = format!(
+                        "Expressions don't evaluate to anything applicable to a binary operator: {:?}, {:?}",
+                        &left, &right
+                    );
+                    error = Some(RuntimeError::new(&msg, None, None));
+                }
             }
         }
     }

@@ -1,0 +1,25 @@
+// Test basic map indexing with different key types
+
+// Integer keys
+let ages = #{1: 25, 2: 30, 3: 35};
+output(ages[1]);  // Should print 25
+output(ages[2]);  // Should print 30
+output(ages[3]);  // Should print 35
+
+// String keys
+let capitals = #{'USA': 'Washington', 'France': 'Paris', 'Japan': 'Tokyo'};
+output(capitals['USA']);     // Should print 'Washington'
+output(capitals['France']);  // Should print 'Paris'
+output(capitals['Japan']);   // Should print 'Tokyo'
+
+// Boolean keys
+let states = #{true: 'enabled', false: 'disabled'};
+output(states[true]);   // Should print 'enabled'
+output(states[false]);  // Should print 'disabled'
+
+// Variable keys
+let key = 'France';
+output(capitals[key]);  // Should print 'Paris'
+
+let idx = 2;
+output(ages[idx]);      // Should print 30

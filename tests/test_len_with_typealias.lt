@@ -1,0 +1,11 @@
+// Test: Does len() work with type aliases?
+
+type Errors = List of Str;
+
+function Errors.count(): Int {
+    len(self)
+};
+
+let errors: Errors = ['Error 1', 'Error 2'];
+output('Direct len:', len(errors));
+output('Method count:', errors.count())

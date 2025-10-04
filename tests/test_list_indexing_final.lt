@@ -1,0 +1,29 @@
+// Test basic list indexing
+let nums = [10, 20, 30, 40, 50];
+output(nums[0]);
+output(nums[2]);
+output(nums[4]);
+
+// Test with variable index
+let i = 2;
+output(nums[i]);
+
+// Test with expression as index
+output(nums[1 + 1]);
+output(nums[i - 1]);
+
+// Test with different types
+let strings = ['hello', 'world', 'lift'];
+output(strings[1]);
+
+let bools = [true, false, true];
+output(bools[1]);
+
+// Test nested lists
+let matrix = [[1, 2], [3, 4], [5, 6]];
+let row0 = matrix[0];
+output(row0[0]);
+let row1 = matrix[1];
+output(row1[1]);
+let row2 = matrix[2];
+output(row2[0]);

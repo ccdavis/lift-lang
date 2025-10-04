@@ -1,0 +1,105 @@
+// Test: User-defined methods on List and Map type aliases
+// Tests that type aliases for collections can have custom methods
+
+output('=== User-Defined Methods on Collection Types ===');
+
+// Test 1: List type alias with methods
+output('');
+output('--- Test 1: Errors (List of Str) ---');
+
+type Errors = List of Str;
+
+function Errors.has_errors(): Bool {
+    not self.is_empty()
+};
+
+function Errors.count(): Int {
+    len(self)
+};
+
+function Errors.first_error(): Str {
+    self.first()
+};
+
+let errors1: Errors = ['File not found', 'Permission denied', 'Timeout'];
+output('Errors:', errors1);
+output('has_errors:', errors1.has_errors());
+output('count:', errors1.count());
+output('first_error:', errors1.first_error());
+
+let errors2: Errors = [];
+output('Empty errors has_errors:', errors2.has_errors());
+
+// Test 2: Another List type alias
+output('');
+output('--- Test 2: Names (List of Str) ---');
+
+type Names = List of Str;
+
+function Names.format_list(): Str {
+    self.join(separator: ', ')
+};
+
+function Names.has_name(): Bool {
+    not self.is_empty()
+};
+
+let names: Names = ['Alice', 'Bob', 'Carol'];
+output('Names:', names);
+output('formatted:', names.format_list());
+output('has_name:', names.has_name());
+
+// Test 3: Map type alias with methods
+output('');
+output('--- Test 3: AgeMap (Map of Str to Int) ---');
+
+type AgeMap = Map of Str to Int;
+
+function AgeMap.has_person(name: Str): Bool {
+    self.contains_key(key: name)
+};
+
+function AgeMap.person_count(): Int {
+    len(self)
+};
+
+let ages: AgeMap = #{'Alice': 25, 'Bob': 30, 'Carol': 35};
+output('Ages:', ages);
+output('has Alice:', ages.has_person(name: 'Alice'));
+output('has Dave:', ages.has_person(name: 'Dave'));
+output('person_count:', ages.person_count());
+
+// Test 4: Another Map type alias
+output('');
+output('--- Test 4: ScoreMap (Map of Str to Int) ---');
+
+type ScoreMap = Map of Str to Int;
+
+function ScoreMap.all_players(): List of Str {
+    self.keys()
+};
+
+function ScoreMap.is_empty_game(): Bool {
+    self.is_empty()
+};
+
+let scores: ScoreMap = #{'Player1': 100, 'Player2': 85};
+output('Scores:', scores);
+output('players:', scores.all_players());
+output('is_empty_game:', scores.is_empty_game());
+
+// Test 5: Built-in methods work on type aliases
+output('');
+output('--- Test 5: Built-in Methods on Type Aliases ---');
+
+output('First name:', names.first());
+output('Reversed:', names.reverse());
+
+// Note: Direct chaining like names.slice().format_list() doesn't work
+// because slice() returns the base type (List of Str), not the alias type (Names)
+// Workaround: assign to typed variable first
+let subset_names: Names = names.slice(start: 0, end: 2);
+output('Subset formatted:', subset_names.format_list());
+
+output('');
+output('=== All Collection Type Tests Passed ===')

@@ -2,6 +2,7 @@ mod interpreter;
 mod semantic_analysis;
 mod symboltable;
 mod syntax;
+#[cfg(test)]
 use interpreter::InterpreterResult;
 use lalrpop_util::{lalrpop_mod, ParseError};
 use std::error;
@@ -264,6 +265,7 @@ fn test_functions() {
 }
 
 // A test helper
+#[cfg(test)]
 fn check_value(s: &InterpreterResult, value: LiteralData) -> bool {
     if let Ok(ref e) = s {
         return e.has_value(&value);
@@ -271,6 +273,7 @@ fn check_value(s: &InterpreterResult, value: LiteralData) -> bool {
     false
 }
 
+#[cfg(test)]
 fn extract_value(r: InterpreterResult) -> LiteralData {
     if let Ok(Expr::Literal(l)) = r {
         return l;
@@ -306,7 +309,6 @@ pub fn repl() {
                         continue;
                     } else {
                         buffer.push_str(line);
-                        prompt = format!("{count} ==> ");
                     }
                     
                     match parser.parse(&buffer) {
@@ -367,7 +369,7 @@ pub fn repl() {
 
 fn interpret_code(code: &str) -> Result<(), Box<dyn error::Error>> {
     let parser = grammar::ProgramParser::new();
-    let mut ast = match parser.parse(&code) {
+    let mut ast = match parser.parse(code) {
         Err(e) => {
             eprintln!("{}", e);
             std::process::exit(3);
@@ -613,7 +615,7 @@ fn test_interpreter_string_operations() {
     let mut ast = parser.parse("'Hello' + ' World'").unwrap();
     ast.prepare(&mut symbols).unwrap();
     let result = ast.interpret(&mut symbols, 0).unwrap();
-    assert_eq!(result, Expr::Literal(LiteralData::Str("'Hello'' World'".into())));
+    assert_eq!(result, Expr::Literal(LiteralData::Str("'Hello World'".into())));
 }
 
 #[test]
@@ -976,10 +978,10 @@ fn test_lt_file_typechecker() {
 
 #[test]
 fn test_lt_file_type_checking_examples() {
-    // This file should fail because it needs type annotation for 'result'
+    // This file should succeed with type inference for 'result'
+    // Type inference can determine that both branches of the if return Int
     let result = run_lift_file("tests/type_checking_examples.lt");
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Cannot determine type of variable: result"));
+    assert!(result.is_ok());
 }
 
 #[test]
@@ -1311,7 +1313,7 @@ fn test_define_type() {
     let mut symbols2 = SymbolTable::new();
     assert!(ast2.prepare(&mut symbols2).is_ok());
     let result2 = ast2.interpret(&mut symbols2, 0).unwrap();
-    assert_eq!(result2, Expr::Literal(LiteralData::Str("'Hi''!'".into())));
+    assert_eq!(result2, Expr::Literal(LiteralData::Str("'Hi!'".into())));
 }
 
 #[test]
@@ -1362,7 +1364,7 @@ fn test_lt_file_simple_list() {
     // This should fail because empty list needs type annotation
     let result = run_lift_file("tests/simple_list.lt");
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Cannot infer type for empty list"));
+    assert!(result.unwrap_err().contains("Cannot infer type for 'x'"));
 }
 
 #[test]
@@ -1370,7 +1372,7 @@ fn test_lt_file_test_lists() {
     // This should fail because of empty list without type annotation
     let result = run_lift_file("tests/test_lists.lt");
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Cannot infer type for empty list"));
+    assert!(result.unwrap_err().contains("Cannot infer type"));
 }
 
 #[test]
@@ -1504,7 +1506,7 @@ fn test_empty_collection_type_errors() {
     let result = ast.prepare(&mut symbols);
     assert!(result.is_err());
     let errors = result.unwrap_err();
-    assert!(errors[0].to_string().contains("Cannot infer type for empty list"));
+    assert!(errors[0].to_string().contains("Cannot infer type for 'x'"));
     
     // Test 2: Empty map without type annotation should fail
     let mut symbols2 = SymbolTable::new();
@@ -1512,7 +1514,7 @@ fn test_empty_collection_type_errors() {
     let result2 = ast2.prepare(&mut symbols2);
     assert!(result2.is_err());
     let errors2 = result2.unwrap_err();
-    assert!(errors2[0].to_string().contains("Cannot infer key type for empty map"));
+    assert!(errors2[0].to_string().contains("Cannot infer type for 'm'"));
     
     // Test 3: Empty list with type annotation should succeed
     let mut symbols3 = SymbolTable::new();
@@ -1711,25 +1713,25 @@ fn test_not_operator() {
     let mut ast = parser.parse("not true").unwrap();
     ast.prepare(&mut symbols).unwrap();
     let result = ast.interpret(&mut symbols, 0).unwrap();
-    assert_eq!(result, Expr::Literal(LiteralData::Bool(false)));
+    assert_eq!(result, Expr::RuntimeData(LiteralData::Bool(false)));
     
     // Test double not
     let mut ast = parser.parse("not not false").unwrap();
     ast.prepare(&mut symbols).unwrap();
     let result = ast.interpret(&mut symbols, 0).unwrap();
-    assert_eq!(result, Expr::Literal(LiteralData::Bool(false)));
+    assert_eq!(result, Expr::RuntimeData(LiteralData::Bool(false)));
     
     // Test not with comparison
     let mut ast = parser.parse("not (5 > 10)").unwrap();
     ast.prepare(&mut symbols).unwrap();
     let result = ast.interpret(&mut symbols, 0).unwrap();
-    assert_eq!(result, Expr::Literal(LiteralData::Bool(true)));
+    assert_eq!(result, Expr::RuntimeData(LiteralData::Bool(true)));
     
     // Test not with logical operators
     let mut ast = parser.parse("not (true and false)").unwrap();
     ast.prepare(&mut symbols).unwrap();
     let result = ast.interpret(&mut symbols, 0).unwrap();
-    assert_eq!(result, Expr::Literal(LiteralData::Bool(true)));
+    assert_eq!(result, Expr::RuntimeData(LiteralData::Bool(true)));
     
     // Test type checking - not with non-boolean should fail
     let mut ast = parser.parse("not 42").unwrap();
@@ -1903,7 +1905,7 @@ fn main() {
     } else {
         let program_file = &args[1];
         let code = fs::read_to_string(program_file)
-            .expect(&format!("File at {program_file} unreadable."));
+            .unwrap_or_else(|_| panic!("File at {} unreadable.", program_file));
 
         if let Err(e) = interpret_code(&code) {
             eprintln!("Error: {}", e);

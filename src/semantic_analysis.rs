@@ -795,7 +795,7 @@ pub fn typecheck(
                     _ => {
                         // For non-empty values, check type compatibility
                         let value_type = typecheck(value, symbols, _current_scope_id)?;
-                        if !types_compatible(&resolved_type, &value_type) {
+                        if !types_compatible_with_resolution(&resolved_type, &value_type, symbols, _current_scope_id)? {
                             return Err(CompileError::typecheck(
                                 &format!("Type annotation mismatch for {var_name}: expected {:?}, got {value_type:?}", resolved_type),
                                 (0, 0),
@@ -807,7 +807,7 @@ pub fn typecheck(
             } else {
                 // No type annotation, must infer from value
                 // First try to infer using determine_type_with_symbols which handles special cases
-                if let Some(inferred_type) = determine_type_with_symbols(value, symbols, _current_scope_id) {
+                if let Some(_inferred_type) = determine_type_with_symbols(value, symbols, _current_scope_id) {
                     // Then verify with full typecheck
                     let value_type = typecheck(value, symbols, _current_scope_id)?;
                     if !matches!(value_type, DataType::Unsolved) {
@@ -998,19 +998,34 @@ pub fn typecheck(
                 for (i, arg) in args.iter().enumerate() {
                     let arg_type = typecheck(&arg.value, symbols, _current_scope_id)?;
                     let expected_type = &func.params[i].data_type;
-                    if !matches!(expected_type, DataType::Unsolved) && !types_compatible(expected_type, &arg_type) {
-                        // Special message for UFCS where first arg is self
-                        let arg_num_display = if is_ufcs_call && i == 0 {
-                            "receiver (self)".to_string()
-                        } else if is_ufcs_call {
-                            format!("argument {}", i)
+                    if !matches!(expected_type, DataType::Unsolved) {
+                        // Resolve TypeRefs for proper compatibility checking
+                        let resolved_expected = if matches!(expected_type, DataType::TypeRef(_)) {
+                            resolve_type(expected_type, symbols, _current_scope_id)?
                         } else {
-                            format!("argument {}", i + 1)
+                            expected_type.clone()
                         };
-                        return Err(CompileError::typecheck(
-                            &format!("{} type mismatch: expected {:?}, got {:?}", arg_num_display, expected_type, arg_type),
-                            (0, 0),
-                        ));
+
+                        let resolved_arg = if matches!(&arg_type, DataType::TypeRef(_)) {
+                            resolve_type(&arg_type, symbols, _current_scope_id)?
+                        } else {
+                            arg_type.clone()
+                        };
+
+                        if !types_compatible(&resolved_expected, &resolved_arg) {
+                            // Special message for UFCS where first arg is self
+                            let arg_num_display = if is_ufcs_call && i == 0 {
+                                "receiver (self)".to_string()
+                            } else if is_ufcs_call {
+                                format!("argument {}", i)
+                            } else {
+                                format!("argument {}", i + 1)
+                            };
+                            return Err(CompileError::typecheck(
+                                &format!("{} type mismatch: expected {:?}, got {:?}", arg_num_display, expected_type, arg_type),
+                                (0, 0),
+                            ));
+                        }
                     }
                 }
 
@@ -1229,11 +1244,18 @@ pub fn typecheck(
         Expr::Len { expr } => {
             let expr_type = typecheck(expr, symbols, _current_scope_id)?;
 
+            // Resolve TypeRef to underlying type if needed
+            let resolved_type = if matches!(&expr_type, DataType::TypeRef(_)) {
+                resolve_type(&expr_type, symbols, _current_scope_id)?
+            } else {
+                expr_type
+            };
+
             // len() works on Str, List, and Map types
-            match expr_type {
+            match resolved_type {
                 DataType::Str | DataType::List { .. } | DataType::Map { .. } => Ok(DataType::Int),
                 _ => Err(CompileError::typecheck(
-                    &format!("len() requires Str, List, or Map argument, found {:?}", expr_type),
+                    &format!("len() requires Str, List, or Map argument, found {:?}", resolved_type),
                     (0, 0),
                 ))
             }
@@ -1311,11 +1333,45 @@ fn types_compatible(t1: &DataType, t2: &DataType) -> bool {
     }
 }
 
+// Helper to check type compatibility with optional symbol resolution
+fn types_compatible_with_resolution(
+    t1: &DataType,
+    t2: &DataType,
+    symbols: &SymbolTable,
+    scope: usize,
+) -> Result<bool, CompileError> {
+    // Resolve TypeRefs first
+    let resolved_t1 = if matches!(t1, DataType::TypeRef(_)) {
+        resolve_type(t1, symbols, scope)?
+    } else {
+        t1.clone()
+    };
+
+    let resolved_t2 = if matches!(t2, DataType::TypeRef(_)) {
+        resolve_type(t2, symbols, scope)?
+    } else {
+        t2.clone()
+    };
+
+    // For complex types, recursively resolve nested TypeRefs
+    match (&resolved_t1, &resolved_t2) {
+        (DataType::List { element_type: e1 }, DataType::List { element_type: e2 }) => {
+            types_compatible_with_resolution(e1, e2, symbols, scope)
+        }
+        (DataType::Map { key_type: k1, value_type: v1 }, DataType::Map { key_type: k2, value_type: v2 }) => {
+            let keys_match = types_compatible_with_resolution(k1, k2, symbols, scope)?;
+            let values_match = types_compatible_with_resolution(v1, v2, symbols, scope)?;
+            Ok(keys_match && values_match)
+        }
+        _ => Ok(types_compatible(&resolved_t1, &resolved_t2))
+    }
+}
+
 // Type inference with symbol table lookup
 pub fn determine_type_with_symbols(
     expression: &Expr,
     symbols: &SymbolTable,
-    scope: usize,
+    _scope: usize,
 ) -> Option<DataType> {
     match expression {
         Expr::Literal(l) => Some(match l {
@@ -1335,8 +1391,8 @@ pub fn determine_type_with_symbols(
         }
         
         Expr::BinaryExpr { left, op, right } => {
-            let left_type = determine_type_with_symbols(left, symbols, scope)?;
-            let right_type = determine_type_with_symbols(right, symbols, scope)?;
+            let left_type = determine_type_with_symbols(left, symbols, _scope)?;
+            let right_type = determine_type_with_symbols(right, symbols, _scope)?;
             
             match op {
                 Operator::Add | Operator::Sub | Operator::Mul | Operator::Div => {
@@ -1400,19 +1456,15 @@ pub fn determine_type_with_symbols(
                                 match return_type {
                                     DataType::Unsolved => {
                                         // Methods that return the element type (first, last)
-                                        if let Some(receiver_type) = determine_type_with_symbols(receiver, symbols, scope) {
-                                            if let DataType::List { element_type } = receiver_type {
-                                                return Some(*element_type);
-                                            }
+                                        if let Some(DataType::List { element_type }) = determine_type_with_symbols(receiver, symbols, _scope) {
+                                            return Some(*element_type);
                                         }
                                         Some(DataType::Unsolved)
                                     }
                                     DataType::List { ref element_type } if matches!(**element_type, DataType::Unsolved) => {
                                         // Methods that return a list with the same element type (slice, reverse)
-                                        if let Some(receiver_type) = determine_type_with_symbols(receiver, symbols, scope) {
-                                            if let DataType::List { element_type } = receiver_type {
-                                                return Some(DataType::List { element_type });
-                                            }
+                                        if let Some(DataType::List { element_type }) = determine_type_with_symbols(receiver, symbols, _scope) {
+                                            return Some(DataType::List { element_type });
                                         }
                                         Some(return_type)
                                     }
@@ -1428,19 +1480,15 @@ pub fn determine_type_with_symbols(
                         match return_type {
                             DataType::Unsolved => {
                                 // Methods that return the element type (first, last)
-                                if let Some(receiver_type) = determine_type_with_symbols(receiver, symbols, scope) {
-                                    if let DataType::List { element_type } = receiver_type {
-                                        return Some(*element_type);
-                                    }
+                                if let Some(DataType::List { element_type }) = determine_type_with_symbols(receiver, symbols, _scope) {
+                                    return Some(*element_type);
                                 }
                                 Some(DataType::Unsolved)
                             }
                             DataType::List { ref element_type } if matches!(**element_type, DataType::Unsolved) => {
                                 // Methods that return a list with the same element type (slice, reverse)
-                                if let Some(receiver_type) = determine_type_with_symbols(receiver, symbols, scope) {
-                                    if let DataType::List { element_type } = receiver_type {
-                                        return Some(DataType::List { element_type });
-                                    }
+                                if let Some(DataType::List { element_type }) = determine_type_with_symbols(receiver, symbols, _scope) {
+                                    return Some(DataType::List { element_type });
                                 }
                                 Some(return_type)
                             }
@@ -1463,7 +1511,7 @@ pub fn determine_type_with_symbols(
         }
         
         Expr::Index { expr, .. } => {
-            match determine_type_with_symbols(expr, symbols, scope)? {
+            match determine_type_with_symbols(expr, symbols, _scope)? {
                 DataType::List { element_type } => Some(*element_type),
                 DataType::Map { value_type, .. } => Some(*value_type),
                 _ => None,
@@ -1478,8 +1526,8 @@ pub fn determine_type_with_symbols(
                 return None;
             }
             
-            let then_type = determine_type_with_symbols(then, symbols, scope)?;
-            let else_type = determine_type_with_symbols(final_else, symbols, scope)?;
+            let then_type = determine_type_with_symbols(then, symbols, _scope)?;
+            let else_type = determine_type_with_symbols(final_else, symbols, _scope)?;
             
             if types_compatible(&then_type, &else_type) {
                 Some(then_type)
@@ -1491,7 +1539,7 @@ pub fn determine_type_with_symbols(
         Expr::Block { body, .. } => {
             // Block type is the type of its last expression
             if let Some(last_expr) = body.last() {
-                determine_type_with_symbols(last_expr, symbols, scope)
+                determine_type_with_symbols(last_expr, symbols, _scope)
             } else {
                 Some(DataType::Unsolved) // Empty block returns Unit
             }

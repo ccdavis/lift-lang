@@ -1,0 +1,108 @@
+// Test: Multiple type aliases with multiple methods each
+// Tests method resolution when multiple types from same base type have different methods
+
+output('=== Multiple Type Aliases with Multiple Methods ===');
+
+// Email type (from Str) with multiple methods
+type Email = Str;
+
+function Email.is_valid(): Bool {
+    self.contains(substring: '@')
+};
+
+function Email.domain(): Str {
+    'example.com'
+};
+
+function Email.normalize(): Email {
+    self.trim().lower()
+};
+
+// Name type (from Str) with multiple methods
+type Name = Str;
+
+function Name.formal(): Name {
+    'Mr. ' + self
+};
+
+function Name.uppercase_name(): Name {
+    self.upper()
+};
+
+function Name.initials(): Str {
+    self.substring(start: 0, end: 1)
+};
+
+// Zip type (from Int) with multiple methods
+type Zip = Int;
+
+function Zip.is_valid_us(): Bool {
+    self >= 10000
+};
+
+function Zip.add_offset(): Zip {
+    self + 1000
+};
+
+function Zip.double(): Zip {
+    self * 2
+};
+
+// Age type (from Int) with multiple methods
+type Age = Int;
+
+function Age.can_vote(): Bool {
+    self >= 18
+};
+
+function Age.next_year(): Age {
+    self + 1
+};
+
+function Age.is_minor(): Bool {
+    self < 18
+};
+
+// Test Email methods
+output('');
+output('--- Testing Email methods ---');
+let email1: Email = '  USER@EXAMPLE.COM  ';
+output('Email:', email1);
+output('is_valid:', email1.is_valid());
+output('domain:', email1.domain());
+output('normalized:', email1.normalize());
+
+// Test Name methods
+output('');
+output('--- Testing Name methods ---');
+let name1: Name = 'John';
+output('Name:', name1);
+output('formal:', name1.formal());
+output('uppercase:', name1.uppercase_name());
+output('initials:', name1.initials());
+
+// Test Zip methods
+output('');
+output('--- Testing Zip methods ---');
+let zip1: Zip = 90210;
+output('Zip:', zip1);
+output('is_valid_us:', zip1.is_valid_us());
+output('add_offset:', zip1.add_offset());
+output('double:', zip1.double());
+
+// Test Age methods
+output('');
+output('--- Testing Age methods ---');
+let age1: Age = 25;
+output('Age:', age1);
+output('can_vote:', age1.can_vote());
+output('next_year:', age1.next_year());
+output('is_minor:', age1.is_minor());
+
+// Test with younger age
+let age2: Age = 16;
+output('Age 16 can_vote:', age2.can_vote());
+output('Age 16 is_minor:', age2.is_minor());
+
+output('');
+output('=== All tests completed ===')

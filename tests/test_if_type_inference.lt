@@ -1,0 +1,75 @@
+// Test type inference for if expressions
+{
+    // Test 1: Basic if-else with string literals
+    let x = if 1 > 2 { 'impossible' } else { 'possible' };
+    output(x);  // Should output: 'possible'
+    
+    // Test 2: If-else with integer values
+    let y = if true { 42 } else { 100 };
+    output(y);  // Should output: 42
+    
+    // Test 3: If-else with boolean values
+    let z = if 5 < 10 { true } else { false };
+    output(z);  // Should output: true
+    
+    // Test 4: Nested if expressions
+    let score = 85;
+    let grade = if score >= 90 {
+        'A'
+    } else if score >= 80 {
+        'B'
+    } else if score >= 70 {
+        'C'
+    } else {
+        'F'
+    };
+    output(grade);  // Should output: 'B'
+    
+    // Test 5: If expression without else used in other contexts (not in let)
+    if false { output('This is fine - not used in let') };
+    
+    // Test 6: If expressions with complex expressions in branches
+    let a = 10;
+    let b = 20;
+    let max = if a > b { a } else { b };
+    output(max);  // Should output: 20
+    
+    // Test 7: If expression in function body
+    function isPositive(n: Int): Bool {
+        if n > 0 { true } else { false }
+    };
+    
+    output(isPositive(n: 5));   // Should output: true
+    output(isPositive(n: -3));  // Should output: false
+    
+    // Test 8: Function returning string from if expression
+    function getStatus(code: Int): Str {
+        if code = 200 {
+            'OK'
+        } else if code = 404 {
+            'Not Found'
+        } else {
+            'Unknown'
+        }
+    };
+    
+    output(getStatus(code: 200));  // Should output: 'OK'
+    output(getStatus(code: 404));  // Should output: 'Not Found'
+    output(getStatus(code: 500));  // Should output: 'Unknown'
+    
+    // Test 9: If expressions with side effects (blocks ending with semicolon return unit)
+    // We can't directly test unit types in let declarations, so we'll test differently
+    if true { output('side effect'); } else { output('other'); };
+    // Above should output: 'side effect'
+    
+    // Test 10: Type inference with list values
+    let list_result = if true { [1, 2, 3] } else { [4, 5, 6] };
+    output(list_result[0]);  // Should output: 1
+    
+    // Test 11: Type inference with map values
+    let map_result = if false { #{1: 'one', 2: 'two'} } else { #{3: 'three', 4: 'four'} };
+    output(map_result[3]);  // Should output: 'three'
+    
+    // Return value to confirm test completed
+    42
+}

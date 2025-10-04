@@ -1,0 +1,9 @@
+// Test: Do built-in methods work on collection type aliases?
+
+type Names = List of Str;
+
+let names: Names = ['Alice', 'Bob', 'Carol'];
+
+output('First (built-in):', names.first());
+output('Last (built-in):', names.last());
+output('Is empty (built-in):', names.is_empty())
