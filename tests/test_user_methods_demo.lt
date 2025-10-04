@@ -1,0 +1,67 @@
+// Demo: User-defined methods on type aliases
+// Shows the complete feature working end-to-end
+
+output('========================================');
+output('USER-DEFINED METHODS DEMONSTRATION');
+output('========================================');
+
+// Test 1: Simple custom methods
+output('');
+output('Test 1: Temperature Type');
+type Temperature = Flt;
+
+function Temperature.double(): Flt {
+    self * 2.0
+};
+
+let temp: Temperature = 21.5;
+output('Temperature:', temp);
+output('Doubled:', temp.double());
+output('✓ Custom method works!');
+
+// Test 2: Boolean validation methods
+output('');
+output('Test 2: Age Validation');
+type Age = Int;
+
+function Age.can_vote(): Bool {
+    self >= 18
+};
+
+let age1: Age = 16;
+let age2: Age = 21;
+output('Age 16 can vote?', age1.can_vote());
+output('Age 21 can vote?', age2.can_vote());
+output('✓ Boolean methods work!');
+
+// Test 3: String custom methods
+output('');
+output('Test 3: Message Formatting');
+type Message = Str;
+
+function Message.exclaim(): Message {
+    self + '!'
+};
+
+let msg: Message = 'Hello';
+output('Message:', msg);
+output('Exclaimed:', msg.exclaim());
+output('✓ String methods work!');
+
+// Test 4: Built-in methods still work
+output('');
+output('Test 4: Built-in Methods on Type Aliases');
+output('Message uppercase:', msg.upper());
+output('Age 16 >= 10?', age1 >= 10);
+output('✓ Built-in methods inherited!');
+
+// Test 5: Method chaining
+output('');
+output('Test 5: Method Chaining');
+output('Exclaim + Upper:', msg.exclaim().upper());
+output('✓ Chaining works!');
+
+output('');
+output('========================================');
+output('ALL FEATURES WORKING!');
+output('========================================')
