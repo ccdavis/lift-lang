@@ -1,0 +1,8 @@
+// Test type mismatch errors in if expressions
+{
+    // This should fail: branches have different types (string vs int)
+    let x = if true { 'hello' } else { 42 };
+    
+    // This line should never be reached due to type error above
+    42
+}

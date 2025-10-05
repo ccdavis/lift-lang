@@ -1,0 +1,37 @@
+// Test 'cpy' parameters - pass by value, mutable inside function
+
+// Function with cpy parameter can modify it internally
+function increment(cpy x: Int): Int {
+    x := x + 1;    // OK: x is mutable (copy parameter)
+    x
+};
+
+let original = 5;
+let result = increment(x: original);
+output(original);  // Should output: 5 (unchanged)
+output(result);    // Should output: 6
+
+// Multiple parameters: some immutable, some cpy
+function process(base: Int, cpy accumulator: Int, multiplier: Int): Int {
+    // base := base + 1;       // Would error: base is immutable
+    accumulator := accumulator + base;  // OK: accumulator is cpy
+    // multiplier := 2;        // Would error: multiplier is immutable
+    accumulator * multiplier
+};
+
+let x = 10;
+let y = 20;
+let z = 3;
+let final_result = process(base: x, accumulator: y, multiplier: z);
+output(final_result);  // Should output: (20 + 10) * 3 = 90
+
+// String example
+function modify_message(cpy msg: Str): Str {
+    msg := msg + ' World';
+    msg
+};
+
+let greeting = 'Hello';
+let modified = modify_message(msg: greeting);
+output(greeting);   // Should output: 'Hello' (unchanged)
+output(modified)    // Should output: 'Hello World'

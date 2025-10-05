@@ -1,0 +1,24 @@
+// Demonstration: let vs let var
+
+// Immutable with 'let'
+let pi = 3.14159;
+output(pi);
+// pi := 3.14;  // ERROR: Cannot assign to immutable variable
+
+// Mutable with 'let var'
+let var counter = 0;
+output(counter);
+counter := counter + 1;
+output(counter);
+counter := counter + 1;
+output(counter);
+
+// Best practice: use 'let' by default, 'let var' only when needed
+let constant_value = 100;
+let var changing_value = 0;
+
+changing_value := changing_value + constant_value;
+output(changing_value);
+
+changing_value := changing_value + constant_value;
+output(changing_value)

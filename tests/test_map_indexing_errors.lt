@@ -1,0 +1,6 @@
+// Test error conditions for map indexing
+// Run each section separately to see the error
+
+// Test 1: Key not found
+let ages = #{1: 25, 2: 30, 3: 35};
+output(ages[5]); // Should error: Key not found

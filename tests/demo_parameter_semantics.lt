@@ -1,0 +1,71 @@
+// Demonstration: Function Parameter Semantics
+
+// 1. Regular parameters are IMMUTABLE
+function double(x: Int): Int {
+    // x := x * 2;    // Would ERROR: Cannot assign to immutable parameter
+    x * 2             // Must use expressions
+};
+
+let value = 5;
+let doubled = double(x: value);
+output(value);        // 5
+output(doubled);      // 10
+
+// 2. Copy parameters (cpy) are MUTABLE
+function triple_cpy(cpy x: Int): Int {
+    x := x * 3;       // OK: x is mutable (copied)
+    x
+};
+
+let original = 7;
+let tripled = triple_cpy(x: original);
+output(original);     // 7 (unchanged!)
+output(tripled);      // 21
+
+// 3. Mixed parameters
+function compute(base: Int, cpy accumulator: Int, multiplier: Int): Int {
+    // base := 10;              // Would ERROR: immutable
+    accumulator := accumulator + base;  // OK: cpy parameter
+    // multiplier := 2;          // Would ERROR: immutable
+    accumulator * multiplier
+};
+
+let result = compute(base: 5, accumulator: 10, multiplier: 3);
+output(result);       // (10 + 5) * 3 = 45
+
+// 4. Using cpy to avoid manual copies
+function sum_and_modify(cpy total: Int, values: Int): Int {
+    total := total + values;
+    total := total + 100;
+    total
+};
+
+let sum = sum_and_modify(total: 0, values: 50);
+output(sum);          // 150
+
+// 5. With lists
+function get_length(numbers: List of Int): Int {
+    // numbers := [1, 2, 3];  // Would ERROR: immutable parameter
+    len(numbers)
+};
+
+let mylist = [10, 20, 30];
+let length = get_length(numbers: mylist);
+output(length);       // 3
+
+// 6. Practical example: accumulator pattern
+function factorial_helper(n: Int, cpy acc: Int): Int {
+    if n <= 1 {
+        acc
+    } else {
+        acc := acc * n;
+        factorial_helper(n: n - 1, acc: acc)
+    }
+};
+
+function factorial(n: Int): Int {
+    factorial_helper(n: n, acc: 1)
+};
+
+let fact5 = factorial(n: 5);
+output(fact5)         // 120

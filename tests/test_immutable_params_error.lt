@@ -1,0 +1,9 @@
+// This should fail: parameters are immutable by default
+
+function increment(x: Int): Int {
+    x := x + 1;    // ERROR: Cannot assign to immutable variable 'x'
+    x
+};
+
+let result = increment(x: 5);
+output(result)

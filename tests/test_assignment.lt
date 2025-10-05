@@ -1,0 +1,61 @@
+// Test assignment expressions (:=) with mutable variables
+
+// Basic assignment with integers
+let var x = 5;
+output(x);        // Should output: 5
+x := 10;
+output(x);        // Should output: 10
+
+// Assignment with strings
+let var name = 'Alice';
+output(name);     // Should output: 'Alice'
+name := 'Bob';
+output(name);     // Should output: 'Bob'
+
+// Assignment with expressions
+let var y = 3;
+y := y + 7;
+output(y);        // Should output: 10
+
+// Assignment with len()
+let var count = 0;
+count := len('hello');
+output(count);    // Should output: 5
+
+// Assignment in blocks
+{
+    let var z = 100;
+    output(z);    // Should output: 100
+    z := 200;
+    output(z)     // Should output: 200
+};
+
+// Assignment to outer scope variable
+let var outer = 1;
+{
+    output(outer);    // Should output: 1
+    outer := 2;
+    output(outer)     // Should output: 2
+};
+output(outer);        // Should output: 2
+
+// Multiple assignments
+let var a = 1;
+let var b = 2;
+output(a);        // Should output: 1
+output(b);        // Should output: 2
+a := 5;
+b := 10;
+output(a);        // Should output: 5
+output(b);        // Should output: 10
+
+// Assignment with lists
+let var mylist = [1, 2, 3];
+output(len(mylist));   // Should output: 3
+mylist := [4, 5, 6, 7];
+output(len(mylist));   // Should output: 4
+
+// Type compatibility check
+let var num = 42;
+num := 84;         // OK: Int to Int
+output(num)        // Should output: 84

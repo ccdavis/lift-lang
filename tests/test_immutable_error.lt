@@ -1,0 +1,6 @@
+// This should fail: cannot assign to immutable variable
+
+let x = 5;
+output(x);
+x := 10;    // ERROR: Cannot assign to immutable variable 'x'
+output(x)

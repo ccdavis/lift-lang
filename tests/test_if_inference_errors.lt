@@ -1,0 +1,8 @@
+// Test error cases for if expression type inference
+{
+    // This should fail: Cannot use if without else in let declaration
+    let unit_result = if false { output('never') };
+    
+    // This line should never be reached due to type error above
+    42
+}

@@ -1,0 +1,6 @@
+// This file tests error conditions
+// Run each section separately to see the error
+
+// Test 1: Index out of bounds
+let nums = [10, 20, 30];
+output(nums[5]); // Should error: index 5 out of bounds for list of length 3

@@ -1,0 +1,37 @@
+// Test len() built-in function
+
+// Test len() on strings
+output(len('hello'));     // Should output: 5
+output(len(''));          // Should output: 0
+output(len('world!'));    // Should output: 6
+
+// Test len() on lists
+output(len([1, 2, 3]));           // Should output: 3
+let empty_list: List of Int = [];
+output(len(empty_list));           // Should output: 0
+output(len([10, 20, 30, 40]));    // Should output: 4
+
+// Test len() on maps
+output(len(#{1: 'a', 2: 'b', 3: 'c'}));  // Should output: 3
+let empty_map: Map of Int to Str = #{};
+output(len(empty_map));                   // Should output: 0
+
+// Test len() with variables
+let mystr = 'testing';
+output(len(mystr));        // Should output: 7
+
+let mylist = [5, 10, 15];
+output(len(mylist));       // Should output: 3
+
+let mymap = #{'a': 1, 'b': 2};
+output(len(mymap));        // Should output: 2
+
+// Test len() in expressions
+let str_length = len('abc');
+output(str_length);        // Should output: 3
+
+// Test len() in arithmetic expression
+let list1_len = len([1, 2]);
+let list2_len = len([3, 4, 5]);
+let total = list1_len + list2_len;
+output(total);             // Should output: 5
