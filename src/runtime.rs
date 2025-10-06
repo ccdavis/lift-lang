@@ -153,6 +153,198 @@ pub fn free_lift_string(ptr: *mut c_char) {
     lift_str_free(ptr);
 }
 
+// ============================================================================
+// List Functions (for integers)
+// ============================================================================
+
+/// Runtime representation of a list
+#[repr(C)]
+pub struct LiftList {
+    data: *mut i64,
+    len: usize,
+    capacity: usize,
+}
+
+/// Create a new list with given capacity
+#[no_mangle]
+pub extern "C" fn lift_list_new(capacity: i64) -> *mut LiftList {
+    let cap = capacity.max(0) as usize;
+    let list = Box::new(LiftList {
+        data: if cap > 0 {
+            unsafe {
+                let layout = std::alloc::Layout::array::<i64>(cap).unwrap();
+                std::alloc::alloc(layout) as *mut i64
+            }
+        } else {
+            std::ptr::null_mut()
+        },
+        len: 0,
+        capacity: cap,
+    });
+    Box::into_raw(list)
+}
+
+/// Set an element in the list at given index
+#[no_mangle]
+pub extern "C" fn lift_list_set(list: *mut LiftList, index: i64, value: i64) {
+    if list.is_null() || index < 0 {
+        return;
+    }
+    unsafe {
+        let list_ref = &mut *list;
+        let idx = index as usize;
+        if idx < list_ref.capacity {
+            *list_ref.data.add(idx) = value;
+            if idx >= list_ref.len {
+                list_ref.len = idx + 1;
+            }
+        }
+    }
+}
+
+/// Get an element from the list at given index
+#[no_mangle]
+pub extern "C" fn lift_list_get(list: *const LiftList, index: i64) -> i64 {
+    if list.is_null() || index < 0 {
+        return 0;
+    }
+    unsafe {
+        let list_ref = &*list;
+        let idx = index as usize;
+        if idx < list_ref.len {
+            *list_ref.data.add(idx)
+        } else {
+            0
+        }
+    }
+}
+
+/// Get the length of a list
+#[no_mangle]
+pub extern "C" fn lift_list_len(list: *const LiftList) -> i64 {
+    if list.is_null() {
+        return 0;
+    }
+    unsafe {
+        let list_ref = &*list;
+        list_ref.len as i64
+    }
+}
+
+/// Free a list
+#[no_mangle]
+pub extern "C" fn lift_list_free(list: *mut LiftList) {
+    if list.is_null() {
+        return;
+    }
+    unsafe {
+        let list_box = Box::from_raw(list);
+        if !list_box.data.is_null() && list_box.capacity > 0 {
+            let layout = std::alloc::Layout::array::<i64>(list_box.capacity).unwrap();
+            std::alloc::dealloc(list_box.data as *mut u8, layout);
+        }
+    }
+}
+
+// ============================================================================
+// Map Functions (integer keys to integer values)
+// ============================================================================
+
+/// Runtime representation of a map (simple array-based for now)
+#[repr(C)]
+pub struct LiftMap {
+    keys: *mut i64,
+    values: *mut i64,
+    len: usize,
+    capacity: usize,
+}
+
+/// Create a new map with given capacity
+#[no_mangle]
+pub extern "C" fn lift_map_new(capacity: i64) -> *mut LiftMap {
+    let cap = capacity.max(0) as usize;
+    let map = Box::new(LiftMap {
+        keys: if cap > 0 {
+            unsafe {
+                let layout = std::alloc::Layout::array::<i64>(cap).unwrap();
+                std::alloc::alloc(layout) as *mut i64
+            }
+        } else {
+            std::ptr::null_mut()
+        },
+        values: if cap > 0 {
+            unsafe {
+                let layout = std::alloc::Layout::array::<i64>(cap).unwrap();
+                std::alloc::alloc(layout) as *mut i64
+            }
+        } else {
+            std::ptr::null_mut()
+        },
+        len: 0,
+        capacity: cap,
+    });
+    Box::into_raw(map)
+}
+
+/// Set a key-value pair in the map
+#[no_mangle]
+pub extern "C" fn lift_map_set(map: *mut LiftMap, key: i64, value: i64) {
+    if map.is_null() {
+        return;
+    }
+    unsafe {
+        let map_ref = &mut *map;
+
+        // Check if key already exists
+        for i in 0..map_ref.len {
+            if *map_ref.keys.add(i) == key {
+                *map_ref.values.add(i) = value;
+                return;
+            }
+        }
+
+        // Add new key-value pair if capacity allows
+        if map_ref.len < map_ref.capacity {
+            *map_ref.keys.add(map_ref.len) = key;
+            *map_ref.values.add(map_ref.len) = value;
+            map_ref.len += 1;
+        }
+    }
+}
+
+/// Get a value from the map by key
+#[no_mangle]
+pub extern "C" fn lift_map_get(map: *const LiftMap, key: i64) -> i64 {
+    if map.is_null() {
+        return 0;
+    }
+    unsafe {
+        let map_ref = &*map;
+        for i in 0..map_ref.len {
+            if *map_ref.keys.add(i) == key {
+                return *map_ref.values.add(i);
+            }
+        }
+        0 // Key not found
+    }
+}
+
+/// Free a map
+#[no_mangle]
+pub extern "C" fn lift_map_free(map: *mut LiftMap) {
+    if map.is_null() {
+        return;
+    }
+    unsafe {
+        let map_box = Box::from_raw(map);
+        if !map_box.keys.is_null() && map_box.capacity > 0 {
+            let layout = std::alloc::Layout::array::<i64>(map_box.capacity).unwrap();
+            std::alloc::dealloc(map_box.keys as *mut u8, layout);
+            std::alloc::dealloc(map_box.values as *mut u8, layout);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

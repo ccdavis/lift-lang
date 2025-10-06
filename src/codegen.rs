@@ -96,6 +96,64 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             .map_err(|e| format!("Failed to declare lift_str_eq: {}", e))?;
         self.runtime_funcs.insert("lift_str_eq".to_string(), func_id);
 
+        // lift_list_new(i64) -> *mut LiftList
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(types::I64));
+        sig.returns.push(AbiParam::new(pointer_type));
+        let func_id = self.module
+            .declare_function("lift_list_new", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_list_new: {}", e))?;
+        self.runtime_funcs.insert("lift_list_new".to_string(), func_id);
+
+        // lift_list_set(*mut LiftList, i64, i64)
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(types::I64));
+        sig.params.push(AbiParam::new(types::I64));
+        let func_id = self.module
+            .declare_function("lift_list_set", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_list_set: {}", e))?;
+        self.runtime_funcs.insert("lift_list_set".to_string(), func_id);
+
+        // lift_list_get(*const LiftList, i64) -> i64
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(types::I64));
+        sig.returns.push(AbiParam::new(types::I64));
+        let func_id = self.module
+            .declare_function("lift_list_get", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_list_get: {}", e))?;
+        self.runtime_funcs.insert("lift_list_get".to_string(), func_id);
+
+        // lift_map_new(i64) -> *mut LiftMap
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(types::I64));
+        sig.returns.push(AbiParam::new(pointer_type));
+        let func_id = self.module
+            .declare_function("lift_map_new", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_map_new: {}", e))?;
+        self.runtime_funcs.insert("lift_map_new".to_string(), func_id);
+
+        // lift_map_set(*mut LiftMap, i64, i64)
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(types::I64));
+        sig.params.push(AbiParam::new(types::I64));
+        let func_id = self.module
+            .declare_function("lift_map_set", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_map_set: {}", e))?;
+        self.runtime_funcs.insert("lift_map_set".to_string(), func_id);
+
+        // lift_map_get(*const LiftMap, i64) -> i64
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(types::I64));
+        sig.returns.push(AbiParam::new(types::I64));
+        let func_id = self.module
+            .declare_function("lift_map_get", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_map_get: {}", e))?;
+        self.runtime_funcs.insert("lift_map_get".to_string(), func_id);
+
         Ok(())
     }
 
@@ -210,6 +268,19 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
 
             Expr::Assign { name, value, .. } => {
                 Self::compile_assign(builder, name, value, symbols, runtime_funcs, variables)
+            }
+
+            // Collections
+            Expr::ListLiteral { data_type, data } => {
+                Self::compile_list_literal(builder, data_type, data, symbols, runtime_funcs, variables)
+            }
+
+            Expr::MapLiteral { key_type, value_type, data } => {
+                Self::compile_map_literal(builder, key_type, value_type, data, symbols, runtime_funcs, variables)
+            }
+
+            Expr::Index { expr, index } => {
+                Self::compile_index(builder, expr, index, symbols, runtime_funcs, variables)
             }
 
             // Unit
@@ -659,6 +730,178 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
 
         // Assignment returns Unit
         Ok(None)
+    }
+
+    /// Compile a list literal (for integer lists only in Phase 5)
+    fn compile_list_literal(
+        builder: &mut FunctionBuilder,
+        data_type: &crate::syntax::DataType,
+        data: &[Expr],
+        symbols: &SymbolTable,
+        runtime_funcs: &HashMap<String, FuncRef>,
+        variables: &mut HashMap<String, StackSlot>,
+    ) -> Result<Option<Value>, String> {
+        use crate::syntax::DataType;
+        use crate::semantic_analysis::determine_type_with_symbols;
+
+        // Infer element type from first element if data_type is Unsolved
+        let elem_type = if matches!(data_type, DataType::Unsolved) {
+            if let Some(first_elem) = data.first() {
+                determine_type_with_symbols(first_elem, symbols, 0)
+                    .ok_or_else(|| "Cannot determine type of list elements".to_string())?
+            } else {
+                return Err("Empty list requires type annotation".to_string());
+            }
+        } else {
+            data_type.clone()
+        };
+
+        // For now, only support integer lists
+        if !matches!(elem_type, DataType::Int) {
+            return Err(format!("Compiler only supports integer lists currently, got {:?}", elem_type));
+        }
+
+        // Create a new list with capacity equal to number of elements
+        let capacity = builder.ins().iconst(types::I64, data.len() as i64);
+        let func_ref = runtime_funcs.get("lift_list_new")
+            .ok_or_else(|| "Runtime function lift_list_new not found".to_string())?;
+        let inst = builder.ins().call(*func_ref, &[capacity]);
+        let list_ptr = builder.inst_results(inst)[0];
+
+        // Set each element in the list
+        let set_func_ref = runtime_funcs.get("lift_list_set")
+            .ok_or_else(|| "Runtime function lift_list_set not found".to_string())?;
+
+        for (i, elem) in data.iter().enumerate() {
+            // Compile the element value
+            let elem_val = Self::compile_expr_static(builder, elem, symbols, runtime_funcs, variables)?
+                .ok_or_else(|| "List element must produce a value".to_string())?;
+
+            // Call lift_list_set(list, index, value)
+            let index = builder.ins().iconst(types::I64, i as i64);
+            builder.ins().call(*set_func_ref, &[list_ptr, index, elem_val]);
+        }
+
+        Ok(Some(list_ptr))
+    }
+
+    /// Compile a map literal (for integer key-value maps only in Phase 5)
+    fn compile_map_literal(
+        builder: &mut FunctionBuilder,
+        key_type: &crate::syntax::DataType,
+        value_type: &crate::syntax::DataType,
+        data: &[(crate::syntax::KeyData, Expr)],
+        symbols: &SymbolTable,
+        runtime_funcs: &HashMap<String, FuncRef>,
+        variables: &mut HashMap<String, StackSlot>,
+    ) -> Result<Option<Value>, String> {
+        use crate::syntax::{DataType, KeyData};
+        use crate::semantic_analysis::determine_type_with_symbols;
+
+        // Infer value type from first element if value_type is Unsolved
+        let actual_value_type = if matches!(value_type, DataType::Unsolved) {
+            if let Some((_, first_val)) = data.first() {
+                determine_type_with_symbols(first_val, symbols, 0)
+                    .ok_or_else(|| "Cannot determine type of map values".to_string())?
+            } else {
+                return Err("Empty map requires type annotation".to_string());
+            }
+        } else {
+            value_type.clone()
+        };
+
+        // Infer key type from first element if key_type is Unsolved
+        let actual_key_type = if matches!(key_type, DataType::Unsolved) {
+            if let Some((first_key, _)) = data.first() {
+                match first_key {
+                    KeyData::Int(_) => DataType::Int,
+                    KeyData::Str(_) => DataType::Str,
+                    KeyData::Bool(_) => DataType::Bool,
+                }
+            } else {
+                return Err("Empty map requires type annotation".to_string());
+            }
+        } else {
+            key_type.clone()
+        };
+
+        // For now, only support integer key-value maps
+        if !matches!(actual_key_type, DataType::Int) || !matches!(actual_value_type, DataType::Int) {
+            return Err(format!("Compiler only supports integer key-value maps currently"));
+        }
+
+        // Create a new map with capacity equal to number of pairs
+        let capacity = builder.ins().iconst(types::I64, data.len() as i64);
+        let func_ref = runtime_funcs.get("lift_map_new")
+            .ok_or_else(|| "Runtime function lift_map_new not found".to_string())?;
+        let inst = builder.ins().call(*func_ref, &[capacity]);
+        let map_ptr = builder.inst_results(inst)[0];
+
+        // Set each key-value pair in the map
+        let set_func_ref = runtime_funcs.get("lift_map_set")
+            .ok_or_else(|| "Runtime function lift_map_set not found".to_string())?;
+
+        for (key_data, value_expr) in data {
+            // Extract the integer key
+            let key_val = match key_data {
+                KeyData::Int(k) => builder.ins().iconst(types::I64, *k),
+                _ => return Err("Compiler only supports integer keys".to_string()),
+            };
+
+            // Compile the value expression
+            let value_val = Self::compile_expr_static(builder, value_expr, symbols, runtime_funcs, variables)?
+                .ok_or_else(|| "Map value must produce a value".to_string())?;
+
+            // Call lift_map_set(map, key, value)
+            builder.ins().call(*set_func_ref, &[map_ptr, key_val, value_val]);
+        }
+
+        Ok(Some(map_ptr))
+    }
+
+    /// Compile an index expression (list[i] or map[key])
+    fn compile_index(
+        builder: &mut FunctionBuilder,
+        expr: &Expr,
+        index: &Expr,
+        symbols: &SymbolTable,
+        runtime_funcs: &HashMap<String, FuncRef>,
+        variables: &mut HashMap<String, StackSlot>,
+    ) -> Result<Option<Value>, String> {
+        use crate::semantic_analysis::determine_type_with_symbols;
+        use crate::syntax::DataType;
+
+        // Compile the collection expression
+        let collection = Self::compile_expr_static(builder, expr, symbols, runtime_funcs, variables)?
+            .ok_or("Index requires non-Unit collection")?;
+
+        // Compile the index expression
+        let index_val = Self::compile_expr_static(builder, index, symbols, runtime_funcs, variables)?
+            .ok_or("Index requires non-Unit index value")?;
+
+        // Determine if this is a list or map based on the type
+        let expr_type = determine_type_with_symbols(expr, symbols, 0)
+            .ok_or_else(|| "Cannot determine type for indexed expression".to_string())?;
+
+        match expr_type {
+            DataType::List { .. } => {
+                // Call lift_list_get(list, index) -> i64
+                let func_ref = runtime_funcs.get("lift_list_get")
+                    .ok_or_else(|| "Runtime function lift_list_get not found".to_string())?;
+                let inst = builder.ins().call(*func_ref, &[collection, index_val]);
+                let result = builder.inst_results(inst)[0];
+                Ok(Some(result))
+            }
+            DataType::Map { .. } => {
+                // Call lift_map_get(map, key) -> i64
+                let func_ref = runtime_funcs.get("lift_map_get")
+                    .ok_or_else(|| "Runtime function lift_map_get not found".to_string())?;
+                let inst = builder.ins().call(*func_ref, &[collection, index_val]);
+                let result = builder.inst_results(inst)[0];
+                Ok(Some(result))
+            }
+            _ => Err(format!("Cannot index into type: {:?}", expr_type)),
+        }
     }
 }
 

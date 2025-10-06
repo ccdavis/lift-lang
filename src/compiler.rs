@@ -26,6 +26,12 @@ impl JITCompiler {
         builder.symbol("lift_str_concat", runtime::lift_str_concat as *const u8);
         builder.symbol("lift_str_len", runtime::lift_str_len as *const u8);
         builder.symbol("lift_str_eq", runtime::lift_str_eq as *const u8);
+        builder.symbol("lift_list_new", runtime::lift_list_new as *const u8);
+        builder.symbol("lift_list_set", runtime::lift_list_set as *const u8);
+        builder.symbol("lift_list_get", runtime::lift_list_get as *const u8);
+        builder.symbol("lift_map_new", runtime::lift_map_new as *const u8);
+        builder.symbol("lift_map_set", runtime::lift_map_set as *const u8);
+        builder.symbol("lift_map_get", runtime::lift_map_get as *const u8);
 
         // Create the JIT module
         let module = JITModule::new(builder);
@@ -554,5 +560,190 @@ mod tests {
 
         let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
         assert_eq!(result, 1);
+    }
+
+    #[test]
+    fn test_compile_list_literal() {
+        let mut compiler = JITCompiler::new().unwrap();
+
+        // [10, 20, 30]
+        let expr = Expr::ListLiteral {
+            data_type: crate::syntax::DataType::Int,
+            data: vec![
+                Expr::Literal(LiteralData::Int(10)),
+                Expr::Literal(LiteralData::Int(20)),
+                Expr::Literal(LiteralData::Int(30)),
+            ],
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let _result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        // List returns pointer, so we can't easily assert the value
+        // Just verify it compiles and runs
+    }
+
+    #[test]
+    fn test_compile_list_indexing() {
+        let mut compiler = JITCompiler::new().unwrap();
+
+        // { let nums = [10, 20, 30]; nums[1] }
+        let expr = Expr::Block {
+            body: vec![
+                Expr::Let {
+                    var_name: "nums".to_string(),
+                    index: (0, 0),
+                    data_type: crate::syntax::DataType::List {
+                        element_type: Box::new(crate::syntax::DataType::Int),
+                    },
+                    value: Box::new(Expr::ListLiteral {
+                        data_type: crate::syntax::DataType::Int,
+                        data: vec![
+                            Expr::Literal(LiteralData::Int(10)),
+                            Expr::Literal(LiteralData::Int(20)),
+                            Expr::Literal(LiteralData::Int(30)),
+                        ],
+                    }),
+                    mutable: false,
+                },
+                Expr::Index {
+                    expr: Box::new(Expr::Variable {
+                        name: "nums".to_string(),
+                        index: (0, 0),
+                    }),
+                    index: Box::new(Expr::Literal(LiteralData::Int(1))),
+                },
+            ],
+            environment: 0,
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 20);
+    }
+
+    #[test]
+    fn test_compile_map_literal() {
+        let mut compiler = JITCompiler::new().unwrap();
+
+        // #{1: 100, 2: 200}
+        let expr = Expr::MapLiteral {
+            key_type: crate::syntax::DataType::Int,
+            value_type: crate::syntax::DataType::Int,
+            data: vec![
+                (crate::syntax::KeyData::Int(1), Expr::Literal(LiteralData::Int(100))),
+                (crate::syntax::KeyData::Int(2), Expr::Literal(LiteralData::Int(200))),
+            ],
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let _result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        // Map returns pointer, so we can't easily assert the value
+        // Just verify it compiles and runs
+    }
+
+    #[test]
+    fn test_compile_map_indexing() {
+        let mut compiler = JITCompiler::new().unwrap();
+
+        // { let ages = #{1: 25, 2: 30}; ages[2] }
+        let expr = Expr::Block {
+            body: vec![
+                Expr::Let {
+                    var_name: "ages".to_string(),
+                    index: (0, 0),
+                    data_type: crate::syntax::DataType::Map {
+                        key_type: Box::new(crate::syntax::DataType::Int),
+                        value_type: Box::new(crate::syntax::DataType::Int),
+                    },
+                    value: Box::new(Expr::MapLiteral {
+                        key_type: crate::syntax::DataType::Int,
+                        value_type: crate::syntax::DataType::Int,
+                        data: vec![
+                            (crate::syntax::KeyData::Int(1), Expr::Literal(LiteralData::Int(25))),
+                            (crate::syntax::KeyData::Int(2), Expr::Literal(LiteralData::Int(30))),
+                        ],
+                    }),
+                    mutable: false,
+                },
+                Expr::Index {
+                    expr: Box::new(Expr::Variable {
+                        name: "ages".to_string(),
+                        index: (0, 0),
+                    }),
+                    index: Box::new(Expr::Literal(LiteralData::Int(2))),
+                },
+            ],
+            environment: 0,
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 30);
+    }
+
+    #[test]
+    fn test_compile_list_with_expressions() {
+        let mut compiler = JITCompiler::new().unwrap();
+
+        // { let nums = [1 + 1, 2 * 3, 10 - 4]; nums[2] }
+        let expr = Expr::Block {
+            body: vec![
+                Expr::Let {
+                    var_name: "nums".to_string(),
+                    index: (0, 0),
+                    data_type: crate::syntax::DataType::List {
+                        element_type: Box::new(crate::syntax::DataType::Int),
+                    },
+                    value: Box::new(Expr::ListLiteral {
+                        data_type: crate::syntax::DataType::Int,
+                        data: vec![
+                            Expr::BinaryExpr {
+                                left: Box::new(Expr::Literal(LiteralData::Int(1))),
+                                op: Operator::Add,
+                                right: Box::new(Expr::Literal(LiteralData::Int(1))),
+                            },
+                            Expr::BinaryExpr {
+                                left: Box::new(Expr::Literal(LiteralData::Int(2))),
+                                op: Operator::Mul,
+                                right: Box::new(Expr::Literal(LiteralData::Int(3))),
+                            },
+                            Expr::BinaryExpr {
+                                left: Box::new(Expr::Literal(LiteralData::Int(10))),
+                                op: Operator::Sub,
+                                right: Box::new(Expr::Literal(LiteralData::Int(4))),
+                            },
+                        ],
+                    }),
+                    mutable: false,
+                },
+                Expr::Index {
+                    expr: Box::new(Expr::Variable {
+                        name: "nums".to_string(),
+                        index: (0, 0),
+                    }),
+                    index: Box::new(Expr::Literal(LiteralData::Int(2))),
+                },
+            ],
+            environment: 0,
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 6); // 10 - 4 = 6
     }
 }
