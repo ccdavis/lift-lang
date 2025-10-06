@@ -154,6 +154,33 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             .map_err(|e| format!("Failed to declare lift_map_get: {}", e))?;
         self.runtime_funcs.insert("lift_map_get".to_string(), func_id);
 
+        // lift_str_len(*const c_char) -> i64
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(types::I64));
+        let func_id = self.module
+            .declare_function("lift_str_len", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_str_len: {}", e))?;
+        self.runtime_funcs.insert("lift_str_len".to_string(), func_id);
+
+        // lift_list_len(*const LiftList) -> i64
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(types::I64));
+        let func_id = self.module
+            .declare_function("lift_list_len", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_list_len: {}", e))?;
+        self.runtime_funcs.insert("lift_list_len".to_string(), func_id);
+
+        // lift_map_len(*const LiftMap) -> i64
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(types::I64));
+        let func_id = self.module
+            .declare_function("lift_map_len", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_map_len: {}", e))?;
+        self.runtime_funcs.insert("lift_map_len".to_string(), func_id);
+
         Ok(())
     }
 
@@ -281,6 +308,15 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
 
             Expr::Index { expr, index } => {
                 Self::compile_index(builder, expr, index, symbols, runtime_funcs, variables)
+            }
+
+            // Built-in functions
+            Expr::Len { expr } => {
+                Self::compile_len(builder, expr, symbols, runtime_funcs, variables)
+            }
+
+            Expr::MethodCall { receiver, method_name, args, .. } => {
+                Self::compile_method_call(builder, receiver, method_name, args, symbols, runtime_funcs, variables)
             }
 
             // Unit
@@ -980,6 +1016,54 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             }
             _ => Err(format!("Cannot index into type: {:?}", expr_type)),
         }
+    }
+
+    /// Compile len() built-in function
+    fn compile_len(
+        builder: &mut FunctionBuilder,
+        expr: &Expr,
+        symbols: &SymbolTable,
+        runtime_funcs: &HashMap<String, FuncRef>,
+        variables: &mut HashMap<String, StackSlot>,
+    ) -> Result<Option<Value>, String> {
+        use crate::semantic_analysis::determine_type_with_symbols;
+        use crate::syntax::DataType;
+
+        // Compile the expression
+        let val = Self::compile_expr_static(builder, expr, symbols, runtime_funcs, variables)?
+            .ok_or("len() requires non-Unit expression")?;
+
+        // Determine the type to call the right len function
+        let expr_type = determine_type_with_symbols(expr, symbols, 0)
+            .ok_or_else(|| "Cannot determine type for len() expression".to_string())?;
+
+        let func_name = match expr_type {
+            DataType::Str => "lift_str_len",
+            DataType::List { .. } => "lift_list_len",
+            DataType::Map { .. } => "lift_map_len",
+            _ => return Err(format!("len() not supported for type: {:?}", expr_type)),
+        };
+
+        let func_ref = runtime_funcs.get(func_name)
+            .ok_or_else(|| format!("Runtime function {} not found", func_name))?;
+        let inst = builder.ins().call(*func_ref, &[val]);
+        let result = builder.inst_results(inst)[0];
+        Ok(Some(result))
+    }
+
+    /// Compile method calls (simplified stub for Phase 6)
+    fn compile_method_call(
+        builder: &mut FunctionBuilder,
+        _receiver: &Expr,
+        _method_name: &str,
+        _args: &[crate::syntax::KeywordArg],
+        _symbols: &SymbolTable,
+        _runtime_funcs: &HashMap<String, FuncRef>,
+        _variables: &mut HashMap<String, StackSlot>,
+    ) -> Result<Option<Value>, String> {
+        // Placeholder for method calls - will implement in future
+        // For now, just return an error
+        Err("Method calls not yet implemented in compiler".to_string())
     }
 }
 

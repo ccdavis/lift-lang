@@ -329,6 +329,18 @@ pub extern "C" fn lift_map_get(map: *const LiftMap, key: i64) -> i64 {
     }
 }
 
+/// Get the number of entries in a map
+#[no_mangle]
+pub extern "C" fn lift_map_len(map: *const LiftMap) -> i64 {
+    if map.is_null() {
+        return 0;
+    }
+    unsafe {
+        let map_ref = &*map;
+        map_ref.len as i64
+    }
+}
+
 /// Free a map
 #[no_mangle]
 pub extern "C" fn lift_map_free(map: *mut LiftMap) {

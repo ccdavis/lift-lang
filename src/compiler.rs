@@ -29,9 +29,11 @@ impl JITCompiler {
         builder.symbol("lift_list_new", runtime::lift_list_new as *const u8);
         builder.symbol("lift_list_set", runtime::lift_list_set as *const u8);
         builder.symbol("lift_list_get", runtime::lift_list_get as *const u8);
+        builder.symbol("lift_list_len", runtime::lift_list_len as *const u8);
         builder.symbol("lift_map_new", runtime::lift_map_new as *const u8);
         builder.symbol("lift_map_set", runtime::lift_map_set as *const u8);
         builder.symbol("lift_map_get", runtime::lift_map_get as *const u8);
+        builder.symbol("lift_map_len", runtime::lift_map_len as *const u8);
 
         // Create the JIT module
         let module = JITModule::new(builder);
@@ -886,5 +888,106 @@ mod tests {
 
         let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
         assert_eq!(result, 200);
+    }
+
+    #[test]
+    fn test_compile_len_string() {
+        let mut compiler = JITCompiler::new().unwrap();
+
+        // len('Hello')
+        let expr = Expr::Len {
+            expr: Box::new(Expr::Literal(LiteralData::Str("Hello".into()))),
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 5);
+    }
+
+    #[test]
+    fn test_compile_len_list() {
+        let mut compiler = JITCompiler::new().unwrap();
+
+        // { let nums = [10, 20, 30]; len(nums) }
+        let expr = Expr::Block {
+            body: vec![
+                Expr::Let {
+                    var_name: "nums".to_string(),
+                    index: (0, 0),
+                    data_type: crate::syntax::DataType::List {
+                        element_type: Box::new(crate::syntax::DataType::Int),
+                    },
+                    value: Box::new(Expr::ListLiteral {
+                        data_type: crate::syntax::DataType::Int,
+                        data: vec![
+                            Expr::Literal(LiteralData::Int(10)),
+                            Expr::Literal(LiteralData::Int(20)),
+                            Expr::Literal(LiteralData::Int(30)),
+                        ],
+                    }),
+                    mutable: false,
+                },
+                Expr::Len {
+                    expr: Box::new(Expr::Variable {
+                        name: "nums".to_string(),
+                        index: (0, 0),
+                    }),
+                },
+            ],
+            environment: 0,
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 3);
+    }
+
+    #[test]
+    fn test_compile_len_map() {
+        let mut compiler = JITCompiler::new().unwrap();
+
+        // { let ages = #{1: 25, 2: 30, 3: 35}; len(ages) }
+        let expr = Expr::Block {
+            body: vec![
+                Expr::Let {
+                    var_name: "ages".to_string(),
+                    index: (0, 0),
+                    data_type: crate::syntax::DataType::Map {
+                        key_type: Box::new(crate::syntax::DataType::Int),
+                        value_type: Box::new(crate::syntax::DataType::Int),
+                    },
+                    value: Box::new(Expr::MapLiteral {
+                        key_type: crate::syntax::DataType::Int,
+                        value_type: crate::syntax::DataType::Int,
+                        data: vec![
+                            (crate::syntax::KeyData::Int(1), Expr::Literal(LiteralData::Int(25))),
+                            (crate::syntax::KeyData::Int(2), Expr::Literal(LiteralData::Int(30))),
+                            (crate::syntax::KeyData::Int(3), Expr::Literal(LiteralData::Int(35))),
+                        ],
+                    }),
+                    mutable: false,
+                },
+                Expr::Len {
+                    expr: Box::new(Expr::Variable {
+                        name: "ages".to_string(),
+                        index: (0, 0),
+                    }),
+                },
+            ],
+            environment: 0,
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 3);
     }
 }
