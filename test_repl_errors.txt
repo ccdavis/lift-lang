@@ -1,0 +1,10 @@
+let x = 10
+x + 5
+y + 5
+let z = []
+let w: List of Int = []
+w
+x
+1 + true
+let valid = 42
+valid

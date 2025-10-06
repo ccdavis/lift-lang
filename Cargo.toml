@@ -9,6 +9,13 @@ edition = "2021"
 lalrpop = "0.20.0"
 lalrpop-util = "0.20.0"
 rustyline = {version = "13.0.0", features = ["derive","custom-bindings"]}
+cranelift = "0.123"
+cranelift-jit = "0.123"
+cranelift-module = "0.123"
+cranelift-frontend = "0.123"
+cranelift-codegen = "0.123"
+cranelift-native = "0.123"
+target-lexicon = "0.12"
 
 [build-dependencies]
 lalrpop = "0.20.0"

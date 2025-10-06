@@ -1,0 +1,80 @@
+#V2
+42
+let x = 10
+x + 5
+let x = 10
+x + 5
+y + 5
+let z = []
+let w: List of Int = []
+w
+x
+1 + true
+let valid = 42
+valid
+42
+let x = 10
+x + 5
+y
+let z = []
+let w: List of Int = []
+w
+1 + true
+x
+42
+let x = 10
+x + 5
+y
+let z = []
+let w: List of Int = []
+w
+1 + true
+x
+42
+let x = 10
+x + 5
+y
+let z = []
+let w: List of Int = []
+w
+1 + true
+x
+let valid = 100
+valid
+let x = 10
+let y = x + 5
+y
+let x = 10
+let y = x + z
+let empty = []
+let bad = 1 + true
+let x = 10
+let y = x + 5
+y
+x + y
+let a = 5
+let b = a + 3.14
+b
+let c = b * 2
+c
+let flag = a > b
+flag
+function add(x: Int, y: Int): Int { x + y }
+let result = add(x: 10, y: 20)
+result
+let doubled = result * 2
+doubled
+function add(x: Int, y: Int): Int { x + y }
+let result = add(x: 10, y: 20)
+result
+let doubled = result * 2
+doubled
+x=3
+let x=3
+x + 3
+exit
+\nquit
+output('hi')
+\nlet x=3
+if x>2 { output('hi') } else {output('there')}
+let m = [1,2,3,4,5]

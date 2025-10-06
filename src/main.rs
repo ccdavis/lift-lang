@@ -2,6 +2,10 @@ mod interpreter;
 mod semantic_analysis;
 mod symboltable;
 mod syntax;
+mod compile_types;
+mod runtime;
+mod codegen;
+mod compiler;
 #[cfg(test)]
 use interpreter::InterpreterResult;
 use lalrpop_util::{lalrpop_mod, ParseError};
@@ -387,6 +391,31 @@ fn interpret_code(code: &str) -> Result<(), Box<dyn error::Error>> {
 
     let res = ast.interpret(&mut symbols, 0)?;
     println!("{}", res);
+    Ok(())
+}
+
+fn compile_code(code: &str) -> Result<(), Box<dyn error::Error>> {
+    let parser = grammar::ProgramParser::new();
+    let mut ast = match parser.parse(code) {
+        Err(e) => {
+            eprintln!("{}", e);
+            std::process::exit(3);
+        }
+        Ok(parsed_ast) => parsed_ast,
+    };
+
+    let mut symbols = SymbolTable::new();
+    if let Err(ref errors) = ast.prepare(&mut symbols) {
+        for e in errors {
+            eprintln!("{}", e);
+        }
+        std::process::exit(2);
+    }
+
+    // Compile and run
+    let mut jit = compiler::JITCompiler::new()?;
+    let result = jit.compile_and_run(&ast, &symbols)?;
+    println!("{}", result);
     Ok(())
 }
 
@@ -1900,15 +1929,30 @@ fn test_lt_file_if_type_inference() {
 
 fn main() {
     let args = std::env::args().collect::<Vec<String>>();
-    if args.len() < 2 {
+
+    // Check for flags
+    let use_compiler = args.iter().any(|arg| arg == "--compile" || arg == "-c");
+
+    if args.len() < 2 || (args.len() == 2 && use_compiler) {
         repl();
     } else {
-        let program_file = &args[1];
+        // Find the program file (skip flags)
+        let program_file = args.iter()
+            .skip(1)
+            .find(|arg| !arg.starts_with('-'))
+            .expect("No program file specified");
+
         let code = fs::read_to_string(program_file)
             .unwrap_or_else(|_| panic!("File at {} unreadable.", program_file));
 
-        if let Err(e) = interpret_code(&code) {
-            eprintln!("Error: {}", e);
+        if use_compiler {
+            if let Err(e) = compile_code(&code) {
+                eprintln!("Compilation error: {}", e);
+            }
+        } else {
+            if let Err(e) = interpret_code(&code) {
+                eprintln!("Error: {}", e);
+            }
         }
     }
 }
