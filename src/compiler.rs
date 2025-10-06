@@ -203,4 +203,151 @@ mod tests {
         let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
         assert_eq!(result, 1); // true is represented as 1
     }
+
+    #[test]
+    fn test_compile_variable() {
+        let mut compiler = JITCompiler::new().unwrap();
+
+        // { let x = 42; x }
+        let expr = Expr::Block {
+            body: vec![
+                Expr::Let {
+                    var_name: "x".to_string(),
+                    index: (0, 0),
+                    data_type: crate::syntax::DataType::Int,
+                    value: Box::new(Expr::Literal(LiteralData::Int(42))),
+                    mutable: false,
+                },
+                Expr::Variable {
+                    name: "x".to_string(),
+                    index: (0, 0),
+                },
+            ],
+            environment: 0,
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 42);
+    }
+
+    #[test]
+    fn test_compile_variable_arithmetic() {
+        let mut compiler = JITCompiler::new().unwrap();
+
+        // { let x = 10; let y = 20; x + y }
+        let expr = Expr::Block {
+            body: vec![
+                Expr::Let {
+                    var_name: "x".to_string(),
+                    index: (0, 0),
+                    data_type: crate::syntax::DataType::Int,
+                    value: Box::new(Expr::Literal(LiteralData::Int(10))),
+                    mutable: false,
+                },
+                Expr::Let {
+                    var_name: "y".to_string(),
+                    index: (0, 0),
+                    data_type: crate::syntax::DataType::Int,
+                    value: Box::new(Expr::Literal(LiteralData::Int(20))),
+                    mutable: false,
+                },
+                Expr::BinaryExpr {
+                    left: Box::new(Expr::Variable {
+                        name: "x".to_string(),
+                        index: (0, 0),
+                    }),
+                    op: Operator::Add,
+                    right: Box::new(Expr::Variable {
+                        name: "y".to_string(),
+                        index: (0, 0),
+                    }),
+                },
+            ],
+            environment: 0,
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 30);
+    }
+
+    #[test]
+    fn test_compile_mutable_variable() {
+        let mut compiler = JITCompiler::new().unwrap();
+
+        // { let var x = 5; x := 10; x }
+        let expr = Expr::Block {
+            body: vec![
+                Expr::Let {
+                    var_name: "x".to_string(),
+                    index: (0, 0),
+                    data_type: crate::syntax::DataType::Int,
+                    value: Box::new(Expr::Literal(LiteralData::Int(5))),
+                    mutable: true,
+                },
+                Expr::Assign {
+                    name: "x".to_string(),
+                    value: Box::new(Expr::Literal(LiteralData::Int(10))),
+                    index: (0, 0),
+                },
+                Expr::Variable {
+                    name: "x".to_string(),
+                    index: (0, 0),
+                },
+            ],
+            environment: 0,
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 10);
+    }
+
+    #[test]
+    fn test_compile_variable_in_if() {
+        let mut compiler = JITCompiler::new().unwrap();
+
+        // { let x = 5; if x > 3 { 100 } else { 200 } }
+        let expr = Expr::Block {
+            body: vec![
+                Expr::Let {
+                    var_name: "x".to_string(),
+                    index: (0, 0),
+                    data_type: crate::syntax::DataType::Int,
+                    value: Box::new(Expr::Literal(LiteralData::Int(5))),
+                    mutable: false,
+                },
+                Expr::If {
+                    cond: Box::new(Expr::BinaryExpr {
+                        left: Box::new(Expr::Variable {
+                            name: "x".to_string(),
+                            index: (0, 0),
+                        }),
+                        op: Operator::Gt,
+                        right: Box::new(Expr::Literal(LiteralData::Int(3))),
+                    }),
+                    then: Box::new(Expr::Literal(LiteralData::Int(100))),
+                    final_else: Box::new(Expr::Literal(LiteralData::Int(200))),
+                },
+            ],
+            environment: 0,
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 100);
+    }
 }

@@ -173,6 +173,19 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 Self::compile_while_expr(builder, cond, body, symbols, runtime_funcs, variables)
             }
 
+            // Variables
+            Expr::Let { var_name, value, .. } => {
+                Self::compile_let(builder, var_name, value, symbols, runtime_funcs, variables)
+            }
+
+            Expr::Variable { name, .. } => {
+                Self::compile_variable(builder, name, variables)
+            }
+
+            Expr::Assign { name, value, .. } => {
+                Self::compile_assign(builder, name, value, symbols, runtime_funcs, variables)
+            }
+
             // Unit
             Expr::Unit => Ok(None),
 
@@ -429,6 +442,78 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         builder.seal_block(loop_exit);
 
         // While loops return Unit
+        Ok(None)
+    }
+
+    /// Compile a let binding (variable declaration)
+    fn compile_let(
+        builder: &mut FunctionBuilder,
+        var_name: &str,
+        value: &Expr,
+        symbols: &SymbolTable,
+        runtime_funcs: &HashMap<String, FuncId>,
+        variables: &mut HashMap<String, StackSlot>,
+    ) -> Result<Option<Value>, String> {
+        // Compile the value expression
+        let val = Self::compile_expr_static(builder, value, symbols, runtime_funcs, variables)?
+            .ok_or_else(|| format!("Let binding for '{}' requires a value", var_name))?;
+
+        // Create a stack slot for this variable
+        // For now, assume all variables are I64 (we'll extend this later)
+        let slot = builder.create_sized_stack_slot(StackSlotData::new(
+            StackSlotKind::ExplicitSlot,
+            8, // 8 bytes for I64
+            0,
+        ));
+
+        // Store the value in the stack slot
+        builder.ins().stack_store(val, slot, 0);
+
+        // Remember this variable's stack slot
+        variables.insert(var_name.to_string(), slot);
+
+        // Let expressions return Unit
+        Ok(None)
+    }
+
+    /// Compile a variable reference (reading a variable)
+    fn compile_variable(
+        builder: &mut FunctionBuilder,
+        name: &str,
+        variables: &HashMap<String, StackSlot>,
+    ) -> Result<Option<Value>, String> {
+        // Look up the variable's stack slot
+        let slot = variables
+            .get(name)
+            .ok_or_else(|| format!("Undefined variable: {}", name))?;
+
+        // Load the value from the stack slot
+        let val = builder.ins().stack_load(types::I64, *slot, 0);
+        Ok(Some(val))
+    }
+
+    /// Compile an assignment expression (mutating a variable)
+    fn compile_assign(
+        builder: &mut FunctionBuilder,
+        name: &str,
+        value: &Expr,
+        symbols: &SymbolTable,
+        runtime_funcs: &HashMap<String, FuncId>,
+        variables: &mut HashMap<String, StackSlot>,
+    ) -> Result<Option<Value>, String> {
+        // Compile the new value
+        let val = Self::compile_expr_static(builder, value, symbols, runtime_funcs, variables)?
+            .ok_or_else(|| format!("Assignment to '{}' requires a value", name))?;
+
+        // Look up the variable's stack slot
+        let slot = variables
+            .get(name)
+            .ok_or_else(|| format!("Undefined variable: {}", name))?;
+
+        // Store the new value in the stack slot
+        builder.ins().stack_store(val, *slot, 0);
+
+        // Assignment returns Unit
         Ok(None)
     }
 }
