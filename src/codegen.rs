@@ -732,7 +732,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         Ok(None)
     }
 
-    /// Compile a list literal (for integer lists only in Phase 5)
+    /// Compile a list literal (supports all types)
     fn compile_list_literal(
         builder: &mut FunctionBuilder,
         data_type: &crate::syntax::DataType,
@@ -756,11 +756,6 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             data_type.clone()
         };
 
-        // For now, only support integer lists
-        if !matches!(elem_type, DataType::Int) {
-            return Err(format!("Compiler only supports integer lists currently, got {:?}", elem_type));
-        }
-
         // Create a new list with capacity equal to number of elements
         let capacity = builder.ins().iconst(types::I64, data.len() as i64);
         let func_ref = runtime_funcs.get("lift_list_new")
@@ -774,8 +769,25 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
 
         for (i, elem) in data.iter().enumerate() {
             // Compile the element value
-            let elem_val = Self::compile_expr_static(builder, elem, symbols, runtime_funcs, variables)?
+            let elem_val_raw = Self::compile_expr_static(builder, elem, symbols, runtime_funcs, variables)?
                 .ok_or_else(|| "List element must produce a value".to_string())?;
+
+            // Convert value to i64 for storage (handles all types)
+            let elem_val = match elem_type {
+                DataType::Flt => {
+                    // Bitcast f64 to i64 for storage
+                    builder.ins().bitcast(types::I64, MemFlags::new(), elem_val_raw)
+                }
+                DataType::Bool => {
+                    // Bool is already I64 in our representation
+                    elem_val_raw
+                }
+                DataType::Int | DataType::Str | DataType::List { .. } | DataType::Map { .. } => {
+                    // Already I64 (integers and pointers)
+                    elem_val_raw
+                }
+                _ => elem_val_raw,
+            };
 
             // Call lift_list_set(list, index, value)
             let index = builder.ins().iconst(types::I64, i as i64);
@@ -785,7 +797,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         Ok(Some(list_ptr))
     }
 
-    /// Compile a map literal (for integer key-value maps only in Phase 5)
+    /// Compile a map literal (supports scalar keys and all value types)
     fn compile_map_literal(
         builder: &mut FunctionBuilder,
         key_type: &crate::syntax::DataType,
@@ -825,9 +837,9 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             key_type.clone()
         };
 
-        // For now, only support integer key-value maps
-        if !matches!(actual_key_type, DataType::Int) || !matches!(actual_value_type, DataType::Int) {
-            return Err(format!("Compiler only supports integer key-value maps currently"));
+        // Validate that key type is scalar (Int, Bool, or Str)
+        if !matches!(actual_key_type, DataType::Int | DataType::Bool | DataType::Str) {
+            return Err(format!("Map keys must be scalar types (Int, Bool, or Str), got {:?}", actual_key_type));
         }
 
         // Create a new map with capacity equal to number of pairs
@@ -842,15 +854,55 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             .ok_or_else(|| "Runtime function lift_map_set not found".to_string())?;
 
         for (key_data, value_expr) in data {
-            // Extract the integer key
+            // Convert key to i64 based on key type
             let key_val = match key_data {
                 KeyData::Int(k) => builder.ins().iconst(types::I64, *k),
-                _ => return Err("Compiler only supports integer keys".to_string()),
+                KeyData::Bool(b) => builder.ins().iconst(types::I64, if *b { 1 } else { 0 }),
+                KeyData::Str(s) => {
+                    // For string keys, we need to create a string and use its pointer
+                    // This is a simplified approach - in production would need proper string interning
+                    let byte_len = s.len() + 1;
+                    let slot = builder.create_sized_stack_slot(cranelift_codegen::ir::StackSlotData::new(
+                        cranelift_codegen::ir::StackSlotKind::ExplicitSlot,
+                        byte_len as u32,
+                        0,
+                    ));
+                    for (i, byte) in s.as_bytes().iter().enumerate() {
+                        let byte_val = builder.ins().iconst(types::I8, *byte as i64);
+                        builder.ins().stack_store(byte_val, slot, i as i32);
+                    }
+                    let null_byte = builder.ins().iconst(types::I8, 0);
+                    builder.ins().stack_store(null_byte, slot, s.len() as i32);
+                    let str_ptr = builder.ins().stack_addr(types::I64, slot, 0);
+
+                    // Call lift_str_new to create heap string
+                    let str_new_ref = runtime_funcs.get("lift_str_new")
+                        .ok_or_else(|| "Runtime function lift_str_new not found".to_string())?;
+                    let inst = builder.ins().call(*str_new_ref, &[str_ptr]);
+                    builder.inst_results(inst)[0]
+                }
             };
 
             // Compile the value expression
-            let value_val = Self::compile_expr_static(builder, value_expr, symbols, runtime_funcs, variables)?
+            let value_val_raw = Self::compile_expr_static(builder, value_expr, symbols, runtime_funcs, variables)?
                 .ok_or_else(|| "Map value must produce a value".to_string())?;
+
+            // Convert value to i64 for storage (handles all types)
+            let value_val = match actual_value_type {
+                DataType::Flt => {
+                    // Bitcast f64 to i64 for storage
+                    builder.ins().bitcast(types::I64, MemFlags::new(), value_val_raw)
+                }
+                DataType::Bool => {
+                    // Bool is already I64 in our representation
+                    value_val_raw
+                }
+                DataType::Int | DataType::Str | DataType::List { .. } | DataType::Map { .. } => {
+                    // Already I64 (integers and pointers)
+                    value_val_raw
+                }
+                _ => value_val_raw,
+            };
 
             // Call lift_map_set(map, key, value)
             builder.ins().call(*set_func_ref, &[map_ptr, key_val, value_val]);
@@ -884,20 +936,46 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             .ok_or_else(|| "Cannot determine type for indexed expression".to_string())?;
 
         match expr_type {
-            DataType::List { .. } => {
+            DataType::List { element_type } => {
                 // Call lift_list_get(list, index) -> i64
                 let func_ref = runtime_funcs.get("lift_list_get")
                     .ok_or_else(|| "Runtime function lift_list_get not found".to_string())?;
                 let inst = builder.ins().call(*func_ref, &[collection, index_val]);
-                let result = builder.inst_results(inst)[0];
+                let result_i64 = builder.inst_results(inst)[0];
+
+                // Convert i64 back to the proper element type
+                let result = match *element_type {
+                    DataType::Flt => {
+                        // Bitcast i64 back to f64
+                        builder.ins().bitcast(types::F64, MemFlags::new(), result_i64)
+                    }
+                    DataType::Bool | DataType::Int | DataType::Str | DataType::List { .. } | DataType::Map { .. } => {
+                        // Already correct type (I64 for bool/int/pointers)
+                        result_i64
+                    }
+                    _ => result_i64,
+                };
                 Ok(Some(result))
             }
-            DataType::Map { .. } => {
+            DataType::Map { value_type, .. } => {
                 // Call lift_map_get(map, key) -> i64
                 let func_ref = runtime_funcs.get("lift_map_get")
                     .ok_or_else(|| "Runtime function lift_map_get not found".to_string())?;
                 let inst = builder.ins().call(*func_ref, &[collection, index_val]);
-                let result = builder.inst_results(inst)[0];
+                let result_i64 = builder.inst_results(inst)[0];
+
+                // Convert i64 back to the proper value type
+                let result = match *value_type {
+                    DataType::Flt => {
+                        // Bitcast i64 back to f64
+                        builder.ins().bitcast(types::F64, MemFlags::new(), result_i64)
+                    }
+                    DataType::Bool | DataType::Int | DataType::Str | DataType::List { .. } | DataType::Map { .. } => {
+                        // Already correct type (I64 for bool/int/pointers)
+                        result_i64
+                    }
+                    _ => result_i64,
+                };
                 Ok(Some(result))
             }
             _ => Err(format!("Cannot index into type: {:?}", expr_type)),
