@@ -127,4 +127,80 @@ mod tests {
         let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
         assert_eq!(result, 30);
     }
+
+    #[test]
+    fn test_compile_if_true() {
+        let mut compiler = JITCompiler::new().unwrap();
+
+        let expr = Expr::If {
+            cond: Box::new(Expr::Literal(LiteralData::Bool(true))),
+            then: Box::new(Expr::Literal(LiteralData::Int(100))),
+            final_else: Box::new(Expr::Literal(LiteralData::Int(200))),
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 100);
+    }
+
+    #[test]
+    fn test_compile_if_false() {
+        let mut compiler = JITCompiler::new().unwrap();
+
+        let expr = Expr::If {
+            cond: Box::new(Expr::Literal(LiteralData::Bool(false))),
+            then: Box::new(Expr::Literal(LiteralData::Int(100))),
+            final_else: Box::new(Expr::Literal(LiteralData::Int(200))),
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 200);
+    }
+
+    #[test]
+    fn test_compile_if_with_comparison() {
+        let mut compiler = JITCompiler::new().unwrap();
+
+        let expr = Expr::If {
+            cond: Box::new(Expr::BinaryExpr {
+                left: Box::new(Expr::Literal(LiteralData::Int(5))),
+                op: Operator::Gt,
+                right: Box::new(Expr::Literal(LiteralData::Int(3))),
+            }),
+            then: Box::new(Expr::Literal(LiteralData::Int(42))),
+            final_else: Box::new(Expr::Literal(LiteralData::Int(0))),
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 42);
+    }
+
+    #[test]
+    fn test_compile_comparison() {
+        let mut compiler = JITCompiler::new().unwrap();
+
+        let expr = Expr::BinaryExpr {
+            left: Box::new(Expr::Literal(LiteralData::Int(10))),
+            op: Operator::Gt,
+            right: Box::new(Expr::Literal(LiteralData::Int(5))),
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 1); // true is represented as 1
+    }
 }

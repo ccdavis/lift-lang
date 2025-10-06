@@ -164,6 +164,15 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 Self::compile_block_body(builder, body, symbols, runtime_funcs, variables)
             }
 
+            // Control flow
+            Expr::If { cond, then, final_else } => {
+                Self::compile_if_expr(builder, cond, then, final_else, symbols, runtime_funcs, variables)
+            }
+
+            Expr::While { cond, body } => {
+                Self::compile_while_expr(builder, cond, body, symbols, runtime_funcs, variables)
+            }
+
             // Unit
             Expr::Unit => Ok(None),
 
@@ -186,7 +195,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 Ok(Some(val))
             }
             LiteralData::Bool(b) => {
-                let val = builder.ins().iconst(types::I8, if *b { 1 } else { 0 });
+                let val = builder.ins().iconst(types::I64, if *b { 1 } else { 0 });
                 Ok(Some(val))
             }
             LiteralData::Str(_s) => {
@@ -219,27 +228,27 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             Operator::Div => builder.ins().sdiv(left_val, right_val),
             Operator::Gt => {
                 let cmp = builder.ins().icmp(IntCC::SignedGreaterThan, left_val, right_val);
-                builder.ins().uextend(types::I8, cmp)
+                builder.ins().uextend(types::I64, cmp)
             }
             Operator::Lt => {
                 let cmp = builder.ins().icmp(IntCC::SignedLessThan, left_val, right_val);
-                builder.ins().uextend(types::I8, cmp)
+                builder.ins().uextend(types::I64, cmp)
             }
             Operator::Gte => {
                 let cmp = builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, left_val, right_val);
-                builder.ins().uextend(types::I8, cmp)
+                builder.ins().uextend(types::I64, cmp)
             }
             Operator::Lte => {
                 let cmp = builder.ins().icmp(IntCC::SignedLessThanOrEqual, left_val, right_val);
-                builder.ins().uextend(types::I8, cmp)
+                builder.ins().uextend(types::I64, cmp)
             }
             Operator::Eq => {
                 let cmp = builder.ins().icmp(IntCC::Equal, left_val, right_val);
-                builder.ins().uextend(types::I8, cmp)
+                builder.ins().uextend(types::I64, cmp)
             }
             Operator::Neq => {
                 let cmp = builder.ins().icmp(IntCC::NotEqual, left_val, right_val);
-                builder.ins().uextend(types::I8, cmp)
+                builder.ins().uextend(types::I64, cmp)
             }
             _ => return Err(format!("Operator {:?} not yet implemented", op)),
         };
@@ -267,9 +276,9 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             }
             Operator::Not => {
                 // Boolean not: val == 0
-                let zero = builder.ins().iconst(types::I8, 0);
+                let zero = builder.ins().iconst(types::I64, 0);
                 let cmp = builder.ins().icmp(IntCC::Equal, val, zero);
-                builder.ins().uextend(types::I8, cmp)
+                builder.ins().uextend(types::I64, cmp)
             }
             _ => return Err(format!("Unary operator {:?} not yet implemented", op)),
         };
@@ -311,6 +320,116 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         }
 
         Ok(last_value)
+    }
+
+    /// Compile an if/else expression
+    fn compile_if_expr(
+        builder: &mut FunctionBuilder,
+        cond: &Expr,
+        then_expr: &Expr,
+        else_expr: &Expr,
+        symbols: &SymbolTable,
+        runtime_funcs: &HashMap<String, FuncId>,
+        variables: &mut HashMap<String, StackSlot>,
+    ) -> Result<Option<Value>, String> {
+        // Evaluate the condition
+        let cond_val = Self::compile_expr_static(builder, cond, symbols, runtime_funcs, variables)?
+            .ok_or("If condition must produce a value")?;
+
+        // Create blocks for the then branch, else branch, and merge point
+        let then_block = builder.create_block();
+        let else_block = builder.create_block();
+        let merge_block = builder.create_block();
+
+        // Check if this if expression produces a value
+        let produces_value = !matches!(then_expr, Expr::Unit) || !matches!(else_expr, Expr::Unit);
+
+        // Create a stack slot to store the result if needed
+        let result_slot = if produces_value {
+            Some(builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                8, // 8 bytes for I64
+                0,
+            )))
+        } else {
+            None
+        };
+
+        // Branch based on condition
+        // In Cranelift, brif branches if value is non-zero
+        builder.ins().brif(cond_val, then_block, &[], else_block, &[]);
+
+        // Compile the then branch
+        builder.switch_to_block(then_block);
+        builder.seal_block(then_block);
+        let then_val = Self::compile_expr_static(builder, then_expr, symbols, runtime_funcs, variables)?;
+
+        if produces_value {
+            let then_result = then_val.unwrap_or_else(|| builder.ins().iconst(types::I64, 0));
+            builder.ins().stack_store(then_result, result_slot.unwrap(), 0);
+        }
+        builder.ins().jump(merge_block, &[]);
+
+        // Compile the else branch
+        builder.switch_to_block(else_block);
+        builder.seal_block(else_block);
+        let else_val = Self::compile_expr_static(builder, else_expr, symbols, runtime_funcs, variables)?;
+
+        if produces_value {
+            let else_result = else_val.unwrap_or_else(|| builder.ins().iconst(types::I64, 0));
+            builder.ins().stack_store(else_result, result_slot.unwrap(), 0);
+        }
+        builder.ins().jump(merge_block, &[]);
+
+        // Switch to merge block and load the result
+        builder.switch_to_block(merge_block);
+        builder.seal_block(merge_block);
+
+        if produces_value {
+            let result = builder.ins().stack_load(types::I64, result_slot.unwrap(), 0);
+            Ok(Some(result))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Compile a while loop
+    fn compile_while_expr(
+        builder: &mut FunctionBuilder,
+        cond: &Expr,
+        body: &Expr,
+        symbols: &SymbolTable,
+        runtime_funcs: &HashMap<String, FuncId>,
+        variables: &mut HashMap<String, StackSlot>,
+    ) -> Result<Option<Value>, String> {
+        // Create blocks for loop header, body, and exit
+        let loop_header = builder.create_block();
+        let loop_body = builder.create_block();
+        let loop_exit = builder.create_block();
+
+        // Jump to the loop header
+        builder.ins().jump(loop_header, &[]);
+
+        // Loop header: evaluate condition and branch
+        builder.switch_to_block(loop_header);
+        let cond_val = Self::compile_expr_static(builder, cond, symbols, runtime_funcs, variables)?
+            .ok_or("While condition must produce a value")?;
+
+        builder.ins().brif(cond_val, loop_body, &[], loop_exit, &[]);
+        builder.seal_block(loop_header);
+
+        // Loop body: execute body and jump back to header
+        builder.switch_to_block(loop_body);
+        Self::compile_expr_static(builder, body, symbols, runtime_funcs, variables)?;
+        builder.ins().jump(loop_header, &[]);
+        builder.seal_block(loop_body);
+
+        // Exit block
+        builder.switch_to_block(loop_exit);
+        builder.seal_block(loop_exit);
+
+        // While loops return Unit
+        Ok(None)
     }
 }
 
