@@ -4,7 +4,7 @@ use crate::syntax::{Expr, LiteralData, Operator};
 use crate::symboltable::SymbolTable;
 use cranelift::prelude::*;
 use cranelift_module::{FuncId, Module};
-use cranelift_codegen::ir::StackSlot;
+use cranelift_codegen::ir::{FuncRef, StackSlot};
 use std::collections::HashMap;
 
 pub struct CodeGenerator<'a, M: Module> {
@@ -67,6 +67,15 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             .map_err(|e| format!("Failed to declare lift_output_str: {}", e))?;
         self.runtime_funcs.insert("lift_output_str".to_string(), func_id);
 
+        // lift_str_new(*const c_char) -> *mut c_char
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(pointer_type));
+        let func_id = self.module
+            .declare_function("lift_str_new", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_str_new: {}", e))?;
+        self.runtime_funcs.insert("lift_str_new".to_string(), func_id);
+
         // lift_str_concat(*const c_char, *const c_char) -> *mut c_char
         let mut sig = self.module.make_signature();
         sig.params.push(AbiParam::new(pointer_type));
@@ -76,6 +85,16 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             .declare_function("lift_str_concat", cranelift_module::Linkage::Import, &sig)
             .map_err(|e| format!("Failed to declare lift_str_concat: {}", e))?;
         self.runtime_funcs.insert("lift_str_concat".to_string(), func_id);
+
+        // lift_str_eq(*const c_char, *const c_char) -> i8
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(types::I8));
+        let func_id = self.module
+            .declare_function("lift_str_eq", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_str_eq: {}", e))?;
+        self.runtime_funcs.insert("lift_str_eq".to_string(), func_id);
 
         Ok(())
     }
@@ -104,8 +123,15 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             builder.switch_to_block(entry_block);
             builder.seal_block(entry_block);
 
+            // Declare runtime functions in this function's scope
+            let mut runtime_refs = HashMap::new();
+            for (name, func_id) in &self.runtime_funcs {
+                let func_ref = self.module.declare_func_in_func(*func_id, &mut builder.func);
+                runtime_refs.insert(name.clone(), func_ref);
+            }
+
             // Compile the program expression
-            let result = Self::compile_expr_static(&mut builder, expr, symbols, &self.runtime_funcs, &mut self.variables)?;
+            let result = Self::compile_expr_static(&mut builder, expr, symbols, &runtime_refs, &mut self.variables)?;
 
             // Return the result (or 0 if Unit)
             let return_value = result.unwrap_or_else(|| builder.ins().iconst(types::I64, 0));
@@ -132,13 +158,13 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         builder: &mut FunctionBuilder,
         expr: &Expr,
         symbols: &SymbolTable,
-        runtime_funcs: &HashMap<String, FuncId>,
+        runtime_funcs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, StackSlot>,
     ) -> Result<Option<Value>, String> {
         match expr {
             // Literals
-            Expr::Literal(lit) => Self::compile_literal(builder, lit),
-            Expr::RuntimeData(lit) => Self::compile_literal(builder, lit),
+            Expr::Literal(lit) => Self::compile_literal_with_runtime(builder, lit, runtime_funcs),
+            Expr::RuntimeData(lit) => Self::compile_literal_with_runtime(builder, lit, runtime_funcs),
 
             // Binary operations
             Expr::BinaryExpr { left, op, right } => {
@@ -212,10 +238,51 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 Ok(Some(val))
             }
             LiteralData::Str(_s) => {
-                // For now, return a placeholder
-                // TODO: Implement string literal support with data section
-                Err("String literals not yet implemented in compiler".to_string())
+                // String literals need access to runtime functions
+                // For now, we'll return an error and handle them in compile_literal_with_runtime
+                Err("String literals require runtime function access - use compile_literal_with_runtime".to_string())
             }
+        }
+    }
+
+    /// Compile a literal value with access to runtime functions (for strings)
+    fn compile_literal_with_runtime(
+        builder: &mut FunctionBuilder,
+        lit: &LiteralData,
+        runtime_funcs: &HashMap<String, FuncRef>,
+    ) -> Result<Option<Value>, String> {
+        match lit {
+            LiteralData::Str(s) => {
+                // Create a stack slot big enough for the string + null terminator
+                let byte_len = s.len() + 1; // +1 for null terminator
+                let slot = builder.create_sized_stack_slot(cranelift_codegen::ir::StackSlotData::new(
+                    cranelift_codegen::ir::StackSlotKind::ExplicitSlot,
+                    byte_len as u32,
+                    0,
+                ));
+
+                // Store each byte of the string in the stack slot
+                for (i, byte) in s.bytes().enumerate() {
+                    let byte_val = builder.ins().iconst(types::I8, byte as i64);
+                    builder.ins().stack_store(byte_val, slot, i as i32);
+                }
+                // Store null terminator
+                let null_byte = builder.ins().iconst(types::I8, 0);
+                builder.ins().stack_store(null_byte, slot, s.len() as i32);
+
+                // Get pointer to the stack slot
+                let str_ptr = builder.ins().stack_addr(types::I64, slot, 0);
+
+                // Call lift_str_new to create a heap-allocated string
+                let func_ref = runtime_funcs.get("lift_str_new")
+                    .ok_or_else(|| "Runtime function lift_str_new not found".to_string())?;
+                let inst = builder.ins().call(*func_ref, &[str_ptr]);
+                let result = builder.inst_results(inst)[0];
+
+                Ok(Some(result))
+            }
+            // For non-string literals, use the simpler version
+            _ => Self::compile_literal(builder, lit),
         }
     }
 
@@ -226,9 +293,59 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         op: &Operator,
         right: &Expr,
         symbols: &SymbolTable,
-        runtime_funcs: &HashMap<String, FuncId>,
+        runtime_funcs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, StackSlot>,
     ) -> Result<Option<Value>, String> {
+        use crate::semantic_analysis::determine_type_with_symbols;
+        use crate::syntax::DataType;
+
+        // Check if we're dealing with string operations
+        let left_type = determine_type_with_symbols(left, symbols, 0);
+        let is_string_op = matches!(left_type, Some(DataType::Str));
+
+        if is_string_op {
+            let left_val = Self::compile_expr_static(builder, left, symbols, runtime_funcs, variables)?
+                .ok_or("String operation requires non-Unit left operand")?;
+            let right_val = Self::compile_expr_static(builder, right, symbols, runtime_funcs, variables)?
+                .ok_or("String operation requires non-Unit right operand")?;
+
+            match op {
+                Operator::Add => {
+                    // String concatenation
+                    let func_ref = runtime_funcs.get("lift_str_concat")
+                        .ok_or_else(|| "Runtime function lift_str_concat not found".to_string())?;
+                    let inst = builder.ins().call(*func_ref, &[left_val, right_val]);
+                    let result = builder.inst_results(inst)[0];
+                    return Ok(Some(result));
+                }
+                Operator::Eq => {
+                    // String equality
+                    let func_ref = runtime_funcs.get("lift_str_eq")
+                        .ok_or_else(|| "Runtime function lift_str_eq not found".to_string())?;
+                    let inst = builder.ins().call(*func_ref, &[left_val, right_val]);
+                    let result_i8 = builder.inst_results(inst)[0];
+                    // Extend I8 to I64
+                    let result_i64 = builder.ins().uextend(types::I64, result_i8);
+                    return Ok(Some(result_i64));
+                }
+                Operator::Neq => {
+                    // String inequality (not equal)
+                    let func_ref = runtime_funcs.get("lift_str_eq")
+                        .ok_or_else(|| "Runtime function lift_str_eq not found".to_string())?;
+                    let inst = builder.ins().call(*func_ref, &[left_val, right_val]);
+                    let result_i8 = builder.inst_results(inst)[0];
+                    // Extend I8 to I64
+                    let eq_i64 = builder.ins().uextend(types::I64, result_i8);
+                    // Negate with XOR 1 (0 becomes 1, 1 becomes 0)
+                    let one = builder.ins().iconst(types::I64, 1);
+                    let neq = builder.ins().bxor(eq_i64, one);
+                    return Ok(Some(neq));
+                }
+                _ => return Err(format!("Operator {:?} not supported for strings", op)),
+            }
+        }
+
+        // For non-string operations, compile operands and perform integer/float operations
         let left_val = Self::compile_expr_static(builder, left, symbols, runtime_funcs, variables)?
             .ok_or("Binary operation requires non-Unit left operand")?;
         let right_val = Self::compile_expr_static(builder, right, symbols, runtime_funcs, variables)?
@@ -275,7 +392,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         op: &Operator,
         expr: &Expr,
         symbols: &SymbolTable,
-        runtime_funcs: &HashMap<String, FuncId>,
+        runtime_funcs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, StackSlot>,
     ) -> Result<Option<Value>, String> {
         let val = Self::compile_expr_static(builder, expr, symbols, runtime_funcs, variables)?
@@ -304,16 +421,43 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         builder: &mut FunctionBuilder,
         data: &[Expr],
         symbols: &SymbolTable,
-        runtime_funcs: &HashMap<String, FuncId>,
+        runtime_funcs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, StackSlot>,
     ) -> Result<(), String> {
-        for expr in data {
-            let val_opt = Self::compile_expr_static(builder, expr, symbols, runtime_funcs, variables)?;
+        use crate::semantic_analysis::determine_type_with_symbols;
+        use crate::syntax::DataType;
 
-            if let Some(_val) = val_opt {
-                // For now, skip output implementation
-                // TODO: Implement proper output with type checking
-            }
+        for expr in data {
+            // Determine the type of the expression
+            let expr_type = determine_type_with_symbols(expr, symbols, 0)
+                .ok_or_else(|| format!("Cannot determine type for output expression"))?;
+
+            // Compile the expression to get the value
+            let val = Self::compile_expr_static(builder, expr, symbols, runtime_funcs, variables)?
+                .ok_or_else(|| "Output requires non-Unit expression".to_string())?;
+
+            // Determine which output function to call based on type
+            let (func_name, needs_conversion) = match expr_type {
+                DataType::Int => ("lift_output_int", false),
+                DataType::Flt => ("lift_output_float", false),
+                DataType::Bool => ("lift_output_bool", true), // Need to convert I64 to I8
+                DataType::Str => ("lift_output_str", false),
+                _ => return Err(format!("Output not yet supported for type: {:?}", expr_type)),
+            };
+
+            // Get the function reference
+            let func_ref = runtime_funcs.get(func_name)
+                .ok_or_else(|| format!("Runtime function not found: {}", func_name))?;
+
+            // Convert value if needed
+            let call_val = if needs_conversion {
+                builder.ins().ireduce(types::I8, val)
+            } else {
+                val
+            };
+
+            // Call the function
+            builder.ins().call(*func_ref, &[call_val]);
         }
         Ok(())
     }
@@ -323,7 +467,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         builder: &mut FunctionBuilder,
         body: &[Expr],
         symbols: &SymbolTable,
-        runtime_funcs: &HashMap<String, FuncId>,
+        runtime_funcs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, StackSlot>,
     ) -> Result<Option<Value>, String> {
         let mut last_value = None;
@@ -342,7 +486,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         then_expr: &Expr,
         else_expr: &Expr,
         symbols: &SymbolTable,
-        runtime_funcs: &HashMap<String, FuncId>,
+        runtime_funcs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, StackSlot>,
     ) -> Result<Option<Value>, String> {
         // Evaluate the condition
@@ -412,7 +556,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         cond: &Expr,
         body: &Expr,
         symbols: &SymbolTable,
-        runtime_funcs: &HashMap<String, FuncId>,
+        runtime_funcs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, StackSlot>,
     ) -> Result<Option<Value>, String> {
         // Create blocks for loop header, body, and exit
@@ -451,7 +595,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         var_name: &str,
         value: &Expr,
         symbols: &SymbolTable,
-        runtime_funcs: &HashMap<String, FuncId>,
+        runtime_funcs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, StackSlot>,
     ) -> Result<Option<Value>, String> {
         // Compile the value expression
@@ -498,7 +642,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         name: &str,
         value: &Expr,
         symbols: &SymbolTable,
-        runtime_funcs: &HashMap<String, FuncId>,
+        runtime_funcs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, StackSlot>,
     ) -> Result<Option<Value>, String> {
         // Compile the new value

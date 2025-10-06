@@ -350,4 +350,209 @@ mod tests {
         let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
         assert_eq!(result, 100);
     }
+
+    #[test]
+    fn test_compile_output_int() {
+        let mut compiler = JITCompiler::new().unwrap();
+
+        // { output(42); 0 }
+        let expr = Expr::Block {
+            body: vec![
+                Expr::Output {
+                    data: vec![Expr::Literal(LiteralData::Int(42))],
+                },
+                Expr::Literal(LiteralData::Int(0)),
+            ],
+            environment: 0,
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn test_compile_output_bool() {
+        let mut compiler = JITCompiler::new().unwrap();
+
+        // { output(true); output(false); 0 }
+        let expr = Expr::Block {
+            body: vec![
+                Expr::Output {
+                    data: vec![Expr::Literal(LiteralData::Bool(true))],
+                },
+                Expr::Output {
+                    data: vec![Expr::Literal(LiteralData::Bool(false))],
+                },
+                Expr::Literal(LiteralData::Int(0)),
+            ],
+            environment: 0,
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn test_compile_output_float() {
+        let mut compiler = JITCompiler::new().unwrap();
+
+        // { output(3.14); 0 }
+        let expr = Expr::Block {
+            body: vec![
+                Expr::Output {
+                    data: vec![Expr::Literal(LiteralData::Flt(3.14))],
+                },
+                Expr::Literal(LiteralData::Int(0)),
+            ],
+            environment: 0,
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn test_compile_output_expression() {
+        let mut compiler = JITCompiler::new().unwrap();
+
+        // { output(2 + 3); 0 }
+        let expr = Expr::Block {
+            body: vec![
+                Expr::Output {
+                    data: vec![Expr::BinaryExpr {
+                        left: Box::new(Expr::Literal(LiteralData::Int(2))),
+                        op: Operator::Add,
+                        right: Box::new(Expr::Literal(LiteralData::Int(3))),
+                    }],
+                },
+                Expr::Literal(LiteralData::Int(0)),
+            ],
+            environment: 0,
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn test_compile_string_literal() {
+        let mut compiler = JITCompiler::new().unwrap();
+
+        // { output('Hello'); 0 }
+        let expr = Expr::Block {
+            body: vec![
+                Expr::Output {
+                    data: vec![Expr::Literal(LiteralData::Str("Hello".into()))],
+                },
+                Expr::Literal(LiteralData::Int(0)),
+            ],
+            environment: 0,
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn test_compile_string_concat() {
+        let mut compiler = JITCompiler::new().unwrap();
+
+        // { output('Hello' + ' ' + 'World'); 0 }
+        let expr = Expr::Block {
+            body: vec![
+                Expr::Output {
+                    data: vec![Expr::BinaryExpr {
+                        left: Box::new(Expr::BinaryExpr {
+                            left: Box::new(Expr::Literal(LiteralData::Str("Hello".into()))),
+                            op: Operator::Add,
+                            right: Box::new(Expr::Literal(LiteralData::Str(" ".into()))),
+                        }),
+                        op: Operator::Add,
+                        right: Box::new(Expr::Literal(LiteralData::Str("World".into()))),
+                    }],
+                },
+                Expr::Literal(LiteralData::Int(0)),
+            ],
+            environment: 0,
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn test_compile_string_equality() {
+        let mut compiler = JITCompiler::new().unwrap();
+
+        // { if 'Hello' = 'Hello' { 1 } else { 0 } }
+        let expr = Expr::Block {
+            body: vec![Expr::If {
+                cond: Box::new(Expr::BinaryExpr {
+                    left: Box::new(Expr::Literal(LiteralData::Str("Hello".into()))),
+                    op: Operator::Eq,
+                    right: Box::new(Expr::Literal(LiteralData::Str("Hello".into()))),
+                }),
+                then: Box::new(Expr::Literal(LiteralData::Int(1))),
+                final_else: Box::new(Expr::Literal(LiteralData::Int(0))),
+            }],
+            environment: 0,
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 1);
+    }
+
+    #[test]
+    fn test_compile_string_inequality() {
+        let mut compiler = JITCompiler::new().unwrap();
+
+        // { if 'Hello' <> 'World' { 1 } else { 0 } }
+        let expr = Expr::Block {
+            body: vec![Expr::If {
+                cond: Box::new(Expr::BinaryExpr {
+                    left: Box::new(Expr::Literal(LiteralData::Str("Hello".into()))),
+                    op: Operator::Neq,
+                    right: Box::new(Expr::Literal(LiteralData::Str("World".into()))),
+                }),
+                then: Box::new(Expr::Literal(LiteralData::Int(1))),
+                final_else: Box::new(Expr::Literal(LiteralData::Int(0))),
+            }],
+            environment: 0,
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 1);
+    }
 }
