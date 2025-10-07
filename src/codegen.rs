@@ -7,16 +7,26 @@ use cranelift_module::{FuncId, Module};
 use cranelift_codegen::ir::{FuncRef, StackSlot};
 use std::collections::HashMap;
 
+/// Information about a variable in the compiled code
+#[derive(Clone, Copy)]
+struct VarInfo {
+    slot: StackSlot,
+    cranelift_type: Type,  // I64, F64, or pointer type
+}
+
 pub struct CodeGenerator<'a, M: Module> {
     module: &'a mut M,
     builder_context: FunctionBuilderContext,
     ctx: codegen::Context,
 
-    // Variable management: maps Lift variable names to Cranelift stack slots
-    variables: HashMap<String, StackSlot>,
+    // Variable management: maps Lift variable names to stack slot and type info
+    variables: HashMap<String, VarInfo>,
 
     // Runtime function references
     runtime_funcs: HashMap<String, FuncId>,
+
+    // User-defined function references: maps function names to FuncId
+    function_refs: HashMap<String, FuncId>,
 }
 
 impl<'a, M: Module> CodeGenerator<'a, M> {
@@ -28,6 +38,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             ctx,
             variables: HashMap::new(),
             runtime_funcs: HashMap::new(),
+            function_refs: HashMap::new(),
         }
     }
 
@@ -181,6 +192,250 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             .map_err(|e| format!("Failed to declare lift_map_len: {}", e))?;
         self.runtime_funcs.insert("lift_map_len".to_string(), func_id);
 
+        // lift_range_new(i64, i64) -> *mut LiftRange
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(types::I64));
+        sig.params.push(AbiParam::new(types::I64));
+        sig.returns.push(AbiParam::new(pointer_type));
+        let func_id = self.module
+            .declare_function("lift_range_new", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_range_new: {}", e))?;
+        self.runtime_funcs.insert("lift_range_new".to_string(), func_id);
+
+        // lift_range_start(*const LiftRange) -> i64
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(types::I64));
+        let func_id = self.module
+            .declare_function("lift_range_start", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_range_start: {}", e))?;
+        self.runtime_funcs.insert("lift_range_start".to_string(), func_id);
+
+        // lift_range_end(*const LiftRange) -> i64
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(types::I64));
+        let func_id = self.module
+            .declare_function("lift_range_end", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_range_end: {}", e))?;
+        self.runtime_funcs.insert("lift_range_end".to_string(), func_id);
+
+        // lift_output_range(*const LiftRange)
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        let func_id = self.module
+            .declare_function("lift_output_range", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_output_range: {}", e))?;
+        self.runtime_funcs.insert("lift_output_range".to_string(), func_id);
+
+        // ==================== String Method Declarations ====================
+
+        // lift_str_upper(*const c_char) -> *mut c_char
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(pointer_type));
+        let func_id = self.module
+            .declare_function("lift_str_upper", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_str_upper: {}", e))?;
+        self.runtime_funcs.insert("lift_str_upper".to_string(), func_id);
+
+        // lift_str_lower(*const c_char) -> *mut c_char
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(pointer_type));
+        let func_id = self.module
+            .declare_function("lift_str_lower", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_str_lower: {}", e))?;
+        self.runtime_funcs.insert("lift_str_lower".to_string(), func_id);
+
+        // lift_str_substring(*const c_char, i64, i64) -> *mut c_char
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(types::I64));
+        sig.params.push(AbiParam::new(types::I64));
+        sig.returns.push(AbiParam::new(pointer_type));
+        let func_id = self.module
+            .declare_function("lift_str_substring", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_str_substring: {}", e))?;
+        self.runtime_funcs.insert("lift_str_substring".to_string(), func_id);
+
+        // lift_str_contains(*const c_char, *const c_char) -> i8
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(types::I8));
+        let func_id = self.module
+            .declare_function("lift_str_contains", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_str_contains: {}", e))?;
+        self.runtime_funcs.insert("lift_str_contains".to_string(), func_id);
+
+        // lift_str_trim(*const c_char) -> *mut c_char
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(pointer_type));
+        let func_id = self.module
+            .declare_function("lift_str_trim", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_str_trim: {}", e))?;
+        self.runtime_funcs.insert("lift_str_trim".to_string(), func_id);
+
+        // lift_str_split(*const c_char, *const c_char) -> *mut LiftList
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(pointer_type));
+        let func_id = self.module
+            .declare_function("lift_str_split", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_str_split: {}", e))?;
+        self.runtime_funcs.insert("lift_str_split".to_string(), func_id);
+
+        // lift_str_replace(*const c_char, *const c_char, *const c_char) -> *mut c_char
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(pointer_type));
+        let func_id = self.module
+            .declare_function("lift_str_replace", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_str_replace: {}", e))?;
+        self.runtime_funcs.insert("lift_str_replace".to_string(), func_id);
+
+        // lift_str_starts_with(*const c_char, *const c_char) -> i8
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(types::I8));
+        let func_id = self.module
+            .declare_function("lift_str_starts_with", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_str_starts_with: {}", e))?;
+        self.runtime_funcs.insert("lift_str_starts_with".to_string(), func_id);
+
+        // lift_str_ends_with(*const c_char, *const c_char) -> i8
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(types::I8));
+        let func_id = self.module
+            .declare_function("lift_str_ends_with", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_str_ends_with: {}", e))?;
+        self.runtime_funcs.insert("lift_str_ends_with".to_string(), func_id);
+
+        // lift_str_is_empty(*const c_char) -> i8
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(types::I8));
+        let func_id = self.module
+            .declare_function("lift_str_is_empty", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_str_is_empty: {}", e))?;
+        self.runtime_funcs.insert("lift_str_is_empty".to_string(), func_id);
+
+        // ==================== List Method Declarations ====================
+
+        // lift_list_first(*const LiftList) -> i64
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(types::I64));
+        let func_id = self.module
+            .declare_function("lift_list_first", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_list_first: {}", e))?;
+        self.runtime_funcs.insert("lift_list_first".to_string(), func_id);
+
+        // lift_list_last(*const LiftList) -> i64
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(types::I64));
+        let func_id = self.module
+            .declare_function("lift_list_last", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_list_last: {}", e))?;
+        self.runtime_funcs.insert("lift_list_last".to_string(), func_id);
+
+        // lift_list_contains(*const LiftList, i64) -> i8
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(types::I64));
+        sig.returns.push(AbiParam::new(types::I8));
+        let func_id = self.module
+            .declare_function("lift_list_contains", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_list_contains: {}", e))?;
+        self.runtime_funcs.insert("lift_list_contains".to_string(), func_id);
+
+        // lift_list_slice(*const LiftList, i64, i64) -> *mut LiftList
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(types::I64));
+        sig.params.push(AbiParam::new(types::I64));
+        sig.returns.push(AbiParam::new(pointer_type));
+        let func_id = self.module
+            .declare_function("lift_list_slice", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_list_slice: {}", e))?;
+        self.runtime_funcs.insert("lift_list_slice".to_string(), func_id);
+
+        // lift_list_reverse(*const LiftList) -> *mut LiftList
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(pointer_type));
+        let func_id = self.module
+            .declare_function("lift_list_reverse", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_list_reverse: {}", e))?;
+        self.runtime_funcs.insert("lift_list_reverse".to_string(), func_id);
+
+        // lift_list_join(*const LiftList, *const c_char) -> *mut c_char
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(pointer_type));
+        let func_id = self.module
+            .declare_function("lift_list_join", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_list_join: {}", e))?;
+        self.runtime_funcs.insert("lift_list_join".to_string(), func_id);
+
+        // lift_list_is_empty(*const LiftList) -> i8
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(types::I8));
+        let func_id = self.module
+            .declare_function("lift_list_is_empty", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_list_is_empty: {}", e))?;
+        self.runtime_funcs.insert("lift_list_is_empty".to_string(), func_id);
+
+        // ==================== Map Method Declarations ====================
+
+        // lift_map_keys(*const LiftMap) -> *mut LiftList
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(pointer_type));
+        let func_id = self.module
+            .declare_function("lift_map_keys", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_map_keys: {}", e))?;
+        self.runtime_funcs.insert("lift_map_keys".to_string(), func_id);
+
+        // lift_map_values(*const LiftMap) -> *mut LiftList
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(pointer_type));
+        let func_id = self.module
+            .declare_function("lift_map_values", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_map_values: {}", e))?;
+        self.runtime_funcs.insert("lift_map_values".to_string(), func_id);
+
+        // lift_map_contains_key(*const LiftMap, i64) -> i8
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(types::I64));
+        sig.returns.push(AbiParam::new(types::I8));
+        let func_id = self.module
+            .declare_function("lift_map_contains_key", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_map_contains_key: {}", e))?;
+        self.runtime_funcs.insert("lift_map_contains_key".to_string(), func_id);
+
+        // lift_map_is_empty(*const LiftMap) -> i8
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(types::I8));
+        let func_id = self.module
+            .declare_function("lift_map_is_empty", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_map_is_empty: {}", e))?;
+        self.runtime_funcs.insert("lift_map_is_empty".to_string(), func_id);
+
         Ok(())
     }
 
@@ -190,6 +445,15 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         expr: &Expr,
         symbols: &SymbolTable,
     ) -> Result<FuncId, String> {
+        // PREPROCESSING STEP: Collect and compile all user-defined functions first
+        let mut function_defs = Vec::new();
+        self.collect_function_definitions(expr, &mut function_defs);
+
+        // Compile each function definition
+        for (fn_name, lambda_expr) in function_defs {
+            self.compile_user_function(fn_name, lambda_expr, symbols)?;
+        }
+
         // Create a main function with signature: () -> i64
         self.ctx.func.signature.returns.push(AbiParam::new(types::I64));
 
@@ -215,8 +479,22 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_refs.insert(name.clone(), func_ref);
             }
 
-            // Compile the program expression
-            let result = Self::compile_expr_static(&mut builder, expr, symbols, &runtime_refs, &mut self.variables)?;
+            // Declare user functions in this function's scope
+            let mut user_func_refs = HashMap::new();
+            for (name, func_id) in &self.function_refs {
+                let func_ref = self.module.declare_func_in_func(*func_id, &mut builder.func);
+                user_func_refs.insert(name.clone(), func_ref);
+            }
+
+            // Compile the program expression with user function support
+            let result = Self::compile_expr_static(
+                &mut builder,
+                expr,
+                symbols,
+                &runtime_refs,
+                &user_func_refs,
+                &mut self.variables
+            )?;
 
             // Return the result (or 0 if Unit)
             let return_value = result.unwrap_or_else(|| builder.ins().iconst(types::I64, 0));
@@ -237,14 +515,194 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         Ok(func_id)
     }
 
-    /// Compile a Lift expression and return the Cranelift value (static version)
+    /// Helper: Convert Lift DataType to Cranelift Type
+    fn data_type_to_cranelift_type(dt: &crate::syntax::DataType, pointer_type: Type) -> Type {
+        use crate::syntax::DataType;
+
+        match dt {
+            DataType::Int | DataType::Bool => types::I64,
+            DataType::Flt => types::F64,
+            DataType::Str => pointer_type,
+            DataType::List { .. } => pointer_type,
+            DataType::Map { .. } => pointer_type,
+            DataType::Range(_) => pointer_type,
+            DataType::Unsolved => types::I64,  // Fallback
+            DataType::TypeRef(_) => pointer_type,  // User-defined types treated as pointers for now
+            DataType::Optional(_) => pointer_type,  // Optionals treated as pointers
+            DataType::Set(_) => pointer_type,
+            DataType::Enum(_) => types::I64,  // Enums as integers
+            DataType::Struct(_) => pointer_type,  // Structs as pointers
+        }
+    }
+
+    /// Collect all function definitions from an expression tree
+    fn collect_function_definitions<'e>(&self, expr: &'e Expr, functions: &mut Vec<(&'e str, &'e Expr)>) {
+        match expr {
+            Expr::DefineFunction { fn_name, value, .. } => {
+                functions.push((fn_name, value));
+            }
+            Expr::Program { body, .. } | Expr::Block { body, .. } => {
+                for e in body {
+                    self.collect_function_definitions(e, functions);
+                }
+            }
+            Expr::If { cond, then, final_else } => {
+                self.collect_function_definitions(cond, functions);
+                self.collect_function_definitions(then, functions);
+                self.collect_function_definitions(final_else, functions);
+            }
+            Expr::While { cond, body } => {
+                self.collect_function_definitions(cond, functions);
+                self.collect_function_definitions(body, functions);
+            }
+            Expr::Let { value, .. } => {
+                self.collect_function_definitions(value, functions);
+            }
+            Expr::Assign { value, .. } => {
+                self.collect_function_definitions(value, functions);
+            }
+            _ => {}  // Other expressions don't contain function definitions
+        }
+    }
+
+    /// Compile a user-defined function
+    fn compile_user_function(
+        &mut self,
+        fn_name: &str,
+        lambda_expr: &Expr,
+        symbols: &SymbolTable,
+    ) -> Result<(), String> {
+        // Extract the Lambda
+        let function = match lambda_expr {
+            Expr::Lambda { value, .. } => value,
+            _ => return Err(format!("DefineFunction value must be a Lambda, got: {:?}", lambda_expr)),
+        };
+
+        // Build Cranelift function signature
+        let mut sig = self.module.make_signature();
+        let pointer_type = self.module.target_config().pointer_type();
+
+        // Add parameters
+        for param in &function.params {
+            let param_type = Self::data_type_to_cranelift_type(&param.data_type, pointer_type);
+            sig.params.push(AbiParam::new(param_type));
+        }
+
+        // Add return type (all functions have a return type in Lift)
+        let return_type = Self::data_type_to_cranelift_type(&function.return_type, pointer_type);
+        sig.returns.push(AbiParam::new(return_type));
+
+        // Declare the function
+        let func_id = self.module
+            .declare_function(fn_name, cranelift_module::Linkage::Local, &sig)
+            .map_err(|e| format!("Failed to declare function {}: {}", fn_name, e))?;
+
+        // Store function reference
+        self.function_refs.insert(fn_name.to_string(), func_id);
+
+        // Create a new context for this function
+        let mut func_ctx = self.module.make_context();
+        func_ctx.func.signature = sig.clone();
+
+        // Build the function body
+        {
+            let mut builder = FunctionBuilder::new(&mut func_ctx.func, &mut self.builder_context);
+
+            // Create entry block
+            let entry_block = builder.create_block();
+            builder.append_block_params_for_function_params(entry_block);
+            builder.switch_to_block(entry_block);
+            builder.seal_block(entry_block);
+
+            // Declare runtime functions in this function's scope
+            let mut runtime_refs = HashMap::new();
+            for (name, func_id) in &self.runtime_funcs {
+                let func_ref = self.module.declare_func_in_func(*func_id, &mut builder.func);
+                runtime_refs.insert(name.clone(), func_ref);
+            }
+
+            // Declare other user functions in this scope (for recursion and mutual recursion)
+            let mut user_func_refs = HashMap::new();
+            for (name, func_id) in &self.function_refs {
+                let func_ref = self.module.declare_func_in_func(*func_id, &mut builder.func);
+                user_func_refs.insert(name.clone(), func_ref);
+            }
+
+            // Get function parameters as Cranelift values
+            let block_params = builder.block_params(entry_block).to_vec();
+
+            // Create variables for parameters
+            let mut variables = HashMap::new();
+            for (i, param) in function.params.iter().enumerate() {
+                let param_value = block_params[i];
+                let param_type = Self::data_type_to_cranelift_type(&param.data_type, pointer_type);
+
+                if param.copy {
+                    // cpy parameter: allocate stack slot and store value
+                    let slot = builder.create_sized_stack_slot(StackSlotData::new(
+                        StackSlotKind::ExplicitSlot,
+                        8,  // 8 bytes for i64/f64/pointer
+                        0
+                    ));
+                    builder.ins().stack_store(param_value, slot, 0);
+                    variables.insert(param.name.clone(), VarInfo {
+                        slot,
+                        cranelift_type: param_type,
+                    });
+                } else {
+                    // Regular parameter: create stack slot for immutable access
+                    // (we can't reassign to block params, so we store them)
+                    let slot = builder.create_sized_stack_slot(StackSlotData::new(
+                        StackSlotKind::ExplicitSlot,
+                        8,
+                        0
+                    ));
+                    builder.ins().stack_store(param_value, slot, 0);
+                    variables.insert(param.name.clone(), VarInfo {
+                        slot,
+                        cranelift_type: param_type,
+                    });
+                }
+            }
+
+            // Compile function body
+            let result = Self::compile_expr_static(
+                &mut builder,
+                &function.body,
+                symbols,
+                &runtime_refs,
+                &user_func_refs,
+                &mut variables
+            )?;
+
+            // Handle return value - all functions must return a value
+            let return_value = result.ok_or_else(|| format!("Function '{}' must return a value", fn_name))?;
+            builder.ins().return_(&[return_value]);
+
+            // Finalize
+            builder.finalize();
+        }
+
+        // Define the function in the module
+        self.module
+            .define_function(func_id, &mut func_ctx)
+            .map_err(|e| format!("Failed to define function {}: {}", fn_name, e))?;
+
+        // Clear context
+        self.module.clear_context(&mut func_ctx);
+
+        Ok(())
+    }
+
+    /// Compile a Lift expression and return the Cranelift value
     /// Returns None for Unit expressions
     fn compile_expr_static(
         builder: &mut FunctionBuilder,
         expr: &Expr,
         symbols: &SymbolTable,
         runtime_funcs: &HashMap<String, FuncRef>,
-        variables: &mut HashMap<String, StackSlot>,
+        user_func_refs: &HashMap<String, FuncRef>,
+        variables: &mut HashMap<String, VarInfo>,
     ) -> Result<Option<Value>, String> {
         match expr {
             // Literals
@@ -253,40 +711,40 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
 
             // Binary operations
             Expr::BinaryExpr { left, op, right } => {
-                Self::compile_binary_expr(builder, left, op, right, symbols, runtime_funcs, variables)
+                Self::compile_binary_expr(builder, left, op, right, symbols, runtime_funcs, user_func_refs, variables)
             }
 
             // Unary operations
             Expr::UnaryExpr { op, expr: inner } => {
-                Self::compile_unary_expr(builder, op, inner, symbols, runtime_funcs, variables)
+                Self::compile_unary_expr(builder, op, inner, symbols, runtime_funcs, user_func_refs, variables)
             }
 
             // Output
             Expr::Output { data } => {
-                Self::compile_output(builder, data, symbols, runtime_funcs, variables)?;
+                Self::compile_output(builder, data, symbols, runtime_funcs, user_func_refs, variables)?;
                 Ok(None) // output returns Unit
             }
 
             // Program and Block
             Expr::Program { body, .. } => {
-                Self::compile_block_body(builder, body, symbols, runtime_funcs, variables)
+                Self::compile_block_body(builder, body, symbols, runtime_funcs, user_func_refs, variables)
             }
             Expr::Block { body, .. } => {
-                Self::compile_block_body(builder, body, symbols, runtime_funcs, variables)
+                Self::compile_block_body(builder, body, symbols, runtime_funcs, user_func_refs, variables)
             }
 
             // Control flow
             Expr::If { cond, then, final_else } => {
-                Self::compile_if_expr(builder, cond, then, final_else, symbols, runtime_funcs, variables)
+                Self::compile_if_expr(builder, cond, then, final_else, symbols, runtime_funcs, user_func_refs, variables)
             }
 
             Expr::While { cond, body } => {
-                Self::compile_while_expr(builder, cond, body, symbols, runtime_funcs, variables)
+                Self::compile_while_expr(builder, cond, body, symbols, runtime_funcs, user_func_refs, variables)
             }
 
             // Variables
             Expr::Let { var_name, value, .. } => {
-                Self::compile_let(builder, var_name, value, symbols, runtime_funcs, variables)
+                Self::compile_let(builder, var_name, value, symbols, runtime_funcs, user_func_refs, variables)
             }
 
             Expr::Variable { name, .. } => {
@@ -294,35 +752,114 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             }
 
             Expr::Assign { name, value, .. } => {
-                Self::compile_assign(builder, name, value, symbols, runtime_funcs, variables)
+                Self::compile_assign(builder, name, value, symbols, runtime_funcs, user_func_refs, variables)
             }
 
             // Collections
             Expr::ListLiteral { data_type, data } => {
-                Self::compile_list_literal(builder, data_type, data, symbols, runtime_funcs, variables)
+                Self::compile_list_literal(builder, data_type, data, symbols, runtime_funcs, user_func_refs, variables)
             }
 
             Expr::MapLiteral { key_type, value_type, data } => {
-                Self::compile_map_literal(builder, key_type, value_type, data, symbols, runtime_funcs, variables)
+                Self::compile_map_literal(builder, key_type, value_type, data, symbols, runtime_funcs, user_func_refs, variables)
             }
 
             Expr::Index { expr, index } => {
-                Self::compile_index(builder, expr, index, symbols, runtime_funcs, variables)
+                Self::compile_index(builder, expr, index, symbols, runtime_funcs, user_func_refs, variables)
             }
 
             // Built-in functions
             Expr::Len { expr } => {
-                Self::compile_len(builder, expr, symbols, runtime_funcs, variables)
+                Self::compile_len(builder, expr, symbols, runtime_funcs, user_func_refs, variables)
             }
 
             Expr::MethodCall { receiver, method_name, args, .. } => {
-                Self::compile_method_call(builder, receiver, method_name, args, symbols, runtime_funcs, variables)
+                Self::compile_method_call(builder, receiver, method_name, args, symbols, runtime_funcs, user_func_refs, variables)
+            }
+
+            // Range
+            Expr::Range(start, end) => {
+                Self::compile_range(builder, start, end, runtime_funcs)
             }
 
             // Unit
             Expr::Unit => Ok(None),
 
+            // Function calls
+            Expr::Call { fn_name, args, index, .. } => {
+                Self::compile_function_call(builder, fn_name, args, index, symbols, runtime_funcs, user_func_refs, variables)
+            }
+
+            // Function definitions (handled in preprocessing, so return Unit here)
+            Expr::DefineFunction { .. } => Ok(None),
+
             _ => Err(format!("Compilation not yet implemented for: {:?}", expr)),
+        }
+    }
+
+
+    /// Compile a function call expression
+    fn compile_function_call(
+        builder: &mut FunctionBuilder,
+        fn_name: &str,
+        args: &[crate::syntax::KeywordArg],
+        index: &(usize, usize),
+        symbols: &SymbolTable,
+        runtime_funcs: &HashMap<String, FuncRef>,
+        user_func_refs: &HashMap<String, FuncRef>,
+        variables: &mut HashMap<String, VarInfo>,
+    ) -> Result<Option<Value>, String> {
+        // Look up the function reference
+        let func_ref = user_func_refs.get(fn_name)
+            .ok_or_else(|| format!("Undefined function: {}", fn_name))?;
+
+        // Get function from symbol table to determine parameter order
+        let func_expr = symbols.get_symbol_value(index)
+            .ok_or_else(|| format!("Function {} not in symbol table", fn_name))?;
+
+        // Extract the Function from DefineFunction -> Lambda or directly from Lambda
+        let function = match func_expr {
+            Expr::DefineFunction { value, .. } => {
+                match value.as_ref() {
+                    Expr::Lambda { value: f, .. } => f,
+                    _ => return Err(format!("{} DefineFunction does not contain Lambda", fn_name)),
+                }
+            }
+            Expr::Lambda { value: f, .. } => f,
+            _ => return Err(format!("{} is not a function (got: {:?})", fn_name, func_expr)),
+        };
+
+        // Get parameter names in order
+        let param_names = function.params.iter().map(|p| p.name.clone()).collect::<Vec<_>>();
+
+        // Evaluate arguments in parameter order
+        let mut arg_values = Vec::new();
+        for param_name in &param_names {
+            let arg = args.iter()
+                .find(|a| &a.name == param_name)
+                .ok_or_else(|| format!("Missing argument: {}", param_name))?;
+
+            let val = Self::compile_expr_static(
+                builder,
+                &arg.value,
+                symbols,
+                runtime_funcs,
+                user_func_refs,
+                variables
+            )?.ok_or_else(|| format!("Function argument '{}' cannot be Unit", param_name))?;
+
+            arg_values.push(val);
+        }
+
+        // Call the function
+        let inst = builder.ins().call(*func_ref, &arg_values);
+
+        // Get return value (if any)
+        let results = builder.inst_results(inst);
+        if results.is_empty() {
+            Ok(None)  // Unit return
+        } else {
+            Ok(Some(results[0]))
         }
     }
 
@@ -401,19 +938,21 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         right: &Expr,
         symbols: &SymbolTable,
         runtime_funcs: &HashMap<String, FuncRef>,
-        variables: &mut HashMap<String, StackSlot>,
+        user_func_refs: &HashMap<String, FuncRef>,
+        variables: &mut HashMap<String, VarInfo>,
     ) -> Result<Option<Value>, String> {
         use crate::semantic_analysis::determine_type_with_symbols;
         use crate::syntax::DataType;
 
-        // Check if we're dealing with string operations
+        // Check the type of the left operand to determine operation type
         let left_type = determine_type_with_symbols(left, symbols, 0);
         let is_string_op = matches!(left_type, Some(DataType::Str));
+        let is_float_op = matches!(left_type, Some(DataType::Flt));
 
         if is_string_op {
-            let left_val = Self::compile_expr_static(builder, left, symbols, runtime_funcs, variables)?
+            let left_val = Self::compile_expr_static(builder, left, symbols, runtime_funcs, user_func_refs, variables)?
                 .ok_or("String operation requires non-Unit left operand")?;
-            let right_val = Self::compile_expr_static(builder, right, symbols, runtime_funcs, variables)?
+            let right_val = Self::compile_expr_static(builder, right, symbols, runtime_funcs, user_func_refs, variables)?
                 .ok_or("String operation requires non-Unit right operand")?;
 
             match op {
@@ -452,10 +991,66 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             }
         }
 
-        // For non-string operations, compile operands and perform integer/float operations
-        let left_val = Self::compile_expr_static(builder, left, symbols, runtime_funcs, variables)?
+        // Handle float operations
+        if is_float_op {
+            let left_val = Self::compile_expr_static(builder, left, symbols, runtime_funcs, user_func_refs, variables)?
+                .ok_or("Float operation requires non-Unit left operand")?;
+            let right_val = Self::compile_expr_static(builder, right, symbols, runtime_funcs, user_func_refs, variables)?
+                .ok_or("Float operation requires non-Unit right operand")?;
+
+            let result = match op {
+                Operator::Add => builder.ins().fadd(left_val, right_val),
+                Operator::Sub => builder.ins().fsub(left_val, right_val),
+                Operator::Mul => builder.ins().fmul(left_val, right_val),
+                Operator::Div => builder.ins().fdiv(left_val, right_val),
+                Operator::Gt => {
+                    let cmp = builder.ins().fcmp(FloatCC::GreaterThan, left_val, right_val);
+                    builder.ins().uextend(types::I64, cmp)
+                }
+                Operator::Lt => {
+                    let cmp = builder.ins().fcmp(FloatCC::LessThan, left_val, right_val);
+                    builder.ins().uextend(types::I64, cmp)
+                }
+                Operator::Gte => {
+                    let cmp = builder.ins().fcmp(FloatCC::GreaterThanOrEqual, left_val, right_val);
+                    builder.ins().uextend(types::I64, cmp)
+                }
+                Operator::Lte => {
+                    let cmp = builder.ins().fcmp(FloatCC::LessThanOrEqual, left_val, right_val);
+                    builder.ins().uextend(types::I64, cmp)
+                }
+                Operator::Eq => {
+                    let cmp = builder.ins().fcmp(FloatCC::Equal, left_val, right_val);
+                    builder.ins().uextend(types::I64, cmp)
+                }
+                Operator::Neq => {
+                    let cmp = builder.ins().fcmp(FloatCC::NotEqual, left_val, right_val);
+                    builder.ins().uextend(types::I64, cmp)
+                }
+                _ => return Err(format!("Operator {:?} not yet implemented for floats", op)),
+            };
+            return Ok(Some(result));
+        }
+
+        // Handle Range operator
+        if matches!(op, Operator::Range) {
+            let left_val = Self::compile_expr_static(builder, left, symbols, runtime_funcs, user_func_refs, variables)?
+                .ok_or("Range operation requires non-Unit left operand")?;
+            let right_val = Self::compile_expr_static(builder, right, symbols, runtime_funcs, user_func_refs, variables)?
+                .ok_or("Range operation requires non-Unit right operand")?;
+
+            // Call lift_range_new(start, end)
+            let func_ref = runtime_funcs.get("lift_range_new")
+                .ok_or_else(|| "Runtime function lift_range_new not found".to_string())?;
+            let inst = builder.ins().call(*func_ref, &[left_val, right_val]);
+            let range_ptr = builder.inst_results(inst)[0];
+            return Ok(Some(range_ptr));
+        }
+
+        // For integer operations, compile operands and perform integer operations
+        let left_val = Self::compile_expr_static(builder, left, symbols, runtime_funcs, user_func_refs, variables)?
             .ok_or("Binary operation requires non-Unit left operand")?;
-        let right_val = Self::compile_expr_static(builder, right, symbols, runtime_funcs, variables)?
+        let right_val = Self::compile_expr_static(builder, right, symbols, runtime_funcs, user_func_refs, variables)?
             .ok_or("Binary operation requires non-Unit right operand")?;
 
         let result = match op {
@@ -487,6 +1082,24 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 let cmp = builder.ins().icmp(IntCC::NotEqual, left_val, right_val);
                 builder.ins().uextend(types::I64, cmp)
             }
+            Operator::And => {
+                // Logical AND: both operands must be non-zero
+                // Convert each operand to boolean (0 or 1), then AND them
+                let zero = builder.ins().iconst(types::I64, 0);
+                let left_bool = builder.ins().icmp(IntCC::NotEqual, left_val, zero);
+                let right_bool = builder.ins().icmp(IntCC::NotEqual, right_val, zero);
+                let result_bool = builder.ins().band(left_bool, right_bool);
+                builder.ins().uextend(types::I64, result_bool)
+            }
+            Operator::Or => {
+                // Logical OR: at least one operand must be non-zero
+                // Convert each operand to boolean (0 or 1), then OR them
+                let zero = builder.ins().iconst(types::I64, 0);
+                let left_bool = builder.ins().icmp(IntCC::NotEqual, left_val, zero);
+                let right_bool = builder.ins().icmp(IntCC::NotEqual, right_val, zero);
+                let result_bool = builder.ins().bor(left_bool, right_bool);
+                builder.ins().uextend(types::I64, result_bool)
+            }
             _ => return Err(format!("Operator {:?} not yet implemented", op)),
         };
 
@@ -500,9 +1113,10 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         expr: &Expr,
         symbols: &SymbolTable,
         runtime_funcs: &HashMap<String, FuncRef>,
-        variables: &mut HashMap<String, StackSlot>,
+        user_func_refs: &HashMap<String, FuncRef>,
+        variables: &mut HashMap<String, VarInfo>,
     ) -> Result<Option<Value>, String> {
-        let val = Self::compile_expr_static(builder, expr, symbols, runtime_funcs, variables)?
+        let val = Self::compile_expr_static(builder, expr, symbols, runtime_funcs, user_func_refs, variables)?
             .ok_or("Unary operation requires non-Unit operand")?;
 
         let result = match op {
@@ -529,7 +1143,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         data: &[Expr],
         symbols: &SymbolTable,
         runtime_funcs: &HashMap<String, FuncRef>,
-        variables: &mut HashMap<String, StackSlot>,
+        user_func_refs: &HashMap<String, FuncRef>,
+        variables: &mut HashMap<String, VarInfo>,
     ) -> Result<(), String> {
         use crate::semantic_analysis::determine_type_with_symbols;
         use crate::syntax::DataType;
@@ -540,7 +1155,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 .ok_or_else(|| format!("Cannot determine type for output expression"))?;
 
             // Compile the expression to get the value
-            let val = Self::compile_expr_static(builder, expr, symbols, runtime_funcs, variables)?
+            let val = Self::compile_expr_static(builder, expr, symbols, runtime_funcs, user_func_refs, variables)?
                 .ok_or_else(|| "Output requires non-Unit expression".to_string())?;
 
             // Determine which output function to call based on type
@@ -549,6 +1164,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 DataType::Flt => ("lift_output_float", false),
                 DataType::Bool => ("lift_output_bool", true), // Need to convert I64 to I8
                 DataType::Str => ("lift_output_str", false),
+                DataType::Range(_) => ("lift_output_range", false),
                 _ => return Err(format!("Output not yet supported for type: {:?}", expr_type)),
             };
 
@@ -575,12 +1191,13 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         body: &[Expr],
         symbols: &SymbolTable,
         runtime_funcs: &HashMap<String, FuncRef>,
-        variables: &mut HashMap<String, StackSlot>,
+        user_func_refs: &HashMap<String, FuncRef>,
+        variables: &mut HashMap<String, VarInfo>,
     ) -> Result<Option<Value>, String> {
         let mut last_value = None;
 
         for expr in body {
-            last_value = Self::compile_expr_static(builder, expr, symbols, runtime_funcs, variables)?;
+            last_value = Self::compile_expr_static(builder, expr, symbols, runtime_funcs, user_func_refs, variables)?;
         }
 
         Ok(last_value)
@@ -594,10 +1211,11 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         else_expr: &Expr,
         symbols: &SymbolTable,
         runtime_funcs: &HashMap<String, FuncRef>,
-        variables: &mut HashMap<String, StackSlot>,
+        user_func_refs: &HashMap<String, FuncRef>,
+        variables: &mut HashMap<String, VarInfo>,
     ) -> Result<Option<Value>, String> {
         // Evaluate the condition
-        let cond_val = Self::compile_expr_static(builder, cond, symbols, runtime_funcs, variables)?
+        let cond_val = Self::compile_expr_static(builder, cond, symbols, runtime_funcs, user_func_refs, variables)?
             .ok_or("If condition must produce a value")?;
 
         // Create blocks for the then branch, else branch, and merge point
@@ -626,7 +1244,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         // Compile the then branch
         builder.switch_to_block(then_block);
         builder.seal_block(then_block);
-        let then_val = Self::compile_expr_static(builder, then_expr, symbols, runtime_funcs, variables)?;
+        let then_val = Self::compile_expr_static(builder, then_expr, symbols, runtime_funcs, user_func_refs, variables)?;
 
         if produces_value {
             let then_result = then_val.unwrap_or_else(|| builder.ins().iconst(types::I64, 0));
@@ -637,7 +1255,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         // Compile the else branch
         builder.switch_to_block(else_block);
         builder.seal_block(else_block);
-        let else_val = Self::compile_expr_static(builder, else_expr, symbols, runtime_funcs, variables)?;
+        let else_val = Self::compile_expr_static(builder, else_expr, symbols, runtime_funcs, user_func_refs, variables)?;
 
         if produces_value {
             let else_result = else_val.unwrap_or_else(|| builder.ins().iconst(types::I64, 0));
@@ -664,7 +1282,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         body: &Expr,
         symbols: &SymbolTable,
         runtime_funcs: &HashMap<String, FuncRef>,
-        variables: &mut HashMap<String, StackSlot>,
+        user_func_refs: &HashMap<String, FuncRef>,
+        variables: &mut HashMap<String, VarInfo>,
     ) -> Result<Option<Value>, String> {
         // Create blocks for loop header, body, and exit
         let loop_header = builder.create_block();
@@ -676,7 +1295,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
 
         // Loop header: evaluate condition and branch
         builder.switch_to_block(loop_header);
-        let cond_val = Self::compile_expr_static(builder, cond, symbols, runtime_funcs, variables)?
+        let cond_val = Self::compile_expr_static(builder, cond, symbols, runtime_funcs, user_func_refs, variables)?
             .ok_or("While condition must produce a value")?;
 
         builder.ins().brif(cond_val, loop_body, &[], loop_exit, &[]);
@@ -684,7 +1303,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
 
         // Loop body: execute body and jump back to header
         builder.switch_to_block(loop_body);
-        Self::compile_expr_static(builder, body, symbols, runtime_funcs, variables)?;
+        Self::compile_expr_static(builder, body, symbols, runtime_funcs, user_func_refs, variables)?;
         builder.ins().jump(loop_header, &[]);
         builder.seal_block(loop_body);
 
@@ -703,25 +1322,42 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         value: &Expr,
         symbols: &SymbolTable,
         runtime_funcs: &HashMap<String, FuncRef>,
-        variables: &mut HashMap<String, StackSlot>,
+        user_func_refs: &HashMap<String, FuncRef>,
+        variables: &mut HashMap<String, VarInfo>,
     ) -> Result<Option<Value>, String> {
+        use crate::semantic_analysis::determine_type_with_symbols;
+        use crate::syntax::DataType;
+
         // Compile the value expression
-        let val = Self::compile_expr_static(builder, value, symbols, runtime_funcs, variables)?
+        let val = Self::compile_expr_static(builder, value, symbols, runtime_funcs, user_func_refs, variables)?
             .ok_or_else(|| format!("Let binding for '{}' requires a value", var_name))?;
 
-        // Create a stack slot for this variable
-        // For now, assume all variables are I64 (we'll extend this later)
+        // Determine the Cranelift type based on the Lift type
+        let lift_type = determine_type_with_symbols(value, symbols, 0)
+            .ok_or_else(|| format!("Cannot determine type for variable '{}'", var_name))?;
+
+        let cranelift_type = match lift_type {
+            DataType::Flt => types::F64,
+            DataType::Int | DataType::Bool => types::I64,
+            DataType::Str | DataType::List { .. } | DataType::Map { .. } => types::I64, // Pointers
+            _ => types::I64, // Default to I64
+        };
+
+        // Create a stack slot for this variable (8 bytes for I64/F64/pointers)
         let slot = builder.create_sized_stack_slot(StackSlotData::new(
             StackSlotKind::ExplicitSlot,
-            8, // 8 bytes for I64
+            8,
             0,
         ));
 
         // Store the value in the stack slot
         builder.ins().stack_store(val, slot, 0);
 
-        // Remember this variable's stack slot
-        variables.insert(var_name.to_string(), slot);
+        // Remember this variable's stack slot and type
+        variables.insert(var_name.to_string(), VarInfo {
+            slot,
+            cranelift_type,
+        });
 
         // Let expressions return Unit
         Ok(None)
@@ -731,15 +1367,15 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
     fn compile_variable(
         builder: &mut FunctionBuilder,
         name: &str,
-        variables: &HashMap<String, StackSlot>,
+        variables: &HashMap<String, VarInfo>,
     ) -> Result<Option<Value>, String> {
-        // Look up the variable's stack slot
-        let slot = variables
+        // Look up the variable's stack slot and type
+        let var_info = variables
             .get(name)
             .ok_or_else(|| format!("Undefined variable: {}", name))?;
 
-        // Load the value from the stack slot
-        let val = builder.ins().stack_load(types::I64, *slot, 0);
+        // Load the value from the stack slot with the correct type
+        let val = builder.ins().stack_load(var_info.cranelift_type, var_info.slot, 0);
         Ok(Some(val))
     }
 
@@ -750,19 +1386,20 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         value: &Expr,
         symbols: &SymbolTable,
         runtime_funcs: &HashMap<String, FuncRef>,
-        variables: &mut HashMap<String, StackSlot>,
+        user_func_refs: &HashMap<String, FuncRef>,
+        variables: &mut HashMap<String, VarInfo>,
     ) -> Result<Option<Value>, String> {
         // Compile the new value
-        let val = Self::compile_expr_static(builder, value, symbols, runtime_funcs, variables)?
+        let val = Self::compile_expr_static(builder, value, symbols, runtime_funcs, user_func_refs, variables)?
             .ok_or_else(|| format!("Assignment to '{}' requires a value", name))?;
 
         // Look up the variable's stack slot
-        let slot = variables
+        let var_info = variables
             .get(name)
             .ok_or_else(|| format!("Undefined variable: {}", name))?;
 
         // Store the new value in the stack slot
-        builder.ins().stack_store(val, *slot, 0);
+        builder.ins().stack_store(val, var_info.slot, 0);
 
         // Assignment returns Unit
         Ok(None)
@@ -775,7 +1412,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         data: &[Expr],
         symbols: &SymbolTable,
         runtime_funcs: &HashMap<String, FuncRef>,
-        variables: &mut HashMap<String, StackSlot>,
+        user_func_refs: &HashMap<String, FuncRef>,
+        variables: &mut HashMap<String, VarInfo>,
     ) -> Result<Option<Value>, String> {
         use crate::syntax::DataType;
         use crate::semantic_analysis::determine_type_with_symbols;
@@ -805,7 +1443,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
 
         for (i, elem) in data.iter().enumerate() {
             // Compile the element value
-            let elem_val_raw = Self::compile_expr_static(builder, elem, symbols, runtime_funcs, variables)?
+            let elem_val_raw = Self::compile_expr_static(builder, elem, symbols, runtime_funcs, user_func_refs, variables)?
                 .ok_or_else(|| "List element must produce a value".to_string())?;
 
             // Convert value to i64 for storage (handles all types)
@@ -841,7 +1479,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         data: &[(crate::syntax::KeyData, Expr)],
         symbols: &SymbolTable,
         runtime_funcs: &HashMap<String, FuncRef>,
-        variables: &mut HashMap<String, StackSlot>,
+        user_func_refs: &HashMap<String, FuncRef>,
+        variables: &mut HashMap<String, VarInfo>,
     ) -> Result<Option<Value>, String> {
         use crate::syntax::{DataType, KeyData};
         use crate::semantic_analysis::determine_type_with_symbols;
@@ -920,7 +1559,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             };
 
             // Compile the value expression
-            let value_val_raw = Self::compile_expr_static(builder, value_expr, symbols, runtime_funcs, variables)?
+            let value_val_raw = Self::compile_expr_static(builder, value_expr, symbols, runtime_funcs, user_func_refs, variables)?
                 .ok_or_else(|| "Map value must produce a value".to_string())?;
 
             // Convert value to i64 for storage (handles all types)
@@ -954,17 +1593,18 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         index: &Expr,
         symbols: &SymbolTable,
         runtime_funcs: &HashMap<String, FuncRef>,
-        variables: &mut HashMap<String, StackSlot>,
+        user_func_refs: &HashMap<String, FuncRef>,
+        variables: &mut HashMap<String, VarInfo>,
     ) -> Result<Option<Value>, String> {
         use crate::semantic_analysis::determine_type_with_symbols;
         use crate::syntax::DataType;
 
         // Compile the collection expression
-        let collection = Self::compile_expr_static(builder, expr, symbols, runtime_funcs, variables)?
+        let collection = Self::compile_expr_static(builder, expr, symbols, runtime_funcs, user_func_refs, variables)?
             .ok_or("Index requires non-Unit collection")?;
 
         // Compile the index expression
-        let index_val = Self::compile_expr_static(builder, index, symbols, runtime_funcs, variables)?
+        let index_val = Self::compile_expr_static(builder, index, symbols, runtime_funcs, user_func_refs, variables)?
             .ok_or("Index requires non-Unit index value")?;
 
         // Determine if this is a list or map based on the type
@@ -1024,13 +1664,14 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         expr: &Expr,
         symbols: &SymbolTable,
         runtime_funcs: &HashMap<String, FuncRef>,
-        variables: &mut HashMap<String, StackSlot>,
+        user_func_refs: &HashMap<String, FuncRef>,
+        variables: &mut HashMap<String, VarInfo>,
     ) -> Result<Option<Value>, String> {
         use crate::semantic_analysis::determine_type_with_symbols;
         use crate::syntax::DataType;
 
         // Compile the expression
-        let val = Self::compile_expr_static(builder, expr, symbols, runtime_funcs, variables)?
+        let val = Self::compile_expr_static(builder, expr, symbols, runtime_funcs, user_func_refs, variables)?
             .ok_or("len() requires non-Unit expression")?;
 
         // Determine the type to call the right len function
@@ -1051,19 +1692,131 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         Ok(Some(result))
     }
 
-    /// Compile method calls (simplified stub for Phase 6)
+    /// Compile a range expression (start..end)
+    fn compile_range(
+        builder: &mut FunctionBuilder,
+        start: &LiteralData,
+        end: &LiteralData,
+        runtime_funcs: &HashMap<String, FuncRef>,
+    ) -> Result<Option<Value>, String> {
+        // Extract integer values from start and end
+        let start_val = match start {
+            LiteralData::Int(i) => builder.ins().iconst(types::I64, *i),
+            _ => return Err("Range start must be an integer".to_string()),
+        };
+
+        let end_val = match end {
+            LiteralData::Int(i) => builder.ins().iconst(types::I64, *i),
+            _ => return Err("Range end must be an integer".to_string()),
+        };
+
+        // Call lift_range_new(start, end) to create the range
+        let func_ref = runtime_funcs.get("lift_range_new")
+            .ok_or_else(|| "Runtime function lift_range_new not found".to_string())?;
+        let inst = builder.ins().call(*func_ref, &[start_val, end_val]);
+        let range_ptr = builder.inst_results(inst)[0];
+
+        Ok(Some(range_ptr))
+    }
+
+    /// Compile method calls
     fn compile_method_call(
         builder: &mut FunctionBuilder,
-        _receiver: &Expr,
-        _method_name: &str,
-        _args: &[crate::syntax::KeywordArg],
-        _symbols: &SymbolTable,
-        _runtime_funcs: &HashMap<String, FuncRef>,
-        _variables: &mut HashMap<String, StackSlot>,
+        receiver: &Expr,
+        method_name: &str,
+        args: &[crate::syntax::KeywordArg],
+        symbols: &SymbolTable,
+        runtime_funcs: &HashMap<String, FuncRef>,
+        user_func_refs: &HashMap<String, FuncRef>,
+        variables: &mut HashMap<String, VarInfo>,
     ) -> Result<Option<Value>, String> {
-        // Placeholder for method calls - will implement in future
-        // For now, just return an error
-        Err("Method calls not yet implemented in compiler".to_string())
+        use crate::semantic_analysis::determine_type_with_symbols;
+        use crate::syntax::{BuiltinMethod, DataType};
+
+        // Determine receiver type
+        let receiver_type = determine_type_with_symbols(receiver, symbols, 0)
+            .ok_or("Cannot determine receiver type for method call")?;
+
+        // Get type name for BuiltinMethod lookup
+        let type_name = match &receiver_type {
+            DataType::Str => "Str",
+            DataType::List { .. } => "List",
+            DataType::Map { .. } => "Map",
+            _ => return Err(format!("No methods for type: {:?}", receiver_type)),
+        };
+
+        // Check if this is a built-in method
+        let builtin = BuiltinMethod::from_name(type_name, method_name)
+            .ok_or_else(|| format!("Unknown method: {}.{}", type_name, method_name))?;
+
+        // Compile receiver
+        let receiver_val = Self::compile_expr_static(
+            builder, receiver, symbols, runtime_funcs, user_func_refs, variables
+        )?.ok_or("Method receiver cannot be Unit")?;
+
+        // Compile arguments and build argument list (receiver is first arg)
+        let mut arg_vals = vec![receiver_val];
+        for arg in args {
+            let val = Self::compile_expr_static(
+                builder, &arg.value, symbols, runtime_funcs, user_func_refs, variables
+            )?.ok_or_else(|| format!("Method arg '{}' cannot be Unit", arg.name))?;
+            arg_vals.push(val);
+        }
+
+        // Map builtin method to runtime function
+        let runtime_func_name = match builtin {
+            BuiltinMethod::StrUpper => "lift_str_upper",
+            BuiltinMethod::StrLower => "lift_str_lower",
+            BuiltinMethod::StrSubstring => "lift_str_substring",
+            BuiltinMethod::StrContains => "lift_str_contains",
+            BuiltinMethod::StrTrim => "lift_str_trim",
+            BuiltinMethod::StrSplit => "lift_str_split",
+            BuiltinMethod::StrReplace => "lift_str_replace",
+            BuiltinMethod::StrStartsWith => "lift_str_starts_with",
+            BuiltinMethod::StrEndsWith => "lift_str_ends_with",
+            BuiltinMethod::StrIsEmpty => "lift_str_is_empty",
+
+            BuiltinMethod::ListFirst => "lift_list_first",
+            BuiltinMethod::ListLast => "lift_list_last",
+            BuiltinMethod::ListContains => "lift_list_contains",
+            BuiltinMethod::ListSlice => "lift_list_slice",
+            BuiltinMethod::ListReverse => "lift_list_reverse",
+            BuiltinMethod::ListJoin => "lift_list_join",
+            BuiltinMethod::ListIsEmpty => "lift_list_is_empty",
+
+            BuiltinMethod::MapKeys => "lift_map_keys",
+            BuiltinMethod::MapValues => "lift_map_values",
+            BuiltinMethod::MapContainsKey => "lift_map_contains_key",
+            BuiltinMethod::MapIsEmpty => "lift_map_is_empty",
+        };
+
+        // Call runtime function
+        let func_ref = runtime_funcs.get(runtime_func_name)
+            .ok_or_else(|| format!("Runtime function not found: {}", runtime_func_name))?;
+
+        let inst = builder.ins().call(*func_ref, &arg_vals);
+
+        // Handle return value (some methods return i8 booleans that need extending to i64)
+        let results = builder.inst_results(inst);
+        if results.is_empty() {
+            Ok(None)
+        } else {
+            let result = results[0];
+            // Convert i8 bool to i64 if needed
+            let needs_extension = matches!(builtin,
+                BuiltinMethod::StrContains | BuiltinMethod::StrStartsWith |
+                BuiltinMethod::StrEndsWith | BuiltinMethod::StrIsEmpty |
+                BuiltinMethod::ListContains | BuiltinMethod::ListIsEmpty |
+                BuiltinMethod::MapContainsKey | BuiltinMethod::MapIsEmpty
+            );
+
+            if needs_extension {
+                let extended = builder.ins().uextend(types::I64, result);
+                Ok(Some(extended))
+            } else {
+                Ok(Some(result))
+            }
+        }
     }
 }
 

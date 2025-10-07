@@ -1,0 +1,56 @@
+// Test logical operators (and, or) in compiled code
+// These should produce the same output in interpreter and compiler
+
+// Basic And tests
+output(true and true);    // true
+output(true and false);   // false
+output(false and true);   // false
+output(false and false);  // false
+
+// Basic Or tests
+output(true or true);     // true
+output(true or false);    // true
+output(false or true);    // true
+output(false or false);   // false
+
+// Combining comparisons with And
+output((5 > 3) and (10 < 20));    // true
+output((5 > 3) and (10 > 20));    // false
+output((5 < 3) and (10 < 20));    // false
+
+// Combining comparisons with Or
+output((5 > 3) or (10 > 20));     // true
+output((5 < 3) or (10 < 20));     // true
+output((5 < 3) or (10 > 20));     // false
+
+// Using in if statements
+if (true and true) {
+    output('And condition works');
+} else {
+    output('And condition broken');
+};
+
+if (false or true) {
+    output('Or condition works');
+} else {
+    output('Or condition broken');
+};
+
+// Complex nested logical expressions
+let a = 5;
+let b = 10;
+let c = 15;
+
+if ((a < b) and (b < c)) {
+    output('All less than works');
+};
+
+if ((a > 100) or (b = 10)) {
+    output('Or with equality works');
+};
+
+// Test with variables
+let x = true;
+let y = false;
+output(x and y);  // false
+output(x or y);   // true
