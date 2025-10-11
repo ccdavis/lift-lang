@@ -1070,7 +1070,7 @@ fn test_lt_file_mandelbrot_computed() {
 fn test_lt_file_recursion_depth() {
     // Test that recursion works for reasonable depths
     let result = run_lift_file("tests/test_recursion_depth.lt").unwrap();
-    // Should return 0 after counting down from 100
+    // Should return 0 after counting down from 30
     assert_eq!(result, Expr::Literal(LiteralData::Int(0)));
 }
 

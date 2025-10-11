@@ -562,10 +562,11 @@ fn interprets_as_true(
     current_scope: usize,
     cond: &Expr,
 ) -> Result<bool, Box<dyn Error>> {
-    if let Expr::Literal(LiteralData::Bool(b)) = cond.interpret(symbols, current_scope)? {
-        Ok(b)
-    } else {
-        panic!("Can't use expression '{cond:?}' as boolean. This is an interpreter bug. The type checker should have caught this.");
+    match cond.interpret(symbols, current_scope)? {
+        Expr::Literal(LiteralData::Bool(b)) | Expr::RuntimeData(LiteralData::Bool(b)) => Ok(b),
+        other => {
+            panic!("Can't use expression '{other:?}' as boolean. This is an interpreter bug. The type checker should have caught this.");
+        }
     }
 }
 

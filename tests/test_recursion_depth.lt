@@ -6,6 +6,6 @@
             count_down(n: n - 1)
         }
     };
-    
-    count_down(n: 100)
+
+    count_down(n: 30)
 }
