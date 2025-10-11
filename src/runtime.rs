@@ -4,23 +4,33 @@
 use std::ffi::CString;
 use std::os::raw::c_char;
 
+// Type tags for collection elements
+// These correspond to Lift DataType variants
+pub const TYPE_INT: i8 = 0;
+pub const TYPE_FLT: i8 = 1;
+pub const TYPE_BOOL: i8 = 2;
+pub const TYPE_STR: i8 = 3;
+pub const TYPE_LIST: i8 = 4;
+pub const TYPE_MAP: i8 = 5;
+pub const TYPE_RANGE: i8 = 6;
+
 // ============================================================================
 // Output Functions
 // ============================================================================
 
 #[no_mangle]
 pub extern "C" fn lift_output_int(value: i64) {
-    println!("{}", value);
+    print!("{} ", value);
 }
 
 #[no_mangle]
 pub extern "C" fn lift_output_float(value: f64) {
-    println!("{}", value);
+    print!("{} ", value);
 }
 
 #[no_mangle]
 pub extern "C" fn lift_output_bool(value: i8) {
-    println!("{}", if value != 0 { "true" } else { "false" });
+    print!("{} ", if value != 0 { "true" } else { "false" });
 }
 
 #[no_mangle]
@@ -31,10 +41,206 @@ pub extern "C" fn lift_output_str(ptr: *const c_char) {
     unsafe {
         let c_str = std::ffi::CStr::from_ptr(ptr);
         if let Ok(s) = c_str.to_str() {
-            // Remove quotes if present (Lift strings include quotes)
-            let trimmed = s.trim_matches('\'');
-            println!("{}", trimmed);
+            // Lift strings include quotes - output them as-is to match interpreter
+            print!("{} ", s);
         }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn lift_output_newline() {
+    println!();
+}
+
+/// Format a list inline (without trailing space) for nested collections
+unsafe fn format_list_inline(ptr: *const LiftList) {
+    if ptr.is_null() {
+        print!("[]");
+        return;
+    }
+    let list = &*ptr;
+    print!("[");
+    for (i, &val) in list.elements.iter().enumerate() {
+        if i > 0 {
+            print!(",");
+        }
+        format_value_inline(val, list.elem_type);
+    }
+    print!("]");
+}
+
+/// Format a map inline (without trailing space) for nested collections
+unsafe fn format_map_inline(ptr: *const LiftMap) {
+    if ptr.is_null() {
+        print!("{{}}");
+        return;
+    }
+    let map = &*ptr;
+    print!("{{");
+    let mut keys: Vec<_> = map.entries.keys().collect();
+    keys.sort();
+
+    for (i, key) in keys.iter().enumerate() {
+        if i > 0 {
+            print!(",");
+        }
+        let val = map.entries[key];
+
+        // Format key
+        match key {
+            MapKey::Int(v) => print!("{}", v),
+            MapKey::Bool(b) => print!("{}", if *b { "true" } else { "false" }),
+            MapKey::Str(s) => print!("{}", s),
+        };
+        print!(":");
+
+        // Format value
+        format_value_inline(val, map.value_type);
+    }
+    print!("}}");
+}
+
+/// Format a value inline (without trailing space) based on its type
+unsafe fn format_value_inline(val: i64, type_tag: i8) {
+    match type_tag {
+        TYPE_INT => print!("{}", val),
+        TYPE_FLT => {
+            let f = f64::from_bits(val as u64);
+            print!("{}", f);
+        }
+        TYPE_BOOL => print!("{}", if val != 0 { "true" } else { "false" }),
+        TYPE_STR => {
+            let str_ptr = val as *const c_char;
+            if !str_ptr.is_null() {
+                if let Ok(s) = std::ffi::CStr::from_ptr(str_ptr).to_str() {
+                    print!("{}", s);
+                }
+            }
+        }
+        TYPE_LIST => {
+            let nested_ptr = val as *const LiftList;
+            if !nested_ptr.is_null() {
+                format_list_inline(nested_ptr);
+            }
+        }
+        TYPE_MAP => {
+            let map_ptr = val as *const LiftMap;
+            if !map_ptr.is_null() {
+                format_map_inline(map_ptr);
+            }
+        }
+        _ => print!("{}", val),
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn lift_output_list(ptr: *const LiftList) {
+    if ptr.is_null() {
+        print!("[] ");
+        return;
+    }
+    unsafe {
+        let list = &*ptr;
+        print!("[");
+        for (i, &val) in list.elements.iter().enumerate() {
+            if i > 0 {
+                print!(",");
+            }
+            // Format element based on its type
+            match list.elem_type {
+                TYPE_INT => print!("{}", val),
+                TYPE_FLT => {
+                    let f = f64::from_bits(val as u64);
+                    print!("{}", f);
+                }
+                TYPE_BOOL => print!("{}", if val != 0 { "true" } else { "false" }),
+                TYPE_STR => {
+                    // val is a pointer to a C string
+                    let str_ptr = val as *const c_char;
+                    if !str_ptr.is_null() {
+                        let c_str = std::ffi::CStr::from_ptr(str_ptr);
+                        if let Ok(s) = c_str.to_str() {
+                            print!("{}", s);  // Strings already have quotes
+                        }
+                    }
+                }
+                TYPE_LIST => {
+                    // val is a pointer to a nested LiftList - recursively format
+                    let nested_ptr = val as *const LiftList;
+                    if !nested_ptr.is_null() {
+                        format_list_inline(nested_ptr);
+                    }
+                }
+                TYPE_MAP => {
+                    // val is a pointer to a LiftMap - recursively format
+                    let map_ptr = val as *const LiftMap;
+                    if !map_ptr.is_null() {
+                        format_map_inline(map_ptr);
+                    }
+                }
+                _ => print!("{}", val),  // Fallback for other types
+            }
+        }
+        print!("] ");
+    }
+}
+
+/// Helper function to format a value based on its type tag
+unsafe fn format_value_by_type(val: i64, type_tag: i8) -> String {
+    match type_tag {
+        TYPE_INT => format!("{}", val),
+        TYPE_FLT => {
+            let f = f64::from_bits(val as u64);
+            format!("{}", f)
+        }
+        TYPE_BOOL => format!("{}", if val != 0 { "true" } else { "false" }),
+        TYPE_STR => {
+            // val is a pointer to a C string
+            let str_ptr = val as *const c_char;
+            if !str_ptr.is_null() {
+                let c_str = std::ffi::CStr::from_ptr(str_ptr);
+                if let Ok(s) = c_str.to_str() {
+                    return s.to_string();  // Strings already have quotes
+                }
+            }
+            format!("{}", val)  // Fallback
+        }
+        _ => format!("{}", val),  // Fallback for other types
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn lift_output_map(ptr: *const LiftMap) {
+    if ptr.is_null() {
+        print!("{{}} ");
+        return;
+    }
+    unsafe {
+        let map = &*ptr;
+        print!("{{");
+        let mut keys: Vec<_> = map.entries.keys().collect();
+
+        // Sort keys (MapKey implements Ord via derived traits)
+        keys.sort();
+
+        for (i, key) in keys.iter().enumerate() {
+            if i > 0 {
+                print!(",");
+            }
+            let val = map.entries[key];
+
+            // Format key based on its type
+            match key {
+                MapKey::Int(v) => print!("{}", v),
+                MapKey::Bool(b) => print!("{}", if *b { "true" } else { "false" }),
+                MapKey::Str(s) => print!("{}", s),
+            };
+            print!(":");
+
+            // Format value (handles nested collections)
+            format_value_inline(val, map.value_type);
+        }
+        print!("}} ");
     }
 }
 
@@ -161,14 +367,16 @@ pub fn free_lift_string(ptr: *mut c_char) {
 #[repr(C)]
 pub struct LiftList {
     pub elements: Vec<i64>,
+    pub elem_type: i8,  // Type tag for elements (TYPE_INT, TYPE_STR, etc.)
 }
 
-/// Create a new list with given capacity
+/// Create a new list with given capacity and element type
 #[no_mangle]
-pub extern "C" fn lift_list_new(capacity: i64) -> *mut LiftList {
+pub extern "C" fn lift_list_new(capacity: i64, elem_type: i8) -> *mut LiftList {
     let cap = capacity.max(0) as usize;
     let list = Box::new(LiftList {
         elements: Vec::with_capacity(cap),
+        elem_type,
     });
     Box::into_raw(list)
 }
@@ -237,18 +445,70 @@ pub extern "C" fn lift_list_free(list: *mut LiftList) {
 
 use std::collections::HashMap;
 
+/// Map key that properly handles different types with correct equality/hashing
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+enum MapKey {
+    Int(i64),
+    Bool(bool),
+    Str(String),  // Actual string content, not pointer address
+}
+
+impl MapKey {
+    /// Convert an i64 (from FFI) to a MapKey based on type tag
+    unsafe fn from_i64(val: i64, type_tag: i8) -> Option<Self> {
+        match type_tag {
+            TYPE_INT => Some(MapKey::Int(val)),
+            TYPE_BOOL => Some(MapKey::Bool(val != 0)),
+            TYPE_STR => {
+                let ptr = val as *const c_char;
+                if ptr.is_null() {
+                    return None;
+                }
+                let c_str = std::ffi::CStr::from_ptr(ptr);
+                if let Ok(s) = c_str.to_str() {
+                    Some(MapKey::Str(s.to_string()))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Convert MapKey back to i64 for FFI (used when iterating keys)
+    fn to_i64(&self) -> i64 {
+        match self {
+            MapKey::Int(v) => *v,
+            MapKey::Bool(b) => if *b { 1 } else { 0 },
+            MapKey::Str(s) => {
+                // Need to allocate a new C string
+                let with_quotes = s.clone(); // String already has quotes
+                if let Ok(c_str) = CString::new(with_quotes) {
+                    c_str.into_raw() as i64
+                } else {
+                    0
+                }
+            }
+        }
+    }
+}
+
 /// Runtime representation of a map
 #[repr(C)]
 pub struct LiftMap {
-    pub entries: HashMap<i64, i64>,
+    pub entries: HashMap<MapKey, i64>,
+    pub key_type: i8,    // Type tag for keys (TYPE_INT, TYPE_STR, etc.)
+    pub value_type: i8,  // Type tag for values
 }
 
-/// Create a new map with given capacity
+/// Create a new map with given capacity, key type, and value type
 #[no_mangle]
-pub extern "C" fn lift_map_new(capacity: i64) -> *mut LiftMap {
+pub extern "C" fn lift_map_new(capacity: i64, key_type: i8, value_type: i8) -> *mut LiftMap {
     let cap = capacity.max(0) as usize;
     let map = Box::new(LiftMap {
         entries: HashMap::with_capacity(cap),
+        key_type,
+        value_type,
     });
     Box::into_raw(map)
 }
@@ -261,7 +521,9 @@ pub extern "C" fn lift_map_set(map: *mut LiftMap, key: i64, value: i64) {
     }
     unsafe {
         let map_ref = &mut *map;
-        map_ref.entries.insert(key, value);
+        if let Some(map_key) = MapKey::from_i64(key, map_ref.key_type) {
+            map_ref.entries.insert(map_key, value);
+        }
     }
 }
 
@@ -273,7 +535,11 @@ pub extern "C" fn lift_map_get(map: *const LiftMap, key: i64) -> i64 {
     }
     unsafe {
         let map_ref = &*map;
-        map_ref.entries.get(&key).copied().unwrap_or(0)
+        if let Some(map_key) = MapKey::from_i64(key, map_ref.key_type) {
+            map_ref.entries.get(&map_key).copied().unwrap_or(0)
+        } else {
+            0
+        }
     }
 }
 
@@ -357,12 +623,12 @@ pub extern "C" fn lift_range_free(range: *mut LiftRange) {
 #[no_mangle]
 pub extern "C" fn lift_output_range(range: *const LiftRange) {
     if range.is_null() {
-        println!("null");
+        print!("null ");
         return;
     }
     unsafe {
         let range_ref = &*range;
-        println!("{}..{}", range_ref.start, range_ref.end);
+        print!("{}..{} ", range_ref.start, range_ref.end);
     }
 }
 
@@ -487,6 +753,7 @@ pub extern "C" fn lift_str_split(s: *const c_char, delimiter: *const c_char) -> 
 
             let list = Box::new(LiftList {
                 elements: parts,
+                elem_type: TYPE_STR,
             });
             return Box::into_raw(list);
         }
@@ -625,6 +892,7 @@ pub extern "C" fn lift_list_slice(list: *const LiftList, start: i64, end: i64) -
 
         let new_list = Box::new(LiftList {
             elements: sliced,
+            elem_type: list_ref.elem_type,  // Preserve element type from original list
         });
         Box::into_raw(new_list)
     }
@@ -642,6 +910,7 @@ pub extern "C" fn lift_list_reverse(list: *const LiftList) -> *mut LiftList {
 
         let new_list = Box::new(LiftList {
             elements: reversed,
+            elem_type: list_ref.elem_type,  // Preserve element type from original list
         });
         Box::into_raw(new_list)
     }
@@ -702,11 +971,15 @@ pub extern "C" fn lift_map_keys(map: *const LiftMap) -> *mut LiftList {
     }
     unsafe {
         let map_ref = &*map;
-        let mut keys: Vec<i64> = map_ref.entries.keys().copied().collect();
+        let mut keys: Vec<&MapKey> = map_ref.entries.keys().collect();
         keys.sort(); // Sort for consistency
 
+        // Convert MapKey back to i64 for FFI
+        let key_values: Vec<i64> = keys.iter().map(|k| k.to_i64()).collect();
+
         let list = Box::new(LiftList {
-            elements: keys,
+            elements: key_values,
+            elem_type: map_ref.key_type,  // Keys have the map's key type
         });
         Box::into_raw(list)
     }
@@ -719,15 +992,14 @@ pub extern "C" fn lift_map_values(map: *const LiftMap) -> *mut LiftList {
     }
     unsafe {
         let map_ref = &*map;
-        let mut key_value_pairs: Vec<(i64, i64)> = map_ref.entries.iter()
-            .map(|(&k, &v)| (k, v))
-            .collect();
+        let mut key_value_pairs: Vec<(&MapKey, &i64)> = map_ref.entries.iter().collect();
         key_value_pairs.sort_by_key(|&(k, _)| k); // Sort by key
 
-        let values: Vec<i64> = key_value_pairs.iter().map(|&(_, v)| v).collect();
+        let values: Vec<i64> = key_value_pairs.iter().map(|&(_, v)| *v).collect();
 
         let list = Box::new(LiftList {
             elements: values,
+            elem_type: map_ref.value_type,  // Values have the map's value type
         });
         Box::into_raw(list)
     }
@@ -740,7 +1012,11 @@ pub extern "C" fn lift_map_contains_key(map: *const LiftMap, key: i64) -> i8 {
     }
     unsafe {
         let map_ref = &*map;
-        if map_ref.entries.contains_key(&key) { 1 } else { 0 }
+        if let Some(map_key) = MapKey::from_i64(key, map_ref.key_type) {
+            if map_ref.entries.contains_key(&map_key) { 1 } else { 0 }
+        } else {
+            0
+        }
     }
 }
 

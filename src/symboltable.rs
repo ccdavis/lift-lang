@@ -295,7 +295,7 @@ impl SymbolTable {
         if let Some(index) = self.0[scope].type_index.get(name) {
             return self.0[scope].types.get(*index).cloned();
         }
-        
+
         // Then check parent scopes
         let mut current_scope = scope;
         while current_scope > 0 {
@@ -304,8 +304,12 @@ impl SymbolTable {
                 return self.0[current_scope].types.get(*index).cloned();
             }
         }
-        
+
         None
+    }
+
+    pub fn scope_count(&self) -> usize {
+        self.0.len()
     }
 
     pub fn add_symbol(

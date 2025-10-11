@@ -14,6 +14,21 @@ struct VarInfo {
     cranelift_type: Type,  // I64, F64, or pointer type
 }
 
+/// Convert DataType to runtime type tag (matches constants in runtime.rs)
+fn data_type_to_type_tag(data_type: &crate::syntax::DataType) -> i8 {
+    use crate::syntax::DataType;
+    match data_type {
+        DataType::Int => 0,      // TYPE_INT
+        DataType::Flt => 1,      // TYPE_FLT
+        DataType::Bool => 2,     // TYPE_BOOL
+        DataType::Str => 3,      // TYPE_STR
+        DataType::List { .. } => 4,  // TYPE_LIST
+        DataType::Map { .. } => 5,   // TYPE_MAP
+        DataType::Range(_) => 6,     // TYPE_RANGE
+        _ => 0,  // Fallback to Int for unknown types
+    }
+}
+
 pub struct CodeGenerator<'a, M: Module> {
     module: &'a mut M,
     builder_context: FunctionBuilderContext,
@@ -78,6 +93,29 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             .map_err(|e| format!("Failed to declare lift_output_str: {}", e))?;
         self.runtime_funcs.insert("lift_output_str".to_string(), func_id);
 
+        // lift_output_newline()
+        let sig = self.module.make_signature();
+        let func_id = self.module
+            .declare_function("lift_output_newline", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_output_newline: {}", e))?;
+        self.runtime_funcs.insert("lift_output_newline".to_string(), func_id);
+
+        // lift_output_list(*const LiftList)
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        let func_id = self.module
+            .declare_function("lift_output_list", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_output_list: {}", e))?;
+        self.runtime_funcs.insert("lift_output_list".to_string(), func_id);
+
+        // lift_output_map(*const LiftMap)
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        let func_id = self.module
+            .declare_function("lift_output_map", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_output_map: {}", e))?;
+        self.runtime_funcs.insert("lift_output_map".to_string(), func_id);
+
         // lift_str_new(*const c_char) -> *mut c_char
         let mut sig = self.module.make_signature();
         sig.params.push(AbiParam::new(pointer_type));
@@ -107,9 +145,10 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             .map_err(|e| format!("Failed to declare lift_str_eq: {}", e))?;
         self.runtime_funcs.insert("lift_str_eq".to_string(), func_id);
 
-        // lift_list_new(i64) -> *mut LiftList
+        // lift_list_new(i64, i8) -> *mut LiftList
         let mut sig = self.module.make_signature();
         sig.params.push(AbiParam::new(types::I64));
+        sig.params.push(AbiParam::new(types::I8));
         sig.returns.push(AbiParam::new(pointer_type));
         let func_id = self.module
             .declare_function("lift_list_new", cranelift_module::Linkage::Import, &sig)
@@ -136,9 +175,11 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             .map_err(|e| format!("Failed to declare lift_list_get: {}", e))?;
         self.runtime_funcs.insert("lift_list_get".to_string(), func_id);
 
-        // lift_map_new(i64) -> *mut LiftMap
+        // lift_map_new(i64, i8, i8) -> *mut LiftMap
         let mut sig = self.module.make_signature();
         sig.params.push(AbiParam::new(types::I64));
+        sig.params.push(AbiParam::new(types::I8));
+        sig.params.push(AbiParam::new(types::I8));
         sig.returns.push(AbiParam::new(pointer_type));
         let func_id = self.module
             .declare_function("lift_map_new", cranelift_module::Linkage::Import, &sig)
@@ -582,14 +623,17 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         let mut sig = self.module.make_signature();
         let pointer_type = self.module.target_config().pointer_type();
 
-        // Add parameters
+        // Add parameters (resolve TypeRef to underlying types first)
         for param in &function.params {
-            let param_type = Self::data_type_to_cranelift_type(&param.data_type, pointer_type);
+            let resolved_param_type = Self::resolve_type_alias(&param.data_type, symbols);
+            let param_type = Self::data_type_to_cranelift_type(&resolved_param_type, pointer_type);
             sig.params.push(AbiParam::new(param_type));
         }
 
         // Add return type (all functions have a return type in Lift)
-        let return_type = Self::data_type_to_cranelift_type(&function.return_type, pointer_type);
+        // Resolve TypeRef to underlying type first
+        let resolved_return_type = Self::resolve_type_alias(&function.return_type, symbols);
+        let return_type = Self::data_type_to_cranelift_type(&resolved_return_type, pointer_type);
         sig.returns.push(AbiParam::new(return_type));
 
         // Declare the function
@@ -635,7 +679,9 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             let mut variables = HashMap::new();
             for (i, param) in function.params.iter().enumerate() {
                 let param_value = block_params[i];
-                let param_type = Self::data_type_to_cranelift_type(&param.data_type, pointer_type);
+                // Resolve TypeRef to underlying type
+                let resolved_param_type = Self::resolve_type_alias(&param.data_type, symbols);
+                let param_type = Self::data_type_to_cranelift_type(&resolved_param_type, pointer_type);
 
                 if param.copy {
                     // cpy parameter: allocate stack slot and store value
@@ -743,8 +789,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             }
 
             // Variables
-            Expr::Let { var_name, value, .. } => {
-                Self::compile_let(builder, var_name, value, symbols, runtime_funcs, user_func_refs, variables)
+            Expr::Let { var_name, value, data_type, .. } => {
+                Self::compile_let(builder, var_name, value, data_type, symbols, runtime_funcs, user_func_refs, variables)
             }
 
             Expr::Variable { name, .. } => {
@@ -793,6 +839,9 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             // Function definitions (handled in preprocessing, so return Unit here)
             Expr::DefineFunction { .. } => Ok(None),
 
+            // Type definitions (compile-time only, return Unit)
+            Expr::DefineType { .. } => Ok(None),
+
             _ => Err(format!("Compilation not yet implemented for: {:?}", expr)),
         }
     }
@@ -809,7 +858,26 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
     ) -> Result<Option<Value>, String> {
-        // Look up the function reference
+        // Check if this is UFCS (Uniform Function Call Syntax)
+        // UFCS calls have first argument named "self"
+        if let Some(first_arg) = args.first() {
+            if first_arg.name == "self" {
+                // This is UFCS - convert to method call
+                let remaining_args = &args[1..];
+                return Self::compile_method_call(
+                    builder,
+                    &first_arg.value,
+                    fn_name,
+                    remaining_args,
+                    symbols,
+                    runtime_funcs,
+                    user_func_refs,
+                    variables
+                );
+            }
+        }
+
+        // Regular function call - look up the function reference
         let func_ref = user_func_refs.get(fn_name)
             .ok_or_else(|| format!("Undefined function: {}", fn_name))?;
 
@@ -945,9 +1013,17 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         use crate::syntax::DataType;
 
         // Check the type of the left operand to determine operation type
-        let left_type = determine_type_with_symbols(left, symbols, 0);
-        let is_string_op = matches!(left_type, Some(DataType::Str));
-        let is_float_op = matches!(left_type, Some(DataType::Flt));
+        // We must check the original left (before any reordering) to get the correct type
+        let left_type_raw = determine_type_with_symbols(left, symbols, 0);
+        let left_type = left_type_raw.map(|t| Self::resolve_type_alias(&t, symbols));
+
+        // Also check right operand type for better type inference
+        let right_type_raw = determine_type_with_symbols(right, symbols, 0);
+        let right_type = right_type_raw.map(|t| Self::resolve_type_alias(&t, symbols));
+
+        // Determine if this is a string or float operation
+        let is_string_op = matches!(left_type, Some(DataType::Str)) || matches!(right_type, Some(DataType::Str));
+        let is_float_op = matches!(left_type, Some(DataType::Flt)) || matches!(right_type, Some(DataType::Flt));
 
         if is_string_op {
             let left_val = Self::compile_expr_static(builder, left, symbols, runtime_funcs, user_func_refs, variables)?
@@ -1137,6 +1213,39 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         Ok(Some(result))
     }
 
+    /// Helper: Resolve TypeRef to underlying type
+    fn resolve_type_alias(data_type: &crate::syntax::DataType, symbols: &SymbolTable) -> crate::syntax::DataType {
+        use crate::syntax::DataType;
+
+        let mut resolved = data_type.clone();
+        let mut visited = std::collections::HashSet::new();
+
+        while let DataType::TypeRef(name) = &resolved {
+            // Prevent infinite loops
+            if !visited.insert(name.clone()) {
+                break;
+            }
+
+            // Look up the type in all scopes (start from the deepest scope)
+            let mut found = None;
+            for scope_idx in (0..symbols.scope_count()).rev() {
+                if let Some(underlying_type) = symbols.lookup_type(name, scope_idx) {
+                    found = Some(underlying_type);
+                    break;
+                }
+            }
+
+            if let Some(underlying_type) = found {
+                resolved = underlying_type;
+            } else {
+                // Type not found, leave as TypeRef
+                break;
+            }
+        }
+
+        resolved
+    }
+
     /// Compile an output statement
     fn compile_output(
         builder: &mut FunctionBuilder,
@@ -1151,8 +1260,11 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
 
         for expr in data {
             // Determine the type of the expression
-            let expr_type = determine_type_with_symbols(expr, symbols, 0)
+            let expr_type_raw = determine_type_with_symbols(expr, symbols, 0)
                 .ok_or_else(|| format!("Cannot determine type for output expression"))?;
+
+            // Resolve TypeRef to underlying type
+            let expr_type = Self::resolve_type_alias(&expr_type_raw, symbols);
 
             // Compile the expression to get the value
             let val = Self::compile_expr_static(builder, expr, symbols, runtime_funcs, user_func_refs, variables)?
@@ -1165,6 +1277,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 DataType::Bool => ("lift_output_bool", true), // Need to convert I64 to I8
                 DataType::Str => ("lift_output_str", false),
                 DataType::Range(_) => ("lift_output_range", false),
+                DataType::List { .. } => ("lift_output_list", false),
+                DataType::Map { .. } => ("lift_output_map", false),
                 _ => return Err(format!("Output not yet supported for type: {:?}", expr_type)),
             };
 
@@ -1182,6 +1296,12 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             // Call the function
             builder.ins().call(*func_ref, &[call_val]);
         }
+
+        // Print newline after all output items (to match interpreter behavior)
+        let newline_func = runtime_funcs.get("lift_output_newline")
+            .ok_or_else(|| "Runtime function not found: lift_output_newline".to_string())?;
+        builder.ins().call(*newline_func, &[]);
+
         Ok(())
     }
 
@@ -1320,6 +1440,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         builder: &mut FunctionBuilder,
         var_name: &str,
         value: &Expr,
+        data_type: &crate::syntax::DataType,
         symbols: &SymbolTable,
         runtime_funcs: &HashMap<String, FuncRef>,
         user_func_refs: &HashMap<String, FuncRef>,
@@ -1332,9 +1453,16 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         let val = Self::compile_expr_static(builder, value, symbols, runtime_funcs, user_func_refs, variables)?
             .ok_or_else(|| format!("Let binding for '{}' requires a value", var_name))?;
 
-        // Determine the Cranelift type based on the Lift type
-        let lift_type = determine_type_with_symbols(value, symbols, 0)
-            .ok_or_else(|| format!("Cannot determine type for variable '{}'", var_name))?;
+        // Determine the Lift type from the Let's data_type if available, otherwise infer from value
+        let lift_type_raw = if !matches!(data_type, DataType::Unsolved) {
+            data_type.clone()
+        } else {
+            determine_type_with_symbols(value, symbols, 0)
+                .ok_or_else(|| format!("Cannot determine type for variable '{}'", var_name))?
+        };
+
+        // Resolve TypeRef to underlying type
+        let lift_type = Self::resolve_type_alias(&lift_type_raw, symbols);
 
         let cranelift_type = match lift_type {
             DataType::Flt => types::F64,
@@ -1419,22 +1547,28 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         use crate::semantic_analysis::determine_type_with_symbols;
 
         // Infer element type from first element if data_type is Unsolved
-        let elem_type = if matches!(data_type, DataType::Unsolved) {
+        let elem_type_raw = if matches!(data_type, DataType::Unsolved) {
             if let Some(first_elem) = data.first() {
                 determine_type_with_symbols(first_elem, symbols, 0)
                     .ok_or_else(|| "Cannot determine type of list elements".to_string())?
             } else {
-                return Err("Empty list requires type annotation".to_string());
+                // Empty list with Unsolved type - use Int as placeholder since it's empty anyway
+                // The actual element type doesn't matter for an empty list
+                DataType::Int
             }
         } else {
             data_type.clone()
         };
 
+        // Resolve TypeRef to underlying type
+        let elem_type = Self::resolve_type_alias(&elem_type_raw, symbols);
+
         // Create a new list with capacity equal to number of elements
         let capacity = builder.ins().iconst(types::I64, data.len() as i64);
+        let type_tag = builder.ins().iconst(types::I8, data_type_to_type_tag(&elem_type) as i64);
         let func_ref = runtime_funcs.get("lift_list_new")
             .ok_or_else(|| "Runtime function lift_list_new not found".to_string())?;
-        let inst = builder.ins().call(*func_ref, &[capacity]);
+        let inst = builder.ins().call(*func_ref, &[capacity, type_tag]);
         let list_ptr = builder.inst_results(inst)[0];
 
         // Set each element in the list
@@ -1486,19 +1620,23 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         use crate::semantic_analysis::determine_type_with_symbols;
 
         // Infer value type from first element if value_type is Unsolved
-        let actual_value_type = if matches!(value_type, DataType::Unsolved) {
+        let actual_value_type_raw = if matches!(value_type, DataType::Unsolved) {
             if let Some((_, first_val)) = data.first() {
                 determine_type_with_symbols(first_val, symbols, 0)
                     .ok_or_else(|| "Cannot determine type of map values".to_string())?
             } else {
-                return Err("Empty map requires type annotation".to_string());
+                // Empty map with Unsolved type - use Int as placeholder
+                DataType::Int
             }
         } else {
             value_type.clone()
         };
 
+        // Resolve TypeRef to underlying type for value type
+        let actual_value_type = Self::resolve_type_alias(&actual_value_type_raw, symbols);
+
         // Infer key type from first element if key_type is Unsolved
-        let actual_key_type = if matches!(key_type, DataType::Unsolved) {
+        let actual_key_type_raw = if matches!(key_type, DataType::Unsolved) {
             if let Some((first_key, _)) = data.first() {
                 match first_key {
                     KeyData::Int(_) => DataType::Int,
@@ -1506,11 +1644,15 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                     KeyData::Bool(_) => DataType::Bool,
                 }
             } else {
-                return Err("Empty map requires type annotation".to_string());
+                // Empty map with Unsolved type - use Int as placeholder
+                DataType::Int
             }
         } else {
             key_type.clone()
         };
+
+        // Resolve TypeRef to underlying type for key type
+        let actual_key_type = Self::resolve_type_alias(&actual_key_type_raw, symbols);
 
         // Validate that key type is scalar (Int, Bool, or Str)
         if !matches!(actual_key_type, DataType::Int | DataType::Bool | DataType::Str) {
@@ -1519,9 +1661,11 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
 
         // Create a new map with capacity equal to number of pairs
         let capacity = builder.ins().iconst(types::I64, data.len() as i64);
+        let key_type_tag = builder.ins().iconst(types::I8, data_type_to_type_tag(&actual_key_type) as i64);
+        let value_type_tag = builder.ins().iconst(types::I8, data_type_to_type_tag(&actual_value_type) as i64);
         let func_ref = runtime_funcs.get("lift_map_new")
             .ok_or_else(|| "Runtime function lift_map_new not found".to_string())?;
-        let inst = builder.ins().call(*func_ref, &[capacity]);
+        let inst = builder.ins().call(*func_ref, &[capacity, key_type_tag, value_type_tag]);
         let map_ptr = builder.inst_results(inst)[0];
 
         // Set each key-value pair in the map
@@ -1608,8 +1752,11 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             .ok_or("Index requires non-Unit index value")?;
 
         // Determine if this is a list or map based on the type
-        let expr_type = determine_type_with_symbols(expr, symbols, 0)
+        let expr_type_raw = determine_type_with_symbols(expr, symbols, 0)
             .ok_or_else(|| "Cannot determine type for indexed expression".to_string())?;
+
+        // Resolve TypeRef to underlying type
+        let expr_type = Self::resolve_type_alias(&expr_type_raw, symbols);
 
         match expr_type {
             DataType::List { element_type } => {
@@ -1675,8 +1822,11 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             .ok_or("len() requires non-Unit expression")?;
 
         // Determine the type to call the right len function
-        let expr_type = determine_type_with_symbols(expr, symbols, 0)
+        let expr_type_raw = determine_type_with_symbols(expr, symbols, 0)
             .ok_or_else(|| "Cannot determine type for len() expression".to_string())?;
+
+        // Resolve TypeRef to underlying type
+        let expr_type = Self::resolve_type_alias(&expr_type_raw, symbols);
 
         let func_name = match expr_type {
             DataType::Str => "lift_str_len",
@@ -1734,20 +1884,27 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         use crate::syntax::{BuiltinMethod, DataType};
 
         // Determine receiver type
-        let receiver_type = determine_type_with_symbols(receiver, symbols, 0)
+        let receiver_type_raw = determine_type_with_symbols(receiver, symbols, 0)
             .ok_or("Cannot determine receiver type for method call")?;
 
-        // Get type name for BuiltinMethod lookup
+        // Resolve TypeRef to underlying type
+        let receiver_type = Self::resolve_type_alias(&receiver_type_raw, symbols);
+
+        // Get type name for method lookup
         let type_name = match &receiver_type {
             DataType::Str => "Str",
             DataType::List { .. } => "List",
             DataType::Map { .. } => "Map",
+            DataType::Int => "Int",
+            DataType::Flt => "Flt",
+            DataType::Bool => "Bool",
+            DataType::Range(_) => "Range",
+            DataType::TypeRef(name) => name.as_str(),
             _ => return Err(format!("No methods for type: {:?}", receiver_type)),
         };
 
         // Check if this is a built-in method
-        let builtin = BuiltinMethod::from_name(type_name, method_name)
-            .ok_or_else(|| format!("Unknown method: {}.{}", type_name, method_name))?;
+        let builtin_opt = BuiltinMethod::from_name(type_name, method_name);
 
         // Compile receiver
         let receiver_val = Self::compile_expr_static(
@@ -1763,8 +1920,10 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             arg_vals.push(val);
         }
 
-        // Map builtin method to runtime function
-        let runtime_func_name = match builtin {
+        // Handle built-in vs user-defined methods
+        if let Some(builtin) = builtin_opt {
+            // Built-in method - map to runtime function
+            let runtime_func_name = match builtin {
             BuiltinMethod::StrUpper => "lift_str_upper",
             BuiltinMethod::StrLower => "lift_str_lower",
             BuiltinMethod::StrSubstring => "lift_str_substring",
@@ -1790,31 +1949,62 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             BuiltinMethod::MapIsEmpty => "lift_map_is_empty",
         };
 
-        // Call runtime function
-        let func_ref = runtime_funcs.get(runtime_func_name)
-            .ok_or_else(|| format!("Runtime function not found: {}", runtime_func_name))?;
+            // Call runtime function
+            let func_ref = runtime_funcs.get(runtime_func_name)
+                .ok_or_else(|| format!("Runtime function not found: {}", runtime_func_name))?;
 
-        let inst = builder.ins().call(*func_ref, &arg_vals);
+            let inst = builder.ins().call(*func_ref, &arg_vals);
 
-        // Handle return value (some methods return i8 booleans that need extending to i64)
-        let results = builder.inst_results(inst);
-        if results.is_empty() {
-            Ok(None)
-        } else {
-            let result = results[0];
-            // Convert i8 bool to i64 if needed
-            let needs_extension = matches!(builtin,
-                BuiltinMethod::StrContains | BuiltinMethod::StrStartsWith |
-                BuiltinMethod::StrEndsWith | BuiltinMethod::StrIsEmpty |
-                BuiltinMethod::ListContains | BuiltinMethod::ListIsEmpty |
-                BuiltinMethod::MapContainsKey | BuiltinMethod::MapIsEmpty
-            );
-
-            if needs_extension {
-                let extended = builder.ins().uextend(types::I64, result);
-                Ok(Some(extended))
+            // Handle return value (some methods return i8 booleans that need extending to i64)
+            let results = builder.inst_results(inst);
+            if results.is_empty() {
+                Ok(None)
             } else {
-                Ok(Some(result))
+                let result = results[0];
+                // Convert i8 bool to i64 if needed
+                let needs_extension = matches!(builtin,
+                    BuiltinMethod::StrContains | BuiltinMethod::StrStartsWith |
+                    BuiltinMethod::StrEndsWith | BuiltinMethod::StrIsEmpty |
+                    BuiltinMethod::ListContains | BuiltinMethod::ListIsEmpty |
+                    BuiltinMethod::MapContainsKey | BuiltinMethod::MapIsEmpty
+                );
+
+                if needs_extension {
+                    let extended = builder.ins().uextend(types::I64, result);
+                    Ok(Some(extended))
+                } else {
+                    Ok(Some(result))
+                }
+            }
+        } else {
+            // User-defined method - look it up and call as function
+            // Try the original type name first (for methods defined on type aliases)
+            let original_type_name = match &receiver_type_raw {
+                DataType::TypeRef(name) => Some(name.as_str()),
+                _ => None,
+            };
+
+            // Build candidate method names: try original type first, then resolved type
+            let resolved_method_name = format!("{}.{}", type_name, method_name);
+            let func_ref = if let Some(orig_name) = original_type_name {
+                let original_method_name = format!("{}.{}", orig_name, method_name);
+                // Try original first
+                user_func_refs.get(&original_method_name)
+                    // Fall back to resolved type
+                    .or_else(|| user_func_refs.get(&resolved_method_name))
+                    .ok_or_else(|| format!("Undefined method: {} (also tried {})", original_method_name, resolved_method_name))?
+            } else {
+                // No type alias, just use resolved type name
+                user_func_refs.get(&resolved_method_name)
+                    .ok_or_else(|| format!("Undefined method: {}", resolved_method_name))?
+            };
+
+            let inst = builder.ins().call(*func_ref, &arg_vals);
+            let results = builder.inst_results(inst);
+            if results.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(results[0]))
             }
         }
     }
