@@ -22,6 +22,9 @@ impl JITCompiler {
         builder.symbol("lift_output_float", runtime::lift_output_float as *const u8);
         builder.symbol("lift_output_bool", runtime::lift_output_bool as *const u8);
         builder.symbol("lift_output_str", runtime::lift_output_str as *const u8);
+        builder.symbol("lift_output_newline", runtime::lift_output_newline as *const u8);
+        builder.symbol("lift_output_list", runtime::lift_output_list as *const u8);
+        builder.symbol("lift_output_map", runtime::lift_output_map as *const u8);
         builder.symbol("lift_str_new", runtime::lift_str_new as *const u8);
         builder.symbol("lift_str_concat", runtime::lift_str_concat as *const u8);
         builder.symbol("lift_str_len", runtime::lift_str_len as *const u8);

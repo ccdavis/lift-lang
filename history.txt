@@ -78,3 +78,6 @@ output('hi')
 \nlet x=3
 if x>2 { output('hi') } else {output('there')}
 let m = [1,2,3,4,5]
+{let x = 42; x}
+output([1, 2, 3])
+output(excited)               // 'WOW!'

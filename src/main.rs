@@ -395,6 +395,9 @@ fn interpret_code(code: &str) -> Result<(), Box<dyn error::Error>> {
 }
 
 fn compile_code(code: &str) -> Result<(), Box<dyn error::Error>> {
+    use syntax::DataType;
+    use semantic_analysis::determine_type_with_symbols;
+
     let parser = grammar::ProgramParser::new();
     let mut ast = match parser.parse(code) {
         Err(e) => {
@@ -412,10 +415,30 @@ fn compile_code(code: &str) -> Result<(), Box<dyn error::Error>> {
         std::process::exit(2);
     }
 
+    // Get the expression type before compilation
+    let expr_type = determine_type_with_symbols(&ast, &symbols, 0).unwrap_or(DataType::Unsolved);
+
     // Compile and run
     let mut jit = compiler::JITCompiler::new()?;
     let result = jit.compile_and_run(&ast, &symbols)?;
-    println!("{}", result);
+
+    // Format output to match interpreter
+    match expr_type {
+        DataType::Unsolved => println!("Unit"),
+        DataType::Int => println!("{}", result),
+        DataType::Flt => {
+            let float_val = f64::from_bits(result as u64);
+            println!("{}", float_val);
+        }
+        DataType::Bool => {
+            println!("{}", if result != 0 { "true" } else { "false" });
+        }
+        _ => {
+            // For complex types (Str, List, Map, Range), the result is a pointer
+            // These types should have already been output by lift_output_* functions
+            // So we print nothing (they handle their own output)
+        }
+    }
     Ok(())
 }
 

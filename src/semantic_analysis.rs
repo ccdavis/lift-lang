@@ -70,6 +70,29 @@ impl std::fmt::Display for CompileError {
 }
 impl std::error::Error for CompileError {}
 
+/// Helper: Resolve TypeRef to underlying type
+fn resolve_type_alias(data_type: &DataType, symbols: &SymbolTable) -> DataType {
+    let mut resolved = data_type.clone();
+    let mut visited = std::collections::HashSet::new();
+
+    while let DataType::TypeRef(name) = &resolved {
+        // Prevent infinite loops
+        if !visited.insert(name.clone()) {
+            break;
+        }
+
+        // Look up the type using lookup_type
+        if let Some(underlying_type) = symbols.lookup_type(name, 0) {
+            resolved = underlying_type;
+        } else {
+            // Type not found, leave as TypeRef
+            break;
+        }
+    }
+
+    resolved
+}
+
 // This adds symbols for the current scope and the child scopes, plus updates the index (scope id, symbol id) on the expr
 pub fn add_symbols(
     e: &mut Expr,
@@ -1186,15 +1209,15 @@ pub fn typecheck(
         Expr::Lambda { value: func, .. } => {
             // Type check the body in a new scope
             let body_type = typecheck(&func.body, symbols, _current_scope_id)?;
-            
-            // Check return type matches if specified
-            if !matches!(func.return_type, DataType::Unsolved) && !types_compatible(&func.return_type, &body_type) {
+
+            // Check return type matches if specified (resolve type aliases for comparison)
+            if !matches!(func.return_type, DataType::Unsolved) && !types_compatible_with_resolution(&func.return_type, &body_type, symbols, _current_scope_id)? {
                 return Err(CompileError::typecheck(
                     &format!("Function body returns {body_type:?} but return type is {:?}", func.return_type),
                     (0, 0),
                 ));
             }
-            
+
             Ok(DataType::Unsolved) // Lambda expressions themselves don't have a simple type representation yet
         }
         
@@ -1456,15 +1479,21 @@ pub fn determine_type_with_symbols(
                                 match return_type {
                                     DataType::Unsolved => {
                                         // Methods that return the element type (first, last)
-                                        if let Some(DataType::List { element_type }) = determine_type_with_symbols(receiver, symbols, _scope) {
-                                            return Some(*element_type);
+                                        if let Some(receiver_type_raw) = determine_type_with_symbols(receiver, symbols, _scope) {
+                                            let receiver_type = resolve_type_alias(&receiver_type_raw, symbols);
+                                            if let DataType::List { element_type } = receiver_type {
+                                                return Some(*element_type);
+                                            }
                                         }
                                         Some(DataType::Unsolved)
                                     }
                                     DataType::List { ref element_type } if matches!(**element_type, DataType::Unsolved) => {
                                         // Methods that return a list with the same element type (slice, reverse)
-                                        if let Some(DataType::List { element_type }) = determine_type_with_symbols(receiver, symbols, _scope) {
-                                            return Some(DataType::List { element_type });
+                                        if let Some(receiver_type_raw) = determine_type_with_symbols(receiver, symbols, _scope) {
+                                            let receiver_type = resolve_type_alias(&receiver_type_raw, symbols);
+                                            if let DataType::List { element_type } = receiver_type {
+                                                return Some(DataType::List { element_type });
+                                            }
                                         }
                                         Some(return_type)
                                     }
@@ -1480,15 +1509,21 @@ pub fn determine_type_with_symbols(
                         match return_type {
                             DataType::Unsolved => {
                                 // Methods that return the element type (first, last)
-                                if let Some(DataType::List { element_type }) = determine_type_with_symbols(receiver, symbols, _scope) {
-                                    return Some(*element_type);
+                                if let Some(receiver_type_raw) = determine_type_with_symbols(receiver, symbols, _scope) {
+                                    let receiver_type = resolve_type_alias(&receiver_type_raw, symbols);
+                                    if let DataType::List { element_type } = receiver_type {
+                                        return Some(*element_type);
+                                    }
                                 }
                                 Some(DataType::Unsolved)
                             }
                             DataType::List { ref element_type } if matches!(**element_type, DataType::Unsolved) => {
                                 // Methods that return a list with the same element type (slice, reverse)
-                                if let Some(DataType::List { element_type }) = determine_type_with_symbols(receiver, symbols, _scope) {
-                                    return Some(DataType::List { element_type });
+                                if let Some(receiver_type_raw) = determine_type_with_symbols(receiver, symbols, _scope) {
+                                    let receiver_type = resolve_type_alias(&receiver_type_raw, symbols);
+                                    if let DataType::List { element_type } = receiver_type {
+                                        return Some(DataType::List { element_type });
+                                    }
                                 }
                                 Some(return_type)
                             }
@@ -1511,10 +1546,15 @@ pub fn determine_type_with_symbols(
         }
         
         Expr::Index { expr, .. } => {
-            match determine_type_with_symbols(expr, symbols, _scope)? {
-                DataType::List { element_type } => Some(*element_type),
-                DataType::Map { value_type, .. } => Some(*value_type),
-                _ => None,
+            if let Some(expr_type_raw) = determine_type_with_symbols(expr, symbols, _scope) {
+                let expr_type = resolve_type_alias(&expr_type_raw, symbols);
+                match expr_type {
+                    DataType::List { element_type } => Some(*element_type),
+                    DataType::Map { value_type, .. } => Some(*value_type),
+                    _ => None,
+                }
+            } else {
+                None
             }
         }
         
@@ -1544,7 +1584,16 @@ pub fn determine_type_with_symbols(
                 Some(DataType::Unsolved) // Empty block returns Unit
             }
         }
-        
+
+        Expr::Program { body, .. } => {
+            // Program type is the type of its last expression
+            if let Some(last_expr) = body.last() {
+                determine_type_with_symbols(last_expr, symbols, _scope)
+            } else {
+                Some(DataType::Unsolved) // Empty program returns Unit
+            }
+        }
+
         Expr::UnaryExpr { op: Operator::Not, .. } => Some(DataType::Bool),
 
         Expr::Len { .. } => Some(DataType::Int),
