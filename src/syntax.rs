@@ -708,6 +708,24 @@ pub enum Expr {
         value_type: DataType,
         data: HashMap<KeyData, Expr>,
     },
+    StructLiteral {
+        type_name: String,
+        fields: Vec<(String, Expr)>,  // field_name -> value expression
+    },
+    RuntimeStruct {
+        type_name: String,
+        fields: HashMap<String, Expr>,  // field_name -> runtime value
+    },
+    FieldAccess {
+        expr: Box<Expr>,
+        field_name: String,
+    },
+    FieldAssign {
+        expr: Box<Expr>,
+        field_name: String,
+        value: Box<Expr>,
+        index: (usize, usize),
+    },
 
     BinaryExpr {
         left: Box<Expr>,
@@ -832,6 +850,30 @@ impl std::fmt::Display for Expr {
                     .collect();
                 pairs.sort(); // For consistent output
                 write!(f, "{{{}}}", pairs.join(","))
+            }
+            Expr::StructLiteral { type_name, fields } => {
+                write!(f, "{} {{ ", type_name)?;
+                for (i, (name, value)) in fields.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}: {}", name, value)?;
+                }
+                write!(f, " }}")
+            }
+            Expr::RuntimeStruct { type_name, fields } => {
+                write!(f, "{} {{ ", type_name)?;
+                let mut sorted_fields: Vec<_> = fields.iter().collect();
+                sorted_fields.sort_by_key(|(name, _)| *name);
+                for (i, (name, value)) in sorted_fields.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}: {}", name, value)?;
+                }
+                write!(f, " }}")
+            }
+            Expr::FieldAccess { expr, field_name } => {
+                write!(f, "{}.{}", expr, field_name)
+            }
+            Expr::FieldAssign { expr, field_name, value, .. } => {
+                write!(f, "{}.{} := {}", expr, field_name, value)
             }
             Expr::Range(start, end) => {
                 write!(f, "{}..{}", start, end)

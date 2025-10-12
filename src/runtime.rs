@@ -13,6 +13,7 @@ pub const TYPE_STR: i8 = 3;
 pub const TYPE_LIST: i8 = 4;
 pub const TYPE_MAP: i8 = 5;
 pub const TYPE_RANGE: i8 = 6;
+pub const TYPE_STRUCT: i8 = 7;
 
 // ============================================================================
 // Output Functions
@@ -127,6 +128,12 @@ unsafe fn format_value_inline(val: i64, type_tag: i8) {
             let map_ptr = val as *const LiftMap;
             if !map_ptr.is_null() {
                 format_map_inline(map_ptr);
+            }
+        }
+        TYPE_STRUCT => {
+            let struct_ptr = val as *const LiftStruct;
+            if !struct_ptr.is_null() {
+                format_struct_inline(struct_ptr);
             }
         }
         _ => print!("{}", val),
@@ -629,6 +636,295 @@ pub extern "C" fn lift_output_range(range: *const LiftRange) {
     unsafe {
         let range_ref = &*range;
         print!("{}..{} ", range_ref.start, range_ref.end);
+    }
+}
+
+// ============================================================================
+// Struct Functions
+// ============================================================================
+
+/// Field value with type information
+#[derive(Debug, Clone)]
+pub(crate) struct StructFieldValue {
+    pub type_tag: i8,
+    pub value: i64,
+}
+
+/// Runtime representation of a struct
+#[repr(C)]
+pub struct LiftStruct {
+    pub type_name: String,
+    pub fields: HashMap<String, StructFieldValue>,
+}
+
+/// Create a new struct with given type name and field capacity
+#[no_mangle]
+pub extern "C" fn lift_struct_new(type_name: *const c_char, field_count: i64) -> *mut LiftStruct {
+    if type_name.is_null() {
+        return std::ptr::null_mut();
+    }
+
+    unsafe {
+        let c_str = std::ffi::CStr::from_ptr(type_name);
+        if let Ok(name_str) = c_str.to_str() {
+            let cap = field_count.max(0) as usize;
+            let lift_struct = Box::new(LiftStruct {
+                type_name: name_str.to_string(),
+                fields: HashMap::with_capacity(cap),
+            });
+            return Box::into_raw(lift_struct);
+        }
+    }
+    std::ptr::null_mut()
+}
+
+/// Set a field value in a struct
+#[no_mangle]
+pub extern "C" fn lift_struct_set_field(
+    s: *mut LiftStruct,
+    field_name: *const c_char,
+    type_tag: i8,
+    value: i64
+) {
+    if s.is_null() || field_name.is_null() {
+        return;
+    }
+
+    unsafe {
+        let struct_ref = &mut *s;
+        let c_str = std::ffi::CStr::from_ptr(field_name);
+        if let Ok(name_str) = c_str.to_str() {
+            struct_ref.fields.insert(
+                name_str.to_string(),
+                StructFieldValue { type_tag, value }
+            );
+        }
+    }
+}
+
+/// Get a field value from a struct
+#[no_mangle]
+pub extern "C" fn lift_struct_get_field(
+    s: *const LiftStruct,
+    field_name: *const c_char
+) -> i64 {
+    if s.is_null() || field_name.is_null() {
+        return 0;
+    }
+
+    unsafe {
+        let struct_ref = &*s;
+        let c_str = std::ffi::CStr::from_ptr(field_name);
+        if let Ok(name_str) = c_str.to_str() {
+            if let Some(field_value) = struct_ref.fields.get(name_str) {
+                return field_value.value;
+            }
+        }
+    }
+    0
+}
+
+/// Get the type tag of a field in a struct
+#[no_mangle]
+pub extern "C" fn lift_struct_get_field_type(
+    s: *const LiftStruct,
+    field_name: *const c_char
+) -> i8 {
+    if s.is_null() || field_name.is_null() {
+        return -1;
+    }
+
+    unsafe {
+        let struct_ref = &*s;
+        let c_str = std::ffi::CStr::from_ptr(field_name);
+        if let Ok(name_str) = c_str.to_str() {
+            if let Some(field_value) = struct_ref.fields.get(name_str) {
+                return field_value.type_tag;
+            }
+        }
+    }
+    -1
+}
+
+/// Free a struct
+#[no_mangle]
+pub extern "C" fn lift_struct_free(s: *mut LiftStruct) {
+    if !s.is_null() {
+        unsafe {
+            let _ = Box::from_raw(s);
+            // HashMap and String will be automatically dropped
+        }
+    }
+}
+
+/// Format a struct inline (without trailing space) for nested collections
+unsafe fn format_struct_inline(ptr: *const LiftStruct) {
+    if ptr.is_null() {
+        print!("{{}}");
+        return;
+    }
+    let s = &*ptr;
+    print!("{} {{", s.type_name);
+
+    // Sort fields by name for consistent output
+    let mut field_names: Vec<&String> = s.fields.keys().collect();
+    field_names.sort();
+
+    for (i, field_name) in field_names.iter().enumerate() {
+        if i > 0 {
+            print!(",");
+        }
+        let field_value = &s.fields[*field_name];
+        print!("{}:", field_name);
+        format_value_inline(field_value.value, field_value.type_tag);
+    }
+    print!("}}");
+}
+
+/// Output a struct (pretty-print with trailing space)
+#[no_mangle]
+pub extern "C" fn lift_output_struct(s: *const LiftStruct) {
+    if s.is_null() {
+        print!("{{}} ");
+        return;
+    }
+    unsafe {
+        format_struct_inline(s);
+        print!(" ");
+    }
+}
+
+/// Helper function to recursively compare two values for equality
+unsafe fn compare_values_for_equality(val1: i64, type_tag1: i8, val2: i64, type_tag2: i8) -> bool {
+    // Different types are not equal
+    if type_tag1 != type_tag2 {
+        return false;
+    }
+
+    match type_tag1 {
+        TYPE_INT => val1 == val2,
+        TYPE_FLT => {
+            let f1 = f64::from_bits(val1 as u64);
+            let f2 = f64::from_bits(val2 as u64);
+            f1 == f2
+        }
+        TYPE_BOOL => val1 == val2,
+        TYPE_STR => {
+            let ptr1 = val1 as *const c_char;
+            let ptr2 = val2 as *const c_char;
+            lift_str_eq(ptr1, ptr2) != 0
+        }
+        TYPE_STRUCT => {
+            let s1 = val1 as *const LiftStruct;
+            let s2 = val2 as *const LiftStruct;
+            lift_struct_eq(s1, s2) != 0
+        }
+        TYPE_LIST => {
+            let list1 = val1 as *const LiftList;
+            let list2 = val2 as *const LiftList;
+            if list1.is_null() && list2.is_null() {
+                return true;
+            }
+            if list1.is_null() || list2.is_null() {
+                return false;
+            }
+            let l1 = &*list1;
+            let l2 = &*list2;
+            if l1.elem_type != l2.elem_type || l1.elements.len() != l2.elements.len() {
+                return false;
+            }
+            for i in 0..l1.elements.len() {
+                if !compare_values_for_equality(l1.elements[i], l1.elem_type, l2.elements[i], l2.elem_type) {
+                    return false;
+                }
+            }
+            true
+        }
+        TYPE_MAP => {
+            let map1 = val1 as *const LiftMap;
+            let map2 = val2 as *const LiftMap;
+            if map1.is_null() && map2.is_null() {
+                return true;
+            }
+            if map1.is_null() || map2.is_null() {
+                return false;
+            }
+            let m1 = &*map1;
+            let m2 = &*map2;
+            if m1.key_type != m2.key_type || m1.value_type != m2.value_type || m1.entries.len() != m2.entries.len() {
+                return false;
+            }
+            for (key, val1) in &m1.entries {
+                match m2.entries.get(key) {
+                    Some(val2) => {
+                        if !compare_values_for_equality(*val1, m1.value_type, *val2, m2.value_type) {
+                            return false;
+                        }
+                    }
+                    None => return false,
+                }
+            }
+            true
+        }
+        TYPE_RANGE => {
+            let r1 = val1 as *const LiftRange;
+            let r2 = val2 as *const LiftRange;
+            if r1.is_null() && r2.is_null() {
+                return true;
+            }
+            if r1.is_null() || r2.is_null() {
+                return false;
+            }
+            let range1 = &*r1;
+            let range2 = &*r2;
+            range1.start == range2.start && range1.end == range2.end
+        }
+        _ => val1 == val2, // Fallback for unknown types
+    }
+}
+
+/// Compare two structs for structural equality
+#[no_mangle]
+pub extern "C" fn lift_struct_eq(s1: *const LiftStruct, s2: *const LiftStruct) -> i8 {
+    if s1.is_null() && s2.is_null() {
+        return 1;
+    }
+    if s1.is_null() || s2.is_null() {
+        return 0;
+    }
+
+    unsafe {
+        let struct1 = &*s1;
+        let struct2 = &*s2;
+
+        // Check type names match
+        if struct1.type_name != struct2.type_name {
+            return 0;
+        }
+
+        // Check same number of fields
+        if struct1.fields.len() != struct2.fields.len() {
+            return 0;
+        }
+
+        // Check all fields match
+        for (field_name, field_value1) in &struct1.fields {
+            match struct2.fields.get(field_name) {
+                Some(field_value2) => {
+                    if !compare_values_for_equality(
+                        field_value1.value,
+                        field_value1.type_tag,
+                        field_value2.value,
+                        field_value2.type_tag
+                    ) {
+                        return 0;
+                    }
+                }
+                None => return 0, // Field not found in second struct
+            }
+        }
+
+        1 // All fields match
     }
 }
 

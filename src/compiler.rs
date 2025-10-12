@@ -1,6 +1,6 @@
 // JIT Compiler for Lift language using Cranelift
 
-use crate::codegen::CodeGenerator;
+use crate::cranelift::CodeGenerator;
 use crate::runtime;
 use crate::syntax::Expr;
 use crate::symboltable::SymbolTable;
@@ -68,6 +68,15 @@ impl JITCompiler {
         builder.symbol("lift_map_values", runtime::lift_map_values as *const u8);
         builder.symbol("lift_map_contains_key", runtime::lift_map_contains_key as *const u8);
         builder.symbol("lift_map_is_empty", runtime::lift_map_is_empty as *const u8);
+
+        // Struct symbols
+        builder.symbol("lift_struct_new", runtime::lift_struct_new as *const u8);
+        builder.symbol("lift_struct_set_field", runtime::lift_struct_set_field as *const u8);
+        builder.symbol("lift_struct_get_field", runtime::lift_struct_get_field as *const u8);
+        builder.symbol("lift_struct_get_field_type", runtime::lift_struct_get_field_type as *const u8);
+        builder.symbol("lift_struct_eq", runtime::lift_struct_eq as *const u8);
+        builder.symbol("lift_output_struct", runtime::lift_output_struct as *const u8);
+        builder.symbol("lift_struct_free", runtime::lift_struct_free as *const u8);
 
         // Create the JIT module
         let module = JITModule::new(builder);

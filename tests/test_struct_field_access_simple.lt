@@ -1,0 +1,11 @@
+{
+    type Person = struct (name: Str, age: Int);
+
+    let alice = Person(name: 'Alice', age: 30);
+    let name: Str = alice.name;
+    let age: Int = alice.age;
+    output(name);
+    output(age);
+
+    42
+}

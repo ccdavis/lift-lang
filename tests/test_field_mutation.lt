@@ -1,0 +1,29 @@
+// Test: Field Mutation
+// Testing the ability to mutate struct fields
+
+type Person = struct (name: Str, age: Int);
+type Point = struct (x: Int, y: Int);
+
+// Test 1: Basic field mutation
+let var alice = Person(name: 'Alice', age: 30);
+output(alice);          // Should output: Person { age: 30, name: 'Alice' }
+
+alice.age := 31;
+output(alice);          // Should output: Person { age: 31, name: 'Alice' }
+
+// Test 2: Multiple field mutations
+let var origin = Point(x: 0, y: 0);
+output(origin);         // Should output: Point { x: 0, y: 0 }
+
+origin.x := 5;
+output(origin);         // Should output: Point { x: 5, y: 0 }
+
+origin.y := 10;
+output(origin);         // Should output: Point { x: 5, y: 10 }
+
+// Test 3: Immutable struct (should fail if uncommented)
+// let bob = Person(name: 'Bob', age: 25);
+// bob.age := 26;      // ERROR: Cannot assign to field of immutable struct
+
+// Return a value to verify the test ran
+42

@@ -49,8 +49,8 @@ ExprType: Expr = {
     "type" <i:ident> "="  "List" "of" <d:DataType> => Expr::DefineType {type_name: i,definition: DataType::List {element_type: Box::new(d)},index: (0,0)}.into(),
     "type" <i:ident> "=" "Map" "of" <k:DataType> "to" <v:DataType> => Expr::DefineType {type_name: i,definition: DataType::Map {key_type: Box::new(k), value_type: Box::new(v)},index: (0,0)}.into(),
     "type" <i:ident> "=" "Set" "of" <d:DataType> => Expr::DefineType { type_name: i, definition: DataType::Set(Box::new(d)), index: (0,0)},
-    "type" <i:ident> "=" "(" <e:CommaSeparated<ident>> ")"=> Expr::DefineType {type_name: i, definition: DataType::Enum(Vec::new()), index: (0,0)},
-    "type" <i:ident> "=" "struct"  "(" <m:CommaSeparated<Param>> ")" =>Expr::DefineType{type_name: i,definition: DataType::Struct(Vec::new()), index: (0,0)},
+    "type" <i:ident> "=" "(" <e:CommaSeparated<ident>> ")"=> Expr::DefineType {type_name: i, definition: DataType::Enum(e), index: (0,0)},
+    "type" <i:ident> "=" "struct"  "(" <m:CommaSeparated<Param>> ")" =>Expr::DefineType{type_name: i,definition: DataType::Struct(m), index: (0,0)},
 };
 
 ExprLet: Expr= {
@@ -106,7 +106,15 @@ ExprAssign = {
 };
 
 AssignResult: Expr  = {
+    // Simple variable assignment
     <v:ident> ":=" <p:ProgramPartExpr> => Expr::Assign { name: v.to_string(), value: Box::new(p), index: (0,0)}.into(),
+    // Field assignment: expr.field := value
+    <e:Postfix> "." <field:ident> ":=" <p:ProgramPartExpr> => Expr::FieldAssign {
+        expr: Box::new(e),
+        field_name: field,
+        value: Box::new(p),
+        index: (0, 0)
+    }.into(),
 };
 
 //DiscardResult: Expr = {
@@ -196,11 +204,15 @@ Postfix: Expr = {
         fn_index: (0, 0),
         args
     },
+    <e:Postfix> "." <field:ident> => Expr::FieldAccess {
+        expr: Box::new(e),
+        field_name: field,
+    },
     Atom,
 };
 
 Atom: Expr = {
-    "(" <e:ProgramPartExpr> ")" => e,    
+    "(" <e:ProgramPartExpr> ")" => e,
     LiteralData => Expr::Literal(<>),
     "[" <elements:CommaSeparated<ProgramPartExpr>> "]" => {
         Expr::ListLiteral {
@@ -215,12 +227,14 @@ Atom: Expr = {
             data: pairs,
         }
     },
+    // Function call or struct literal: name(arg: value, ...)
+    // We parse both as Call here; semantic analysis will convert to StructLiteral if name is a type
     <i:ident> "(" <a:CommaSeparated<KeywordArg>> ")" => Expr::Call{ fn_name:i, args: a, index: (0,0)},
     <v:ident> => Expr::Variable { name:v.to_string(), index: (0,0)},
 };
 
 KeywordArg: KeywordArg = {
-	<k:ident> ":" <e:ProgramPartExpr> => KeywordArg { name: k.to_string(),value: e}, 
+	<k:ident> ":" <e:ProgramPartExpr> => KeywordArg { name: k.to_string(),value: e},
 }
 
 MapPair: (KeyData, Expr) = {

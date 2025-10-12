@@ -1,0 +1,72 @@
+// Test: Struct Comparison
+// Testing equality and inequality operators on structs
+
+type Person = struct (name: Str, age: Int);
+type Point = struct (x: Int, y: Int);
+type Rectangle = struct (top_left: Point, bottom_right: Point);
+
+// Test 1: Basic struct equality - same values
+let alice1 = Person(name: 'Alice', age: 30);
+let alice2 = Person(name: 'Alice', age: 30);
+output(alice1 = alice2);     // Should output: true
+output(alice1 <> alice2);    // Should output: false
+
+// Test 2: Basic struct inequality - different values
+let bob = Person(name: 'Bob', age: 25);
+output(alice1 = bob);        // Should output: false
+output(alice1 <> bob);       // Should output: true
+
+// Test 3: Different field values
+let alice3 = Person(name: 'Alice', age: 31);
+output(alice1 = alice3);     // Should output: false (different age)
+output(alice1 <> alice3);    // Should output: true
+
+// Test 4: Nested struct comparison - equal
+let rect1 = Rectangle(
+    top_left: Point(x: 0, y: 10),
+    bottom_right: Point(x: 10, y: 0)
+);
+let rect2 = Rectangle(
+    top_left: Point(x: 0, y: 10),
+    bottom_right: Point(x: 10, y: 0)
+);
+output(rect1 = rect2);       // Should output: true
+output(rect1 <> rect2);      // Should output: false
+
+// Test 5: Nested struct comparison - different nested values
+let rect3 = Rectangle(
+    top_left: Point(x: 0, y: 10),
+    bottom_right: Point(x: 10, y: 5)  // Different y value
+);
+output(rect1 = rect3);       // Should output: false
+output(rect1 <> rect3);      // Should output: true
+
+// Test 6: Same values in variable expressions
+let p1 = Point(x: 5, y: 10);
+let p2 = Point(x: 5, y: 10);
+let are_equal = p1 = p2;
+let are_not_equal = p1 <> p2;
+output(are_equal);           // Should output: true
+output(are_not_equal);       // Should output: false
+
+// Test 7: Comparison in if expressions
+let person1 = Person(name: 'Charlie', age: 40);
+let person2 = Person(name: 'Charlie', age: 40);
+if person1 = person2 {
+    output('Persons are equal')
+} else {
+    output('Persons are not equal')
+};
+// Should output: 'Persons are equal'
+
+// Test 8: Comparison with mutation
+let var mutable_person = Person(name: 'Dave', age: 50);
+let immutable_person = Person(name: 'Dave', age: 50);
+output(mutable_person = immutable_person);  // Should output: true
+
+mutable_person.age := 51;
+output(mutable_person = immutable_person);  // Should output: false (age changed)
+output(mutable_person <> immutable_person); // Should output: true
+
+// Return value to verify test ran
+42

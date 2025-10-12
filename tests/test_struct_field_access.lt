@@ -1,0 +1,36 @@
+{
+    type Person = struct (name: Str, age: Int);
+    type Point = struct (x: Int, y: Int);
+
+    // Basic field access
+    let alice = Person(name: 'Alice', age: 30);
+    let name: Str = alice.name;
+    let age: Int = alice.age;
+    output(name);  // 'Alice'
+    output(age);   // 30
+
+    // Field access in expressions
+    let is_adult: Bool = alice.age >= 18;
+    output(is_adult);  // true
+
+    // Nested field access
+    type Rectangle = struct (top_left: Point, bottom_right: Point);
+    let rect = Rectangle(
+        top_left: Point(x: 0, y: 10),
+        bottom_right: Point(x: 10, y: 0)
+    );
+
+    let x1: Int = rect.top_left.x;
+    let y1: Int = rect.top_left.y;
+    output(x1);  // 0
+    output(y1);  // 10
+
+    // Field access as function argument
+    function greet(name: Str): Str {
+        'Hello, ' + name
+    };
+    let greeting: Str = greet(name: alice.name);
+    output(greeting);  // 'Hello, Alice'
+
+    42  // Return value for test
+}

@@ -1,0 +1,23 @@
+// Test struct type definitions and literal creation
+{
+    // Define a simple struct
+    type Person = struct (name: Str, age: Int);
+
+    // Define a struct with more fields
+    type Point = struct (x: Int, y: Int);
+
+    // Define a struct with different types
+    type Product = struct (name: Str, price: Flt, available: Bool);
+
+    // Create struct literals using the constructor syntax
+    let alice = Person(name: 'Alice', age: 30);
+    let origin = Point(x: 0, y: 0);
+    let widget = Product(name: 'Widget', price: 19.99, available: true);
+
+    // Output the structs to verify they work
+    output(alice);
+    output(origin);
+    output(widget);
+
+    42
+}

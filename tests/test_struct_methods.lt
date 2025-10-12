@@ -1,0 +1,30 @@
+// Test: Struct Methods (Simplified)
+// Testing if the existing method system works with user-defined structs
+
+type Person = struct (name: Str, age: Int);
+
+// Define a simple method on Person that returns a string
+function Person.greet(): Str {
+    'Hello, my name is ' + self.name
+};
+
+// Define a method that returns a boolean
+function Person.is_adult(): Bool {
+    self.age >= 18
+};
+
+// Define a method that accesses a field
+function Person.get_name(): Str {
+    self.name
+};
+
+// Create instances
+let alice = Person(name: 'Alice', age: 30);
+let bob = Person(name: 'Bob', age: 15);
+
+// Test method calls with dot notation
+output(alice.greet());           // Should output: Hello, my name is Alice
+output(bob.greet());             // Should output: Hello, my name is Bob
+output(alice.is_adult());        // Should output: true
+output(bob.is_adult());          // Should output: false
+output(alice.get_name());        // Should output: Alice
