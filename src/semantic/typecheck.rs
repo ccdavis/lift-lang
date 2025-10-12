@@ -1,9 +1,9 @@
 // Type Checking Module
 // Main dispatcher for type checking expressions
 
+use crate::semantic::{determine_type_with_symbols, resolve_type, CompileError};
 use crate::symboltable::SymbolTable;
 use crate::syntax::{DataType, Expr, KeyData, LiteralData, Operator};
-use crate::semantic::{CompileError, resolve_type, determine_type_with_symbols};
 
 const DEBUG: bool = false;
 
@@ -141,7 +141,11 @@ pub fn typecheck(
             }
         }
 
-        Expr::If { cond, then, final_else } => {
+        Expr::If {
+            cond,
+            then,
+            final_else,
+        } => {
             let cond_type = typecheck(cond, symbols, _current_scope_id)?;
             if !matches!(cond_type, DataType::Bool) {
                 return Err(CompileError::typecheck(
@@ -206,7 +210,13 @@ pub fn typecheck(
             }
         }
 
-        Expr::Let { var_name, value, data_type, index: _, mutable: _ } => {
+        Expr::Let {
+            var_name,
+            value,
+            data_type,
+            index: _,
+            mutable: _,
+        } => {
             // If a type is specified, use it and check the value is compatible
             if !matches!(data_type, DataType::Unsolved) {
                 // Resolve any TypeRef in the data_type
@@ -225,7 +235,12 @@ pub fn typecheck(
                     _ => {
                         // For non-empty values, check type compatibility
                         let value_type = typecheck(value, symbols, _current_scope_id)?;
-                        if !types_compatible_with_resolution(&resolved_type, &value_type, symbols, _current_scope_id)? {
+                        if !types_compatible_with_resolution(
+                            &resolved_type,
+                            &value_type,
+                            symbols,
+                            _current_scope_id,
+                        )? {
                             return Err(CompileError::typecheck(
                                 &format!("Type annotation mismatch for {var_name}: expected {:?}, got {value_type:?}", resolved_type),
                                 (0, 0),
@@ -237,7 +252,9 @@ pub fn typecheck(
             } else {
                 // No type annotation, must infer from value
                 // First try to infer using determine_type_with_symbols which handles special cases
-                if let Some(_inferred_type) = determine_type_with_symbols(value, symbols, _current_scope_id) {
+                if let Some(_inferred_type) =
+                    determine_type_with_symbols(value, symbols, _current_scope_id)
+                {
                     // Then verify with full typecheck
                     let value_type = typecheck(value, symbols, _current_scope_id)?;
                     if !matches!(value_type, DataType::Unsolved) {
@@ -252,7 +269,9 @@ pub fn typecheck(
                     // determine_type_with_symbols returned None, which means type cannot be inferred
                     // This handles cases like if without else
                     Err(CompileError::typecheck(
-                        &format!("Cannot infer type for '{var_name}'. Please provide a type annotation."),
+                        &format!(
+                            "Cannot infer type for '{var_name}'. Please provide a type annotation."
+                        ),
                         (0, 0),
                     ))
                 }
@@ -274,7 +293,9 @@ pub fn typecheck(
                     Ok(value_type)
                 } else {
                     Err(CompileError::typecheck(
-                        &format!("Cannot assign {value_type:?} to variable {name} of type {var_type:?}"),
+                        &format!(
+                            "Cannot assign {value_type:?} to variable {name} of type {var_type:?}"
+                        ),
                         (0, 0),
                     ))
                 }
@@ -286,7 +307,12 @@ pub fn typecheck(
             }
         }
 
-        Expr::FieldAssign { expr, field_name, value, index } => {
+        Expr::FieldAssign {
+            expr,
+            field_name,
+            value,
+            index,
+        } => {
             // 1. Check if the struct variable is mutable
             if !symbols.is_mutable(index) {
                 return Err(CompileError::typecheck(
@@ -307,19 +333,25 @@ pub fn typecheck(
 
             // 4. Verify it's a struct and get field type
             let field_type = match resolved_type {
-                DataType::Struct(params) => {
-                    params.iter()
-                        .find(|p| p.name == *field_name)
-                        .map(|p| p.data_type.clone())
-                        .ok_or_else(|| CompileError::typecheck(
+                DataType::Struct(params) => params
+                    .iter()
+                    .find(|p| p.name == *field_name)
+                    .map(|p| p.data_type.clone())
+                    .ok_or_else(|| {
+                        CompileError::typecheck(
                             &format!("Struct has no field '{}'", field_name),
-                            (0, 0)
-                        ))?
+                            (0, 0),
+                        )
+                    })?,
+                _ => {
+                    return Err(CompileError::typecheck(
+                        &format!(
+                            "Cannot assign to field '{}' on non-struct type {:?}",
+                            field_name, struct_type
+                        ),
+                        (0, 0),
+                    ))
                 }
-                _ => return Err(CompileError::typecheck(
-                    &format!("Cannot assign to field '{}' on non-struct type {:?}", field_name, struct_type),
-                    (0, 0)
-                ))
             };
 
             // 5. Type check the value
@@ -339,8 +371,11 @@ pub fn typecheck(
 
             if !types_compatible(&resolved_field_type, &resolved_value_type) {
                 return Err(CompileError::typecheck(
-                    &format!("Cannot assign {:?} to field '{}' of type {:?}", value_type, field_name, field_type),
-                    (0, 0)
+                    &format!(
+                        "Cannot assign {:?} to field '{}' of type {:?}",
+                        value_type, field_name, field_type
+                    ),
+                    (0, 0),
                 ));
             }
 
@@ -383,13 +418,15 @@ pub fn typecheck(
             })
         }
 
-        Expr::RuntimeList { data_type, data: _ } => {
-            Ok(DataType::List {
-                element_type: Box::new(data_type.clone()),
-            })
-        }
+        Expr::RuntimeList { data_type, data: _ } => Ok(DataType::List {
+            element_type: Box::new(data_type.clone()),
+        }),
 
-        Expr::MapLiteral { key_type, value_type, data } => {
+        Expr::MapLiteral {
+            key_type,
+            value_type,
+            data,
+        } => {
             // Infer key type if not specified
             let actual_key_type = if !matches!(key_type, DataType::Unsolved) {
                 key_type.clone()
@@ -424,7 +461,10 @@ pub fn typecheck(
                 let value_type_actual = typecheck(value, symbols, _current_scope_id)?;
                 if !types_compatible(&actual_value_type, &value_type_actual) {
                     return Err(CompileError::typecheck(
-                        &format!("Map value type mismatch: expected {:?}, got {:?}", actual_value_type, value_type_actual),
+                        &format!(
+                            "Map value type mismatch: expected {:?}, got {:?}",
+                            actual_value_type, value_type_actual
+                        ),
                         (0, 0),
                     ));
                 }
@@ -436,17 +476,21 @@ pub fn typecheck(
             })
         }
 
-        Expr::RuntimeMap { key_type, value_type, .. } => {
-            Ok(DataType::Map {
-                key_type: Box::new(key_type.clone()),
-                value_type: Box::new(value_type.clone()),
-            })
-        }
+        Expr::RuntimeMap {
+            key_type,
+            value_type,
+            ..
+        } => Ok(DataType::Map {
+            key_type: Box::new(key_type.clone()),
+            value_type: Box::new(value_type.clone()),
+        }),
 
         Expr::Range(start, end) => {
             // Range literals are always integers
             match (start, end) {
-                (LiteralData::Int(_), LiteralData::Int(_)) => Ok(DataType::Range(Box::new(Expr::Range(start.clone(), end.clone())))),
+                (LiteralData::Int(_), LiteralData::Int(_)) => Ok(DataType::Range(Box::new(
+                    Expr::Range(start.clone(), end.clone()),
+                ))),
                 _ => Err(CompileError::typecheck(
                     "Range literals must have integer bounds",
                     (0, 0),
@@ -454,25 +498,31 @@ pub fn typecheck(
             }
         }
 
-        Expr::Call { fn_name, index, args } => {
+        Expr::Call {
+            fn_name,
+            index,
+            args,
+        } => {
             // Get function type from symbol table
             if let Some(fn_expr) = symbols.get_symbol_value(index) {
                 // Extract the function from either DefineFunction or Lambda
                 let func = match fn_expr {
-                    Expr::DefineFunction { value, .. } => {
-                        match value.as_ref() {
-                            Expr::Lambda { value: f, .. } => f,
-                            _ => return Err(CompileError::typecheck(
+                    Expr::DefineFunction { value, .. } => match value.as_ref() {
+                        Expr::Lambda { value: f, .. } => f,
+                        _ => {
+                            return Err(CompileError::typecheck(
                                 &format!("{fn_name} is not a function"),
                                 (0, 0),
                             ))
                         }
-                    }
+                    },
                     Expr::Lambda { value: f, .. } => f,
-                    _ => return Err(CompileError::typecheck(
-                        &format!("{fn_name} is not a function"),
-                        (0, 0),
-                    ))
+                    _ => {
+                        return Err(CompileError::typecheck(
+                            &format!("{fn_name} is not a function"),
+                            (0, 0),
+                        ))
+                    }
                 };
 
                 // Check if this is a UFCS call (method called with function syntax)
@@ -482,7 +532,12 @@ pub fn typecheck(
                 let expected_arg_count = func.params.len();
                 if args.len() != expected_arg_count {
                     return Err(CompileError::typecheck(
-                        &format!("Function {} expects {} arguments, got {}", fn_name, expected_arg_count, args.len()),
+                        &format!(
+                            "Function {} expects {} arguments, got {}",
+                            fn_name,
+                            expected_arg_count,
+                            args.len()
+                        ),
                         (0, 0),
                     ));
                 }
@@ -514,7 +569,10 @@ pub fn typecheck(
                                 format!("argument {}", i + 1)
                             };
                             return Err(CompileError::typecheck(
-                                &format!("{} type mismatch: expected {:?}, got {:?}", arg_num_display, expected_type, arg_type),
+                                &format!(
+                                    "{} type mismatch: expected {:?}, got {:?}",
+                                    arg_num_display, expected_type, arg_type
+                                ),
                                 (0, 0),
                             ));
                         }
@@ -530,14 +588,22 @@ pub fn typecheck(
             }
         }
 
-        Expr::MethodCall { receiver, method_name, fn_index, args } => {
+        Expr::MethodCall {
+            receiver,
+            method_name,
+            fn_index,
+            args,
+        } => {
             if DEBUG {
                 println!("DEBUG: typecheck MethodCall - receiver: {:?}", receiver);
             }
             // Type check the receiver
             let receiver_type = typecheck(receiver, symbols, _current_scope_id)?;
             if DEBUG {
-                println!("DEBUG: typecheck MethodCall - receiver_type: {:?}", receiver_type);
+                println!(
+                    "DEBUG: typecheck MethodCall - receiver_type: {:?}",
+                    receiver_type
+                );
             }
 
             // Resolve TypeRef for type checking (keep original for error messages)
@@ -556,54 +622,68 @@ pub fn typecheck(
                     "upper" | "lower" => {
                         if !matches!(resolved_receiver_type, DataType::Str) {
                             return Err(CompileError::typecheck(
-                                &format!("{} can only be called on Str, got {:?}", method_name, receiver_type),
+                                &format!(
+                                    "{} can only be called on Str, got {:?}",
+                                    method_name, receiver_type
+                                ),
                                 (0, 0),
                             ));
                         }
                         if !args.is_empty() {
                             return Err(CompileError::typecheck(
-                                &format!("{} expects no arguments, got {}", method_name, args.len()),
+                                &format!(
+                                    "{} expects no arguments, got {}",
+                                    method_name,
+                                    args.len()
+                                ),
                                 (0, 0),
                             ));
                         }
                         Ok(DataType::Str)
                     }
-                    "first" | "last" => {
-                        match resolved_receiver_type {
-                            DataType::List { element_type } => {
-                                if !args.is_empty() {
-                                    return Err(CompileError::typecheck(
-                                        &format!("{} expects no arguments, got {}", method_name, args.len()),
-                                        (0, 0),
-                                    ));
-                                }
-                                Ok(*element_type)
+                    "first" | "last" => match resolved_receiver_type {
+                        DataType::List { element_type } => {
+                            if !args.is_empty() {
+                                return Err(CompileError::typecheck(
+                                    &format!(
+                                        "{} expects no arguments, got {}",
+                                        method_name,
+                                        args.len()
+                                    ),
+                                    (0, 0),
+                                ));
                             }
-                            _ => Err(CompileError::typecheck(
-                                &format!("{} can only be called on List, got {:?}", method_name, receiver_type),
-                                (0, 0),
-                            ))
+                            Ok(*element_type)
                         }
-                    }
-                    _ => Ok(DataType::Unsolved)
+                        _ => Err(CompileError::typecheck(
+                            &format!(
+                                "{} can only be called on List, got {:?}",
+                                method_name, receiver_type
+                            ),
+                            (0, 0),
+                        )),
+                    },
+                    _ => Ok(DataType::Unsolved),
                 }
             } else if let Some(fn_expr) = symbols.get_symbol_value(fn_index) {
                 // Extract the function from either DefineFunction or Lambda
                 let func = match fn_expr {
-                    Expr::DefineFunction { value, .. } => {
-                        match value.as_ref() {
-                            Expr::Lambda { value: f, .. } => f,
-                            _ => return Err(CompileError::typecheck(
+                    Expr::DefineFunction { value, .. } => match value.as_ref() {
+                        Expr::Lambda { value: f, .. } => f,
+                        _ => {
+                            return Err(CompileError::typecheck(
                                 &format!("{method_name} is not a method"),
                                 (0, 0),
                             ))
                         }
-                    }
+                    },
                     Expr::Lambda { value: f, .. } => f,
-                    _ => return Err(CompileError::typecheck(
-                        &format!("{method_name} is not a method"),
-                        (0, 0),
-                    ))
+                    _ => {
+                        return Err(CompileError::typecheck(
+                            &format!("{method_name} is not a method"),
+                            (0, 0),
+                        ))
+                    }
                 };
 
                 // For methods, first param is implicit self
@@ -616,7 +696,12 @@ pub fn typecheck(
 
                 if args.len() != expected_arg_count {
                     return Err(CompileError::typecheck(
-                        &format!("Method {} expects {} arguments, got {}", method_name, expected_arg_count, args.len()),
+                        &format!(
+                            "Method {} expects {} arguments, got {}",
+                            method_name,
+                            expected_arg_count,
+                            args.len()
+                        ),
                         (0, 0),
                     ));
                 }
@@ -634,7 +719,10 @@ pub fn typecheck(
 
                     if !types_compatible(&resolved_self_type, &resolved_receiver_type) {
                         return Err(CompileError::typecheck(
-                            &format!("Method receiver type mismatch: expected {:?}, got {:?}", self_param_type, receiver_type),
+                            &format!(
+                                "Method receiver type mismatch: expected {:?}, got {:?}",
+                                self_param_type, receiver_type
+                            ),
                             (0, 0),
                         ));
                     }
@@ -658,9 +746,16 @@ pub fn typecheck(
                         arg_type.clone()
                     };
 
-                    if !matches!(expected_type, DataType::Unsolved) && !types_compatible(&resolved_expected, &resolved_arg) {
+                    if !matches!(expected_type, DataType::Unsolved)
+                        && !types_compatible(&resolved_expected, &resolved_arg)
+                    {
                         return Err(CompileError::typecheck(
-                            &format!("Argument {} type mismatch: expected {:?}, got {:?}", i+1, expected_type, arg_type),
+                            &format!(
+                                "Argument {} type mismatch: expected {:?}, got {:?}",
+                                i + 1,
+                                expected_type,
+                                arg_type
+                            ),
                             (0, 0),
                         ));
                     }
@@ -680,9 +775,19 @@ pub fn typecheck(
             let body_type = typecheck(&func.body, symbols, _current_scope_id)?;
 
             // Check return type matches if specified (resolve type aliases for comparison)
-            if !matches!(func.return_type, DataType::Unsolved) && !types_compatible_with_resolution(&func.return_type, &body_type, symbols, _current_scope_id)? {
+            if !matches!(func.return_type, DataType::Unsolved)
+                && !types_compatible_with_resolution(
+                    &func.return_type,
+                    &body_type,
+                    symbols,
+                    _current_scope_id,
+                )?
+            {
                 return Err(CompileError::typecheck(
-                    &format!("Function body returns {body_type:?} but return type is {:?}", func.return_type),
+                    &format!(
+                        "Function body returns {body_type:?} but return type is {:?}",
+                        func.return_type
+                    ),
                     (0, 0),
                 ));
             }
@@ -703,11 +808,11 @@ pub fn typecheck(
                 Ok(DataType::Unsolved)
             } else {
                 // Type check all expressions
-                for expr in &body[..body.len()-1] {
+                for expr in &body[..body.len() - 1] {
                     typecheck(expr, symbols, *environment)?;
                 }
                 // Return the type of the last expression
-                typecheck(&body[body.len()-1], symbols, *environment)
+                typecheck(&body[body.len() - 1], symbols, *environment)
             }
         }
 
@@ -747,9 +852,12 @@ pub fn typecheck(
             match resolved_type {
                 DataType::Str | DataType::List { .. } | DataType::Map { .. } => Ok(DataType::Int),
                 _ => Err(CompileError::typecheck(
-                    &format!("len() requires Str, List, or Map argument, found {:?}", resolved_type),
+                    &format!(
+                        "len() requires Str, List, or Map argument, found {:?}",
+                        resolved_type
+                    ),
                     (0, 0),
-                ))
+                )),
             }
         }
 
@@ -768,12 +876,18 @@ pub fn typecheck(
                         ));
                     }
                     Ok(*element_type)
-                },
-                DataType::Map { key_type, value_type } => {
+                }
+                DataType::Map {
+                    key_type,
+                    value_type,
+                } => {
                     // For maps, index must match key type
                     if index_type != *key_type {
                         return Err(CompileError::typecheck(
-                            &format!("Map key must be of type {:?}, found {:?}", key_type, index_type),
+                            &format!(
+                                "Map key must be of type {:?}, found {:?}",
+                                key_type, index_type
+                            ),
                             (0, 0),
                         ));
                     }
@@ -787,38 +901,44 @@ pub fn typecheck(
                         _ => Err(CompileError::typecheck(
                             &format!("Invalid map key type: {:?}", index_type),
                             (0, 0),
-                        ))
+                        )),
                     }
-                },
+                }
                 _ => Err(CompileError::typecheck(
-                    &format!("Cannot index into type {:?}, only List and Map types can be indexed", expr_type),
+                    &format!(
+                        "Cannot index into type {:?}, only List and Map types can be indexed",
+                        expr_type
+                    ),
                     (0, 0),
-                ))
+                )),
             }
         }
 
         Expr::StructLiteral { type_name, fields } => {
             // Look up the struct type definition
-            let struct_def = symbols.lookup_type(type_name, _current_scope_id)
-                .ok_or_else(|| CompileError::name(
-                    &format!("Unknown struct type: {}", type_name),
-                    (0, 0)
-                ))?;
+            let struct_def = symbols
+                .lookup_type(type_name, _current_scope_id)
+                .ok_or_else(|| {
+                    CompileError::name(&format!("Unknown struct type: {}", type_name), (0, 0))
+                })?;
 
             // Extract field definitions from the struct type
             let expected_fields = match struct_def {
                 DataType::Struct(params) => params,
-                _ => return Err(CompileError::typecheck(
-                    &format!("{} is not a struct type", type_name),
-                    (0, 0)
-                ))
+                _ => {
+                    return Err(CompileError::typecheck(
+                        &format!("{} is not a struct type", type_name),
+                        (0, 0),
+                    ))
+                }
             };
 
             // Build a map of field names to their expected types
-            let mut expected_field_map: std::collections::HashMap<String, DataType> = expected_fields
-                .iter()
-                .map(|param| (param.name.clone(), param.data_type.clone()))
-                .collect();
+            let mut expected_field_map: std::collections::HashMap<String, DataType> =
+                expected_fields
+                    .iter()
+                    .map(|param| (param.name.clone(), param.data_type.clone()))
+                    .collect();
 
             // Check that all provided fields exist and have correct types
             for (field_name, field_value) in fields {
@@ -840,15 +960,17 @@ pub fn typecheck(
 
                     if !types_compatible(&resolved_expected, &resolved_actual) {
                         return Err(CompileError::typecheck(
-                            &format!("Field '{}' in struct '{}' has wrong type: expected {:?}, got {:?}",
-                                field_name, type_name, expected_type, actual_type),
-                            (0, 0)
+                            &format!(
+                                "Field '{}' in struct '{}' has wrong type: expected {:?}, got {:?}",
+                                field_name, type_name, expected_type, actual_type
+                            ),
+                            (0, 0),
                         ));
                     }
                 } else {
                     return Err(CompileError::typecheck(
                         &format!("Struct '{}' has no field named '{}'", type_name, field_name),
-                        (0, 0)
+                        (0, 0),
                     ));
                 }
             }
@@ -857,8 +979,11 @@ pub fn typecheck(
             if !expected_field_map.is_empty() {
                 let missing_fields: Vec<_> = expected_field_map.keys().collect();
                 return Err(CompileError::typecheck(
-                    &format!("Struct '{}' is missing required fields: {:?}", type_name, missing_fields),
-                    (0, 0)
+                    &format!(
+                        "Struct '{}' is missing required fields: {:?}",
+                        type_name, missing_fields
+                    ),
+                    (0, 0),
                 ));
             }
 
@@ -886,18 +1011,24 @@ pub fn typecheck(
             match resolved_type {
                 DataType::Struct(params) => {
                     // 4. Find the field and return its type
-                    params.iter()
+                    params
+                        .iter()
                         .find(|p| p.name == *field_name)
                         .map(|p| p.data_type.clone())
-                        .ok_or_else(|| CompileError::typecheck(
-                            &format!("Struct has no field '{}'", field_name),
-                            (0, 0)
-                        ))
+                        .ok_or_else(|| {
+                            CompileError::typecheck(
+                                &format!("Struct has no field '{}'", field_name),
+                                (0, 0),
+                            )
+                        })
                 }
                 _ => Err(CompileError::typecheck(
-                    &format!("Cannot access field '{}' on non-struct type {:?}", field_name, expr_type),
-                    (0, 0)
-                ))
+                    &format!(
+                        "Cannot access field '{}' on non-struct type {:?}",
+                        field_name, expr_type
+                    ),
+                    (0, 0),
+                )),
             }
         }
     }
@@ -915,9 +1046,16 @@ fn types_compatible(t1: &DataType, t2: &DataType) -> bool {
         (DataType::List { element_type: e1 }, DataType::List { element_type: e2 }) => {
             types_compatible(e1, e2)
         }
-        (DataType::Map { key_type: k1, value_type: v1 }, DataType::Map { key_type: k2, value_type: v2 }) => {
-            types_compatible(k1, k2) && types_compatible(v1, v2)
-        }
+        (
+            DataType::Map {
+                key_type: k1,
+                value_type: v1,
+            },
+            DataType::Map {
+                key_type: k2,
+                value_type: v2,
+            },
+        ) => types_compatible(k1, k2) && types_compatible(v1, v2),
         (DataType::Range(_), DataType::Range(_)) => {
             // For now, all ranges are compatible with each other
             // In the future we might want to check the bounds
@@ -964,11 +1102,20 @@ fn types_compatible_with_resolution(
         (DataType::List { element_type: e1 }, DataType::List { element_type: e2 }) => {
             types_compatible_with_resolution(e1, e2, symbols, scope)
         }
-        (DataType::Map { key_type: k1, value_type: v1 }, DataType::Map { key_type: k2, value_type: v2 }) => {
+        (
+            DataType::Map {
+                key_type: k1,
+                value_type: v1,
+            },
+            DataType::Map {
+                key_type: k2,
+                value_type: v2,
+            },
+        ) => {
             let keys_match = types_compatible_with_resolution(k1, k2, symbols, scope)?;
             let values_match = types_compatible_with_resolution(v1, v2, symbols, scope)?;
             Ok(keys_match && values_match)
         }
-        _ => Ok(types_compatible(&resolved_t1, &resolved_t2))
+        _ => Ok(types_compatible(&resolved_t1, &resolved_t2)),
     }
 }

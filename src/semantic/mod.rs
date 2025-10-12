@@ -3,17 +3,16 @@
 
 use crate::symboltable::SymbolTable;
 use crate::syntax::DataType;
-use crate::syntax::Expr;
 
 // Export submodules
 pub mod symbol_processing;
 pub mod type_inference;
 pub mod typecheck;
-pub mod typecheck_expr;
-pub mod typecheck_control;
 pub mod typecheck_collections;
-pub mod typecheck_structs;
+pub mod typecheck_control;
+pub mod typecheck_expr;
 pub mod typecheck_functions;
+pub mod typecheck_structs;
 
 // Re-export main public functions
 pub use symbol_processing::add_symbols;
@@ -128,22 +127,23 @@ pub fn resolve_type(
     scope: usize,
 ) -> Result<DataType, CompileError> {
     match data_type {
-        DataType::TypeRef(name) => {
-            match symbols.lookup_type(name, scope) {
-                Some(resolved_type) => Ok(resolved_type),
-                None => Err(CompileError::name(
-                    &format!("Unknown type: {}", name),
-                    (0, 0),
-                )),
-            }
-        }
+        DataType::TypeRef(name) => match symbols.lookup_type(name, scope) {
+            Some(resolved_type) => Ok(resolved_type),
+            None => Err(CompileError::name(
+                &format!("Unknown type: {}", name),
+                (0, 0),
+            )),
+        },
         DataType::List { element_type } => {
             let resolved_element = resolve_type(element_type, symbols, scope)?;
             Ok(DataType::List {
                 element_type: Box::new(resolved_element),
             })
         }
-        DataType::Map { key_type, value_type } => {
+        DataType::Map {
+            key_type,
+            value_type,
+        } => {
             let resolved_key = resolve_type(key_type, symbols, scope)?;
             let resolved_value = resolve_type(value_type, symbols, scope)?;
             Ok(DataType::Map {
@@ -180,9 +180,16 @@ pub(crate) fn types_compatible(t1: &DataType, t2: &DataType) -> bool {
         (DataType::List { element_type: e1 }, DataType::List { element_type: e2 }) => {
             types_compatible(e1, e2)
         }
-        (DataType::Map { key_type: k1, value_type: v1 }, DataType::Map { key_type: k2, value_type: v2 }) => {
-            types_compatible(k1, k2) && types_compatible(v1, v2)
-        }
+        (
+            DataType::Map {
+                key_type: k1,
+                value_type: v1,
+            },
+            DataType::Map {
+                key_type: k2,
+                value_type: v2,
+            },
+        ) => types_compatible(k1, k2) && types_compatible(v1, v2),
         (DataType::Range(_), DataType::Range(_)) => {
             // For now, all ranges are compatible with each other
             // In the future we might want to check the bounds
@@ -201,39 +208,5 @@ pub(crate) fn types_compatible(t1: &DataType, t2: &DataType) -> bool {
         // TypeRef compatibility - same name means compatible
         (DataType::TypeRef(name1), DataType::TypeRef(name2)) => name1 == name2,
         _ => false,
-    }
-}
-
-/// Helper to check type compatibility with optional symbol resolution
-pub(crate) fn types_compatible_with_resolution(
-    t1: &DataType,
-    t2: &DataType,
-    symbols: &SymbolTable,
-    scope: usize,
-) -> Result<bool, CompileError> {
-    // Resolve TypeRefs first
-    let resolved_t1 = if matches!(t1, DataType::TypeRef(_)) {
-        resolve_type(t1, symbols, scope)?
-    } else {
-        t1.clone()
-    };
-
-    let resolved_t2 = if matches!(t2, DataType::TypeRef(_)) {
-        resolve_type(t2, symbols, scope)?
-    } else {
-        t2.clone()
-    };
-
-    // For complex types, recursively resolve nested TypeRefs
-    match (&resolved_t1, &resolved_t2) {
-        (DataType::List { element_type: e1 }, DataType::List { element_type: e2 }) => {
-            types_compatible_with_resolution(e1, e2, symbols, scope)
-        }
-        (DataType::Map { key_type: k1, value_type: v1 }, DataType::Map { key_type: k2, value_type: v2 }) => {
-            let keys_match = types_compatible_with_resolution(k1, k2, symbols, scope)?;
-            let values_match = types_compatible_with_resolution(v1, v2, symbols, scope)?;
-            Ok(keys_match && values_match)
-        }
-        _ => Ok(types_compatible(&resolved_t1, &resolved_t2))
     }
 }

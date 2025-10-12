@@ -5,7 +5,6 @@
 
 // Type system and conversions
 mod types;
-pub(crate) use types::{VarInfo, data_type_to_type_tag};
 
 // Core code generator
 mod codegen;
@@ -15,8 +14,8 @@ pub use codegen::CodeGenerator;
 mod runtime;
 
 // Compilation methods organized by topic
-mod expressions;
-mod variables;
 mod collections;
-mod structs;
+mod expressions;
 mod functions;
+mod structs;
+mod variables;

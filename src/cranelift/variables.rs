@@ -1,9 +1,9 @@
 // Variable compilation methods for Cranelift code generation
 
-use super::CodeGenerator;
 use super::types::VarInfo;
-use crate::syntax::{Expr, DataType};
+use super::CodeGenerator;
 use crate::symboltable::SymbolTable;
+use crate::syntax::{DataType, Expr};
 use cranelift::prelude::*;
 use cranelift_codegen::ir::FuncRef;
 use cranelift_module::Module;
@@ -24,8 +24,15 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         use crate::semantic::determine_type_with_symbols;
 
         // Compile the value expression
-        let val = Self::compile_expr_static(builder, value, symbols, runtime_funcs, user_func_refs, variables)?
-            .ok_or_else(|| format!("Let binding for '{}' requires a value", var_name))?;
+        let val = Self::compile_expr_static(
+            builder,
+            value,
+            symbols,
+            runtime_funcs,
+            user_func_refs,
+            variables,
+        )?
+        .ok_or_else(|| format!("Let binding for '{}' requires a value", var_name))?;
 
         // Determine the Lift type from the Let's data_type if available, otherwise infer from value
         let lift_type_raw = if !matches!(data_type, DataType::Unsolved) {
@@ -46,20 +53,20 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         };
 
         // Create a stack slot for this variable (8 bytes for I64/F64/pointers)
-        let slot = builder.create_sized_stack_slot(StackSlotData::new(
-            StackSlotKind::ExplicitSlot,
-            8,
-            0,
-        ));
+        let slot =
+            builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 0));
 
         // Store the value in the stack slot
         builder.ins().stack_store(val, slot, 0);
 
         // Remember this variable's stack slot and type
-        variables.insert(var_name.to_string(), VarInfo {
-            slot,
-            cranelift_type,
-        });
+        variables.insert(
+            var_name.to_string(),
+            VarInfo {
+                slot,
+                cranelift_type,
+            },
+        );
 
         // Let expressions return Unit
         Ok(None)
@@ -77,7 +84,9 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             .ok_or_else(|| format!("Undefined variable: {}", name))?;
 
         // Load the value from the stack slot with the correct type
-        let val = builder.ins().stack_load(var_info.cranelift_type, var_info.slot, 0);
+        let val = builder
+            .ins()
+            .stack_load(var_info.cranelift_type, var_info.slot, 0);
         Ok(Some(val))
     }
 
@@ -92,8 +101,15 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         variables: &mut HashMap<String, VarInfo>,
     ) -> Result<Option<Value>, String> {
         // Compile the new value
-        let val = Self::compile_expr_static(builder, value, symbols, runtime_funcs, user_func_refs, variables)?
-            .ok_or_else(|| format!("Assignment to '{}' requires a value", name))?;
+        let val = Self::compile_expr_static(
+            builder,
+            value,
+            symbols,
+            runtime_funcs,
+            user_func_refs,
+            variables,
+        )?
+        .ok_or_else(|| format!("Assignment to '{}' requires a value", name))?;
 
         // Look up the variable's stack slot
         let var_info = variables

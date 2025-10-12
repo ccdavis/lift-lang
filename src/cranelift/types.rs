@@ -1,7 +1,7 @@
 // Type conversion utilities for Cranelift code generation
 
-use crate::syntax::DataType;
 use crate::symboltable::SymbolTable;
+use crate::syntax::DataType;
 use cranelift::prelude::*;
 use cranelift_codegen::ir::StackSlot;
 
@@ -9,21 +9,21 @@ use cranelift_codegen::ir::StackSlot;
 #[derive(Clone, Copy)]
 pub(crate) struct VarInfo {
     pub(crate) slot: StackSlot,
-    pub(crate) cranelift_type: Type,  // I64, F64, or pointer type
+    pub(crate) cranelift_type: Type, // I64, F64, or pointer type
 }
 
 /// Convert DataType to runtime type tag (matches constants in runtime.rs)
 pub(crate) fn data_type_to_type_tag(data_type: &DataType) -> i8 {
     match data_type {
-        DataType::Int => 0,      // TYPE_INT
-        DataType::Flt => 1,      // TYPE_FLT
-        DataType::Bool => 2,     // TYPE_BOOL
-        DataType::Str => 3,      // TYPE_STR
-        DataType::List { .. } => 4,  // TYPE_LIST
-        DataType::Map { .. } => 5,   // TYPE_MAP
-        DataType::Range(_) => 6,     // TYPE_RANGE
-        DataType::Struct(_) => 7,    // TYPE_STRUCT
-        _ => 0,  // Fallback to Int for unknown types
+        DataType::Int => 0,         // TYPE_INT
+        DataType::Flt => 1,         // TYPE_FLT
+        DataType::Bool => 2,        // TYPE_BOOL
+        DataType::Str => 3,         // TYPE_STR
+        DataType::List { .. } => 4, // TYPE_LIST
+        DataType::Map { .. } => 5,  // TYPE_MAP
+        DataType::Range(_) => 6,    // TYPE_RANGE
+        DataType::Struct(_) => 7,   // TYPE_STRUCT
+        _ => 0,                     // Fallback to Int for unknown types
     }
 }
 
@@ -36,12 +36,12 @@ pub(crate) fn data_type_to_cranelift_type(dt: &DataType, pointer_type: Type) -> 
         DataType::List { .. } => pointer_type,
         DataType::Map { .. } => pointer_type,
         DataType::Range(_) => pointer_type,
-        DataType::Unsolved => types::I64,  // Fallback
+        DataType::Unsolved => types::I64,      // Fallback
         DataType::TypeRef(_) => pointer_type,  // User-defined types treated as pointers for now
-        DataType::Optional(_) => pointer_type,  // Optionals treated as pointers
+        DataType::Optional(_) => pointer_type, // Optionals treated as pointers
         DataType::Set(_) => pointer_type,
-        DataType::Enum(_) => types::I64,  // Enums as integers
-        DataType::Struct(_) => pointer_type,  // Structs as pointers
+        DataType::Enum(_) => types::I64,     // Enums as integers
+        DataType::Struct(_) => pointer_type, // Structs as pointers
     }
 }
 

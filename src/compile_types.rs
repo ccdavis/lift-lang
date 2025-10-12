@@ -24,12 +24,13 @@ pub fn lift_type_to_cranelift(data_type: &DataType) -> Result<Type, String> {
 
         DataType::TypeRef(name) => {
             // User-defined types should be resolved by type checker
-            Err(format!("TypeRef {} should be resolved before compilation", name))
+            Err(format!(
+                "TypeRef {} should be resolved before compilation",
+                name
+            ))
         }
 
-        DataType::Unsolved => {
-            Err("Unsolved type should not reach compilation stage".to_string())
-        }
+        DataType::Unsolved => Err("Unsolved type should not reach compilation stage".to_string()),
 
         DataType::Set(_) => Ok(types::I64),
         DataType::Enum(_) => Ok(types::I64),
@@ -53,10 +54,7 @@ pub fn is_heap_type(data_type: &DataType) -> bool {
 
 /// Returns true if the type is a primitive value type
 pub fn is_value_type(data_type: &DataType) -> bool {
-    matches!(
-        data_type,
-        DataType::Int | DataType::Flt | DataType::Bool
-    )
+    matches!(data_type, DataType::Int | DataType::Flt | DataType::Bool)
 }
 
 #[cfg(test)]

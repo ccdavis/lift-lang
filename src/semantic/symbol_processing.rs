@@ -1,10 +1,10 @@
 // Symbol Processing Module
 // Handles symbol table population and AST annotation with symbol indices
 
+use super::type_inference::determine_type_with_symbols;
+use super::{resolve_type, CompileError, DEBUG};
 use crate::symboltable::SymbolTable;
 use crate::syntax::{DataType, Expr, Param};
-use super::{CompileError, resolve_type, DEBUG};
-use super::type_inference::determine_type_with_symbols;
 
 /// Adds symbols for the current scope and child scopes, and updates the index (scope id, symbol id) on the expr
 pub fn add_symbols(
@@ -93,25 +93,22 @@ pub fn add_symbols(
         } => {
             // First check if this is actually a struct literal (Type(field: value, ...))
             // rather than a function call
-            if let Some(type_def) = symbols.lookup_type(fn_name, _current_scope_id) {
-                // Check if it's a struct type
-                if let DataType::Struct(_params) = type_def {
-                    // This is a struct literal! Transform Call → StructLiteral
-                    // Process field values
-                    let mut field_pairs = Vec::new();
-                    for arg in args.iter_mut() {
-                        add_symbols(&mut arg.value, symbols, _current_scope_id)?;
-                        field_pairs.push((arg.name.clone(), arg.value.clone()));
-                    }
-
-                    // Replace the current expression with StructLiteral
-                    *e = Expr::StructLiteral {
-                        type_name: fn_name.clone(),
-                        fields: field_pairs,
-                    };
-                    return Ok(());
+            if let Some(DataType::Struct(_params)) = symbols.lookup_type(fn_name, _current_scope_id)
+            {
+                // This is a struct literal! Transform Call → StructLiteral
+                // Process field values
+                let mut field_pairs = Vec::new();
+                for arg in args.iter_mut() {
+                    add_symbols(&mut arg.value, symbols, _current_scope_id)?;
+                    field_pairs.push((arg.name.clone(), arg.value.clone()));
                 }
-                // If it's not a struct (e.g., a type alias), continue checking for functions
+
+                // Replace the current expression with StructLiteral
+                *e = Expr::StructLiteral {
+                    type_name: fn_name.clone(),
+                    fields: field_pairs,
+                };
+                return Ok(());
             }
 
             // Try to find the function directly
@@ -130,12 +127,17 @@ pub fn add_symbols(
                 let mut ufcs_found = false;
                 if let Some(first_arg) = args.first_mut() {
                     // Process the first argument to enable type determination
-                    if let Err(ref err) = add_symbols(&mut first_arg.value, symbols, _current_scope_id) {
-                        let new_msg = format!("Error on argument '{}': {}", first_arg.name, err.clone());
+                    if let Err(ref err) =
+                        add_symbols(&mut first_arg.value, symbols, _current_scope_id)
+                    {
+                        let new_msg =
+                            format!("Error on argument '{}': {}", first_arg.name, err.clone());
                         return Err(CompileError::structure(&new_msg, (0, 0)));
                     }
 
-                    if let Some(arg_type) = determine_type_with_symbols(&first_arg.value, symbols, _current_scope_id) {
+                    if let Some(arg_type) =
+                        determine_type_with_symbols(&first_arg.value, symbols, _current_scope_id)
+                    {
                         let type_name = match arg_type {
                             DataType::Str => "Str",
                             DataType::Int => "Int",
@@ -151,11 +153,17 @@ pub fn add_symbols(
                             let method_name = format!("{}.{}", type_name, fn_name);
 
                             // Check if it's a built-in method
-                            let is_builtin = matches!(fn_name.as_str(), "upper" | "lower" | "first" | "last");
+                            let is_builtin =
+                                matches!(fn_name.as_str(), "upper" | "lower" | "first" | "last");
 
-                            if let Some(found_index) = symbols.find_index_reachable_from(&method_name, _current_scope_id) {
+                            if let Some(found_index) =
+                                symbols.find_index_reachable_from(&method_name, _current_scope_id)
+                            {
                                 if DEBUG {
-                                    println!("DEBUG: UFCS - found method '{}' for call '{}'", method_name, fn_name);
+                                    println!(
+                                        "DEBUG: UFCS - found method '{}' for call '{}'",
+                                        method_name, fn_name
+                                    );
                                 }
                                 *index = found_index;
                                 ufcs_found = true;
@@ -198,17 +206,23 @@ pub fn add_symbols(
             add_symbols(receiver, symbols, _current_scope_id)?;
 
             if DEBUG {
-                println!("DEBUG: MethodCall - receiver after add_symbols: {:?}", receiver);
+                println!(
+                    "DEBUG: MethodCall - receiver after add_symbols: {:?}",
+                    receiver
+                );
             }
 
             // Determine the receiver's type to find the right method
             let receiver_type = determine_type_with_symbols(receiver, symbols, _current_scope_id)
                 .ok_or_else(|| {
-                    if DEBUG {
-                        println!("DEBUG: Failed to determine receiver type for: {:?}", receiver);
-                    }
-                    CompileError::typecheck("Cannot determine receiver type for method call", (0, 0))
-                })?;
+                if DEBUG {
+                    println!(
+                        "DEBUG: Failed to determine receiver type for: {:?}",
+                        receiver
+                    );
+                }
+                CompileError::typecheck("Cannot determine receiver type for method call", (0, 0))
+            })?;
 
             if DEBUG {
                 println!("DEBUG: MethodCall - receiver_type: {:?}", receiver_type);
@@ -226,12 +240,20 @@ pub fn add_symbols(
                 let full_method_name = format!("{}.{}", alias_name, method_name);
 
                 if DEBUG {
-                    println!("DEBUG: Looking for method '{}' on type alias", full_method_name);
+                    println!(
+                        "DEBUG: Looking for method '{}' on type alias",
+                        full_method_name
+                    );
                 }
 
-                if let Some(found_index) = symbols.find_index_reachable_from(&full_method_name, _current_scope_id) {
+                if let Some(found_index) =
+                    symbols.find_index_reachable_from(&full_method_name, _current_scope_id)
+                {
                     if DEBUG {
-                        println!("DEBUG: Found method '{}' at index {:?}", full_method_name, found_index);
+                        println!(
+                            "DEBUG: Found method '{}' at index {:?}",
+                            full_method_name, found_index
+                        );
                     }
                     *fn_index = found_index;
                     method_found = true;
@@ -255,7 +277,12 @@ pub fn add_symbols(
                     DataType::List { .. } => "List",
                     DataType::Map { .. } => "Map",
                     DataType::Range(_) => "Range",
-                    _ => return Err(CompileError::typecheck(&format!("Cannot call methods on type {:?}", resolved_type), (0, 0))),
+                    _ => {
+                        return Err(CompileError::typecheck(
+                            &format!("Cannot call methods on type {:?}", resolved_type),
+                            (0, 0),
+                        ))
+                    }
                 };
 
                 let full_method_name = format!("{}.{}", type_name, method_name);
@@ -265,9 +292,14 @@ pub fn add_symbols(
                 }
 
                 // Look up the method
-                if let Some(found_index) = symbols.find_index_reachable_from(&full_method_name, _current_scope_id) {
+                if let Some(found_index) =
+                    symbols.find_index_reachable_from(&full_method_name, _current_scope_id)
+                {
                     if DEBUG {
-                        println!("DEBUG: Found method '{}' at index {:?}", full_method_name, found_index);
+                        println!(
+                            "DEBUG: Found method '{}' at index {:?}",
+                            full_method_name, found_index
+                        );
                     }
                     *fn_index = found_index;
                     method_found = true;
@@ -288,8 +320,11 @@ pub fn add_symbols(
                 };
 
                 return Err(CompileError::name(
-                    &format!("Method '{}' not found for type '{}'", method_name, type_display),
-                    (0, 0)
+                    &format!(
+                        "Method '{}' not found for type '{}'",
+                        method_name, type_display
+                    ),
+                    (0, 0),
                 ));
             }
 
@@ -316,8 +351,18 @@ pub fn add_symbols(
                     "Int" => DataType::Int,
                     "Flt" => DataType::Flt,
                     "Bool" => DataType::Bool,
-                    "List" => return Err(CompileError::typecheck("Method on generic List requires type parameter", (0, 0))),
-                    "Map" => return Err(CompileError::typecheck("Method on generic Map requires type parameter", (0, 0))),
+                    "List" => {
+                        return Err(CompileError::typecheck(
+                            "Method on generic List requires type parameter",
+                            (0, 0),
+                        ))
+                    }
+                    "Map" => {
+                        return Err(CompileError::typecheck(
+                            "Method on generic Map requires type parameter",
+                            (0, 0),
+                        ))
+                    }
                     custom => DataType::TypeRef(custom.to_string()),
                 };
 
@@ -367,7 +412,7 @@ pub fn add_symbols(
                     data_type: p.data_type.clone(),
                     value: Box::new(Expr::Unit),
                     index: (0, 0),
-                    mutable: p.copy,  // Only mutable if marked with 'cpy'
+                    mutable: p.copy, // Only mutable if marked with 'cpy'
                 };
                 let new_symbol_id = symbols.add_symbol(&p.name, param_expr, new_scope_id)?;
                 p.index = (new_scope_id, new_symbol_id);
@@ -424,7 +469,9 @@ pub fn add_symbols(
 
             // If no type annotation, try to infer the type
             if matches!(data_type, DataType::Unsolved) {
-                if let Some(inferred_type) = determine_type_with_symbols(value, symbols, _current_scope_id) {
+                if let Some(inferred_type) =
+                    determine_type_with_symbols(value, symbols, _current_scope_id)
+                {
                     *data_type = inferred_type;
                 }
             }
@@ -444,7 +491,10 @@ pub fn add_symbols(
         }
         Expr::Return(ref mut e) => add_symbols(e, symbols, _current_scope_id)?,
 
-        Expr::ListLiteral { ref mut data, data_type: _ } => {
+        Expr::ListLiteral {
+            ref mut data,
+            data_type: _,
+        } => {
             // Add symbols for each element in the list
             for elem in data.iter_mut() {
                 add_symbols(elem, symbols, _current_scope_id)?;
@@ -452,7 +502,11 @@ pub fn add_symbols(
             // Note: data_type here refers to the element type, not the list type itself
             // We don't need to change it in add_symbols - it's handled in typecheck
         }
-        Expr::MapLiteral { ref mut data, key_type: _, value_type: _ } => {
+        Expr::MapLiteral {
+            ref mut data,
+            key_type: _,
+            value_type: _,
+        } => {
             // Add symbols for each value in the map
             for (_, value) in data.iter_mut() {
                 add_symbols(value, symbols, _current_scope_id)?;
@@ -462,7 +516,10 @@ pub fn add_symbols(
         Expr::Range(..) => {
             // Range literals don't need symbol processing
         }
-        Expr::Index { ref mut expr, ref mut index } => {
+        Expr::Index {
+            ref mut expr,
+            ref mut index,
+        } => {
             // Add symbols for both the expression being indexed and the index itself
             add_symbols(expr, symbols, _current_scope_id)?;
             add_symbols(index, symbols, _current_scope_id)?;
@@ -475,7 +532,11 @@ pub fn add_symbols(
             // Process the inner expression to handle any variables
             add_symbols(expr, symbols, _current_scope_id)?;
         }
-        Expr::Assign { ref name, ref mut value, ref mut index } => {
+        Expr::Assign {
+            ref name,
+            ref mut value,
+            ref mut index,
+        } => {
             // Process the value expression first
             add_symbols(value, symbols, _current_scope_id)?;
 
@@ -485,7 +546,7 @@ pub fn add_symbols(
             } else {
                 return Err(CompileError::name(
                     &format!("Cannot assign to undeclared variable '{}'", name),
-                    (0, 0)
+                    (0, 0),
                 ));
             }
         }
@@ -493,19 +554,28 @@ pub fn add_symbols(
             // Process the expression being accessed
             add_symbols(expr, symbols, _current_scope_id)?;
         }
-        Expr::FieldAssign { ref mut expr, field_name: _, ref mut value, ref mut index } => {
+        Expr::FieldAssign {
+            ref mut expr,
+            field_name: _,
+            ref mut value,
+            ref mut index,
+        } => {
             // Process both the expression (which should be a variable) and the value
             add_symbols(expr, symbols, _current_scope_id)?;
             add_symbols(value, symbols, _current_scope_id)?;
 
             // Find the variable index for mutability checking
             // The expr should be a Variable - extract its index
-            if let Expr::Variable { name, index: var_index } = expr.as_ref() {
+            if let Expr::Variable {
+                name: _,
+                index: var_index,
+            } = expr.as_ref()
+            {
                 *index = *var_index;
             } else {
                 return Err(CompileError::typecheck(
                     "Field assignment target must be a variable",
-                    (0, 0)
+                    (0, 0),
                 ));
             }
         }

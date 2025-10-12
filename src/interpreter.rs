@@ -65,7 +65,7 @@ impl Expr {
         if let Err(ref msg) = result {
             errors.push(msg.clone());
         }
-        
+
         // Type check the expression tree
         let type_result = typecheck(self, symbols, 0);
         if let Err(ref msg) = type_result {
@@ -124,7 +124,7 @@ impl Expr {
             } => {
                 // Generic call handling - works for both regular functions and UFCS method calls
                 interpret_call(symbols, current_scope, fn_name, *index, args)
-            },
+            }
             Expr::MethodCall {
                 ref receiver,
                 ref method_name,
@@ -137,20 +137,17 @@ impl Expr {
                 // Look up the method from the symbol table and extract builtin info
                 let builtin_method = if let Some(fn_expr) = symbols.get_symbol_value(fn_index) {
                     match fn_expr {
-                        Expr::DefineFunction { value, .. } => {
-                            match value.as_ref() {
-                                Expr::Lambda { value: func, .. } => {
-                                    func.builtin.clone()
-                                }
-                                _ => None
-                            }
-                        }
-                        _ => None
+                        Expr::DefineFunction { value, .. } => match value.as_ref() {
+                            Expr::Lambda { value: func, .. } => func.builtin.clone(),
+                            _ => None,
+                        },
+                        _ => None,
                     }
                 } else {
                     return Err(Box::new(RuntimeError::new(
                         &format!("Method '{}' not found in symbol table", method_name),
-                        None, None
+                        None,
+                        None,
                     )));
                 };
 
@@ -163,8 +160,12 @@ impl Expr {
                     }
 
                     // Execute the built-in method
-                    builtin.execute(receiver_value, evaluated_args)
-                        .map_err(|e| Box::new(RuntimeError::new(&e.to_string(), None, None)) as Box<dyn std::error::Error>)
+                    builtin
+                        .execute(receiver_value, evaluated_args)
+                        .map_err(|e| {
+                            Box::new(RuntimeError::new(&e.to_string(), None, None))
+                                as Box<dyn std::error::Error>
+                        })
                 } else {
                     // User-defined method - construct args with self
                     let mut all_args = vec![KeywordArg {
@@ -175,7 +176,7 @@ impl Expr {
 
                     interpret_call(symbols, current_scope, method_name, *fn_index, &all_args)
                 }
-            },
+            }
             Expr::Lambda {
                 ref value,
                 environment,
@@ -183,7 +184,10 @@ impl Expr {
             Expr::DefineFunction { .. } => Ok(Expr::Unit), // The function got assigned in an earlier compiler pass
             Expr::DefineType { .. } => Ok(Expr::Unit), // The type definition was registered in an earlier compiler pass
             Expr::Unit => Ok(Expr::Unit),
-            Expr::ListLiteral { ref data_type, ref data } => {
+            Expr::ListLiteral {
+                ref data_type,
+                ref data,
+            } => {
                 // Evaluate each element in the list and convert to runtime representation
                 let mut evaluated_elements = Vec::new();
                 for element in data {
@@ -193,8 +197,12 @@ impl Expr {
                     data_type: data_type.clone(),
                     data: evaluated_elements,
                 })
-            },
-            Expr::MapLiteral { ref key_type, ref value_type, ref data } => {
+            }
+            Expr::MapLiteral {
+                ref key_type,
+                ref value_type,
+                ref data,
+            } => {
                 // Evaluate each value in the map and convert to runtime representation
                 let mut evaluated_map = HashMap::new();
                 for (key, value) in data {
@@ -206,8 +214,11 @@ impl Expr {
                     value_type: value_type.clone(),
                     data: evaluated_map,
                 })
-            },
-            Expr::StructLiteral { ref type_name, ref fields } => {
+            }
+            Expr::StructLiteral {
+                ref type_name,
+                ref fields,
+            } => {
                 // Evaluate each field value and convert to runtime representation
                 let mut evaluated_fields = HashMap::new();
                 for (field_name, field_value) in fields {
@@ -218,7 +229,7 @@ impl Expr {
                     type_name: type_name.clone(),
                     fields: evaluated_fields,
                 })
-            },
+            }
             Expr::RuntimeList { .. } => Ok(self.clone()), // Already in runtime form
             Expr::RuntimeMap { .. } => Ok(self.clone()),  // Already in runtime form
             Expr::RuntimeStruct { .. } => Ok(self.clone()), // Already in runtime form
@@ -229,153 +240,181 @@ impl Expr {
                 // 2. Extract the field from the runtime struct
                 match struct_value {
                     Expr::RuntimeStruct { fields, .. } => {
-                        fields.get(field_name)
-                            .cloned()
-                            .ok_or_else(|| Box::new(RuntimeError::new(
+                        fields.get(field_name).cloned().ok_or_else(|| {
+                            Box::new(RuntimeError::new(
                                 &format!("Field '{}' not found in struct", field_name),
                                 None,
                                 None,
-                            )) as Box<dyn Error>)
+                            )) as Box<dyn Error>
+                        })
                     }
                     _ => Err(Box::new(RuntimeError::new(
                         &format!("Cannot access field '{}' on non-struct value", field_name),
                         None,
                         None,
-                    )))
+                    ))),
                 }
             }
             Expr::Range(..) => Ok(self.clone()), // Range is a value type
             Expr::Index { expr, index } => {
                 let evaluated_expr = expr.interpret(symbols, current_scope)?;
                 let evaluated_index = index.interpret(symbols, current_scope)?;
-                
+
                 // Perform indexing based on expression type
                 match &evaluated_expr {
                     Expr::RuntimeList { data, .. } => {
                         // For lists, index must be an integer
                         let index_value = match &evaluated_index {
-                            Expr::Literal(LiteralData::Int(i)) | Expr::RuntimeData(LiteralData::Int(i)) => *i,
-                            _ => return Err(Box::new(RuntimeError::new(
-                                "List index must be an integer", 
-                                None, 
-                                None
-                            ))),
+                            Expr::Literal(LiteralData::Int(i))
+                            | Expr::RuntimeData(LiteralData::Int(i)) => *i,
+                            _ => {
+                                return Err(Box::new(RuntimeError::new(
+                                    "List index must be an integer",
+                                    None,
+                                    None,
+                                )))
+                            }
                         };
-                        
+
                         if index_value < 0 || index_value as usize >= data.len() {
                             return Err(Box::new(RuntimeError::new(
-                                &format!("Index {} out of bounds for list of length {}", index_value, data.len()),
+                                &format!(
+                                    "Index {} out of bounds for list of length {}",
+                                    index_value,
+                                    data.len()
+                                ),
                                 None,
-                                None
+                                None,
                             )));
                         }
                         Ok(data[index_value as usize].clone())
-                    },
+                    }
                     Expr::RuntimeMap { data, .. } => {
                         // For maps, convert the index to a KeyData
                         let key = match &evaluated_index {
-                            Expr::Literal(lit) | Expr::RuntimeData(lit) => {
-                                match lit {
-                                    LiteralData::Int(i) => crate::syntax::KeyData::Int(*i),
-                                    LiteralData::Str(s) => crate::syntax::KeyData::Str(s.clone()),
-                                    LiteralData::Bool(b) => crate::syntax::KeyData::Bool(*b),
-                                    LiteralData::Flt(_) => return Err(Box::new(RuntimeError::new(
+                            Expr::Literal(lit) | Expr::RuntimeData(lit) => match lit {
+                                LiteralData::Int(i) => crate::syntax::KeyData::Int(*i),
+                                LiteralData::Str(s) => crate::syntax::KeyData::Str(s.clone()),
+                                LiteralData::Bool(b) => crate::syntax::KeyData::Bool(*b),
+                                LiteralData::Flt(_) => {
+                                    return Err(Box::new(RuntimeError::new(
                                         "Map keys cannot be of type Float",
                                         None,
-                                        None
-                                    ))),
+                                        None,
+                                    )))
                                 }
                             },
-                            _ => return Err(Box::new(RuntimeError::new(
-                                "Map key must be a literal value",
-                                None,
-                                None
-                            ))),
+                            _ => {
+                                return Err(Box::new(RuntimeError::new(
+                                    "Map key must be a literal value",
+                                    None,
+                                    None,
+                                )))
+                            }
                         };
-                        
+
                         // Look up the key in the map
                         match data.get(&key) {
                             Some(value) => Ok(value.clone()),
                             None => Err(Box::new(RuntimeError::new(
                                 &format!("Key {:?} not found in map", key),
                                 None,
-                                None
-                            )))
+                                None,
+                            ))),
                         }
-                    },
+                    }
                     _ => Err(Box::new(RuntimeError::new(
                         &format!("Cannot index into {:?}", evaluated_expr),
                         None,
-                        None
-                    )))
+                        None,
+                    ))),
                 }
-            },
-            Expr::UnaryExpr { op, expr } => {
-                match op {
-                    Operator::Not => {
-                        let evaluated = expr.interpret(symbols, current_scope)?;
-                        match evaluated {
-                            Expr::Literal(LiteralData::Bool(b)) | Expr::RuntimeData(LiteralData::Bool(b)) => {
-                                Ok(Expr::RuntimeData(LiteralData::Bool(!b)))
-                            }
-                            _ => Err(Box::new(RuntimeError::new(
-                                &format!("'not' operator requires a boolean value, got {:?}", evaluated),
-                                None,
-                                None
-                            )))
+            }
+            Expr::UnaryExpr { op, expr } => match op {
+                Operator::Not => {
+                    let evaluated = expr.interpret(symbols, current_scope)?;
+                    match evaluated {
+                        Expr::Literal(LiteralData::Bool(b))
+                        | Expr::RuntimeData(LiteralData::Bool(b)) => {
+                            Ok(Expr::RuntimeData(LiteralData::Bool(!b)))
                         }
-                    },
-                    _ => panic!("Interpreter error: UnaryExpr operator {:?} not implemented", op)
+                        _ => Err(Box::new(RuntimeError::new(
+                            &format!(
+                                "'not' operator requires a boolean value, got {:?}",
+                                evaluated
+                            ),
+                            None,
+                            None,
+                        ))),
+                    }
                 }
+                _ => panic!(
+                    "Interpreter error: UnaryExpr operator {:?} not implemented",
+                    op
+                ),
             },
             Expr::Len { expr } => {
                 let evaluated = expr.interpret(symbols, current_scope)?;
                 match evaluated {
-                    Expr::RuntimeList { data, .. } => Ok(Expr::Literal(LiteralData::Int(data.len() as i64))),
-                    Expr::RuntimeMap { data, .. } => Ok(Expr::Literal(LiteralData::Int(data.len() as i64))),
+                    Expr::RuntimeList { data, .. } => {
+                        Ok(Expr::Literal(LiteralData::Int(data.len() as i64)))
+                    }
+                    Expr::RuntimeMap { data, .. } => {
+                        Ok(Expr::Literal(LiteralData::Int(data.len() as i64)))
+                    }
                     Expr::Literal(LiteralData::Str(s)) | Expr::RuntimeData(LiteralData::Str(s)) => {
                         // String length without quotes
                         let len = s.trim_matches('\'').len() as i64;
                         Ok(Expr::Literal(LiteralData::Int(len)))
-                    },
+                    }
                     _ => Err(Box::new(RuntimeError::new(
                         &format!("len() requires a string, list, or map, got {:?}", evaluated),
                         None,
-                        None
-                    )))
+                        None,
+                    ))),
                 }
-            },
-            Expr::Assign { name: _, value, index } => {
+            }
+            Expr::Assign {
+                name: _,
+                value,
+                index,
+            } => {
                 // Evaluate the value expression
                 let evaluated_value = value.interpret(symbols, current_scope)?;
                 // Update the runtime value in the symbol table
                 symbols.update_runtime_value(evaluated_value, index);
                 // Assignment expressions return Unit
                 Ok(Expr::Unit)
-            },
-            Expr::FieldAssign { expr, field_name, value, index } => {
+            }
+            Expr::FieldAssign {
+                expr: _,
+                field_name,
+                value,
+                index,
+            } => {
                 // 1. Evaluate the value expression
                 let new_value = value.interpret(symbols, current_scope)?;
 
                 // 2. Get the current struct from the symbol table
-                let current_struct = symbols.get_runtime_value(index)
-                    .ok_or_else(|| Box::new(RuntimeError::new(
+                let current_struct = symbols.get_runtime_value(index).ok_or_else(|| {
+                    Box::new(RuntimeError::new(
                         "Struct variable not found in symbol table",
                         None,
                         None,
-                    )) as Box<dyn Error>)?;
+                    )) as Box<dyn Error>
+                })?;
 
                 // 3. Clone the struct and update the field
                 match current_struct {
-                    Expr::RuntimeStruct { type_name, mut fields } => {
+                    Expr::RuntimeStruct {
+                        type_name,
+                        mut fields,
+                    } => {
                         // Update the specific field
                         fields.insert(field_name.clone(), new_value);
 
                         // 4. Store the updated struct back to the symbol table
-                        let updated_struct = Expr::RuntimeStruct {
-                            type_name,
-                            fields,
-                        };
+                        let updated_struct = Expr::RuntimeStruct { type_name, fields };
                         symbols.update_runtime_value(updated_struct, index);
 
                         // Field assignment returns Unit
@@ -385,12 +424,10 @@ impl Expr {
                         "Cannot assign to field of non-struct value",
                         None,
                         None,
-                    )))
+                    ))),
                 }
-            },
-            _ => panic!(
-                "Interpreter error: interpret() not implemented for '{self:?}'"
-            ),
+            }
+            _ => panic!("Interpreter error: interpret() not implemented for '{self:?}'"),
         }
     }
 } // impl
@@ -475,7 +512,10 @@ fn interpret_call(
         Expr::DefineFunction { value, .. } => {
             // Unwrap the Lambda from DefineFunction
             match value.as_ref() {
-                Expr::Lambda { value: func, environment } => {
+                Expr::Lambda {
+                    value: func,
+                    environment,
+                } => {
                     // Check if this is a built-in method
                     if let Some(ref builtin) = func.builtin {
                         if args.len() != func.params.len() {
@@ -501,8 +541,10 @@ fn interpret_call(
 
                         if let Some(recv) = receiver {
                             // Execute built-in method
-                            builtin.execute(recv, evaluated_args)
-                                .map_err(|e| Box::new(RuntimeError::new(&e.to_string(), None, None)) as Box<dyn std::error::Error>)
+                            builtin.execute(recv, evaluated_args).map_err(|e| {
+                                Box::new(RuntimeError::new(&e.to_string(), None, None))
+                                    as Box<dyn std::error::Error>
+                            })
                         } else {
                             panic!("Interpreter error: Built-in method {fn_name} called without 'self' argument");
                         }
@@ -517,8 +559,13 @@ fn interpret_call(
                         for a in args {
                             let arg_value = a.value.interpret(symbols, current_scope)?;
 
-                            if let Some(assign_to_index) = symbols.get_index_in_scope(&a.name, *environment) {
-                                symbols.update_runtime_value(arg_value, &(*environment, assign_to_index));
+                            if let Some(assign_to_index) =
+                                symbols.get_index_in_scope(&a.name, *environment)
+                            {
+                                symbols.update_runtime_value(
+                                    arg_value,
+                                    &(*environment, assign_to_index),
+                                );
                             } else {
                                 panic!("Interpreter error: Keyword arg names must match the function definition parameters.");
                             }
@@ -528,7 +575,9 @@ fn interpret_call(
                     }
                 }
                 _ => {
-                    panic!("Interpreter error: Expected Lambda inside DefineFunction for {fn_name}");
+                    panic!(
+                        "Interpreter error: Expected Lambda inside DefineFunction for {fn_name}"
+                    );
                 }
             }
         }
@@ -558,8 +607,10 @@ fn interpret_call(
 
                 if let Some(recv) = receiver {
                     // Execute built-in method
-                    builtin.execute(recv, evaluated_args)
-                        .map_err(|e| Box::new(RuntimeError::new(&e.to_string(), None, None)) as Box<dyn std::error::Error>)
+                    builtin.execute(recv, evaluated_args).map_err(|e| {
+                        Box::new(RuntimeError::new(&e.to_string(), None, None))
+                            as Box<dyn std::error::Error>
+                    })
                 } else {
                     panic!("Interpreter error: Built-in method {fn_name} called without 'self' argument");
                 }
@@ -576,7 +627,8 @@ fn interpret_call(
                     let arg_value = a.value.interpret(symbols, current_scope)?;
 
                     // TODO this part should be done in a compiler pass, it's sort of slow this way.
-                    if let Some(assign_to_index) = symbols.get_index_in_scope(&a.name, environment) {
+                    if let Some(assign_to_index) = symbols.get_index_in_scope(&a.name, environment)
+                    {
                         symbols.update_runtime_value(arg_value, &(environment, assign_to_index));
                     } else {
                         panic!("Interpreter error: Keyword arg names must match the function definition parameters.");
@@ -679,7 +731,7 @@ impl LiteralData {
                 let l_content = l.trim_matches('\'');
                 let r_content = r.trim_matches('\'');
                 LiteralData::Str(format!("'{}{}'", l_content, r_content).into())
-            },
+            }
             (Sub, Int(l), Int(r)) => Int(l - r),
             (Sub, Flt(l), Flt(r)) => Flt(l - r),
             (Mul, Int(l), Int(r)) => Int(l * r),
@@ -732,7 +784,7 @@ fn interpret_binary(
     if matches!(op, Operator::Range) {
         let left_val = left.interpret(symbols, current_scope)?;
         let right_val = right.interpret(symbols, current_scope)?;
-        
+
         match (left_val, right_val) {
             (Expr::Literal(LiteralData::Int(start)), Expr::Literal(LiteralData::Int(end))) => {
                 return Ok(Expr::Range(LiteralData::Int(start), LiteralData::Int(end)));
@@ -742,11 +794,12 @@ fn interpret_binary(
                     "Range operator '..' requires integer operands",
                     None,
                     None,
-                ).into());
+                )
+                .into());
             }
         }
     }
-    
+
     let mut error: Option<RuntimeError> = None;
     let mut result: InterpreterResult = Ok(Expr::Unit);
 
@@ -757,43 +810,49 @@ fn interpret_binary(
         (Expr::Literal(l_value), Expr::Literal(r_value)) => {
             result = l_value.apply_binary_operator(r_value, op)
         }
-        (_, Expr::Literal(r_value)) => {
-            match left.interpret(symbols, current_scope)? {
-                Expr::Literal(ref l_value) | Expr::RuntimeData(ref l_value) => {
-                    result = l_value.apply_binary_operator(r_value, op);
-                }
-                _ => {
-                    let msg = format!(
+        (_, Expr::Literal(r_value)) => match left.interpret(symbols, current_scope)? {
+            Expr::Literal(ref l_value) | Expr::RuntimeData(ref l_value) => {
+                result = l_value.apply_binary_operator(r_value, op);
+            }
+            _ => {
+                let msg = format!(
                         "Result of {left:?} isn't a simple primary expression. Cannot apply {op:?} to it."
                     );
-                    error = Some(RuntimeError::new(&msg, None, None));
-                }
+                error = Some(RuntimeError::new(&msg, None, None));
             }
-        }
-        (Expr::Literal(l_value), _) => {
-            match right.interpret(symbols, current_scope)? {
-                Expr::Literal(ref r_value) | Expr::RuntimeData(ref r_value) => {
-                    result = l_value.apply_binary_operator(r_value, op);
-                }
-                _ => {
-                    let msg = format!(
+        },
+        (Expr::Literal(l_value), _) => match right.interpret(symbols, current_scope)? {
+            Expr::Literal(ref r_value) | Expr::RuntimeData(ref r_value) => {
+                result = l_value.apply_binary_operator(r_value, op);
+            }
+            _ => {
+                let msg = format!(
                         "Result of {right:?} isn't a simple primary expression. Cannot apply {op:?} to it."
                     );
-                    error = Some(RuntimeError::new(&msg, None, None));
-                }
+                error = Some(RuntimeError::new(&msg, None, None));
             }
-        }
+        },
         (_, _) => {
             let l_value = left.interpret(symbols, current_scope)?;
             let r_value = right.interpret(symbols, current_scope)?;
             match (&l_value, &r_value) {
-                (Expr::Literal(ref l_data) | Expr::RuntimeData(ref l_data),
-                 Expr::Literal(ref r_data) | Expr::RuntimeData(ref r_data)) => {
+                (
+                    Expr::Literal(ref l_data) | Expr::RuntimeData(ref l_data),
+                    Expr::Literal(ref r_data) | Expr::RuntimeData(ref r_data),
+                ) => {
                     result = l_data.apply_binary_operator(r_data, op);
                 }
                 // Handle struct comparisons (only = and <>)
-                (Expr::RuntimeStruct { type_name: type1, fields: fields1 },
-                 Expr::RuntimeStruct { type_name: type2, fields: fields2 }) => {
+                (
+                    Expr::RuntimeStruct {
+                        type_name: type1,
+                        fields: fields1,
+                    },
+                    Expr::RuntimeStruct {
+                        type_name: type2,
+                        fields: fields2,
+                    },
+                ) => {
                     match op {
                         Operator::Eq | Operator::Neq => {
                             // Structs are equal if they have the same type and all fields match
@@ -852,38 +911,49 @@ fn interpret_binary(
 fn compare_exprs_for_equality(expr1: &Expr, expr2: &Expr) -> bool {
     match (expr1, expr2) {
         // Compare literals
-        (Expr::Literal(l1) | Expr::RuntimeData(l1),
-         Expr::Literal(l2) | Expr::RuntimeData(l2)) => l1 == l2,
+        (Expr::Literal(l1) | Expr::RuntimeData(l1), Expr::Literal(l2) | Expr::RuntimeData(l2)) => {
+            l1 == l2
+        }
 
         // Compare structs recursively
-        (Expr::RuntimeStruct { type_name: t1, fields: f1 },
-         Expr::RuntimeStruct { type_name: t2, fields: f2 }) => {
-            t1 == t2 && f1.len() == f2.len() &&
-            f1.iter().all(|(name, val1)| {
-                f2.get(name).map_or(false, |val2| compare_exprs_for_equality(val1, val2))
-            })
+        (
+            Expr::RuntimeStruct {
+                type_name: t1,
+                fields: f1,
+            },
+            Expr::RuntimeStruct {
+                type_name: t2,
+                fields: f2,
+            },
+        ) => {
+            t1 == t2
+                && f1.len() == f2.len()
+                && f1.iter().all(|(name, val1)| {
+                    f2.get(name)
+                        .is_some_and(|val2| compare_exprs_for_equality(val1, val2))
+                })
         }
 
         // Compare lists
-        (Expr::RuntimeList { data: d1, .. },
-         Expr::RuntimeList { data: d2, .. }) => {
-            d1.len() == d2.len() &&
-            d1.iter().zip(d2.iter()).all(|(v1, v2)| compare_exprs_for_equality(v1, v2))
+        (Expr::RuntimeList { data: d1, .. }, Expr::RuntimeList { data: d2, .. }) => {
+            d1.len() == d2.len()
+                && d1
+                    .iter()
+                    .zip(d2.iter())
+                    .all(|(v1, v2)| compare_exprs_for_equality(v1, v2))
         }
 
         // Compare maps
-        (Expr::RuntimeMap { data: d1, .. },
-         Expr::RuntimeMap { data: d2, .. }) => {
-            d1.len() == d2.len() &&
-            d1.iter().all(|(k, v1)| {
-                d2.get(k).map_or(false, |v2| compare_exprs_for_equality(v1, v2))
-            })
+        (Expr::RuntimeMap { data: d1, .. }, Expr::RuntimeMap { data: d2, .. }) => {
+            d1.len() == d2.len()
+                && d1.iter().all(|(k, v1)| {
+                    d2.get(k)
+                        .is_some_and(|v2| compare_exprs_for_equality(v1, v2))
+                })
         }
 
         // Compare ranges
-        (Expr::Range(start1, end1), Expr::Range(start2, end2)) => {
-            start1 == start2 && end1 == end2
-        }
+        (Expr::Range(start1, end1), Expr::Range(start2, end2)) => start1 == start2 && end1 == end2,
 
         // Different types are not equal
         _ => false,

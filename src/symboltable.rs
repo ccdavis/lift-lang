@@ -60,37 +60,63 @@ impl SymbolTable {
         self.add_builtin_method("Str", "lower", DataType::Str, DataType::Str)?;
 
         // Str.substring(start: Int, end: Int) -> Str
-        self.add_builtin_method_with_params("Str", "substring", DataType::Str,
+        self.add_builtin_method_with_params(
+            "Str",
+            "substring",
+            DataType::Str,
             vec![("start", DataType::Int), ("end", DataType::Int)],
-            DataType::Str)?;
+            DataType::Str,
+        )?;
 
         // Str.contains(substring: Str) -> Bool
-        self.add_builtin_method_with_params("Str", "contains", DataType::Str,
+        self.add_builtin_method_with_params(
+            "Str",
+            "contains",
+            DataType::Str,
             vec![("substring", DataType::Str)],
-            DataType::Bool)?;
+            DataType::Bool,
+        )?;
 
         // Str.trim() -> Str
         self.add_builtin_method("Str", "trim", DataType::Str, DataType::Str)?;
 
         // Str.split(delimiter: Str) -> List of Str
-        self.add_builtin_method_with_params("Str", "split", DataType::Str,
+        self.add_builtin_method_with_params(
+            "Str",
+            "split",
+            DataType::Str,
             vec![("delimiter", DataType::Str)],
-            DataType::List { element_type: Box::new(DataType::Str) })?;
+            DataType::List {
+                element_type: Box::new(DataType::Str),
+            },
+        )?;
 
         // Str.replace(old: Str, new: Str) -> Str
-        self.add_builtin_method_with_params("Str", "replace", DataType::Str,
+        self.add_builtin_method_with_params(
+            "Str",
+            "replace",
+            DataType::Str,
             vec![("old", DataType::Str), ("new", DataType::Str)],
-            DataType::Str)?;
+            DataType::Str,
+        )?;
 
         // Str.starts_with(prefix: Str) -> Bool
-        self.add_builtin_method_with_params("Str", "starts_with", DataType::Str,
+        self.add_builtin_method_with_params(
+            "Str",
+            "starts_with",
+            DataType::Str,
             vec![("prefix", DataType::Str)],
-            DataType::Bool)?;
+            DataType::Bool,
+        )?;
 
         // Str.ends_with(suffix: Str) -> Bool
-        self.add_builtin_method_with_params("Str", "ends_with", DataType::Str,
+        self.add_builtin_method_with_params(
+            "Str",
+            "ends_with",
+            DataType::Str,
             vec![("suffix", DataType::Str)],
-            DataType::Bool)?;
+            DataType::Bool,
+        )?;
 
         // Str.is_empty() -> Bool
         self.add_builtin_method("Str", "is_empty", DataType::Str, DataType::Bool)?;
@@ -98,65 +124,132 @@ impl SymbolTable {
         // === List Methods ===
 
         // List.first() -> Unsolved (will be resolved based on list element type)
-        self.add_builtin_method("List", "first",
-            DataType::List { element_type: Box::new(DataType::Unsolved) },
-            DataType::Unsolved)?;
+        self.add_builtin_method(
+            "List",
+            "first",
+            DataType::List {
+                element_type: Box::new(DataType::Unsolved),
+            },
+            DataType::Unsolved,
+        )?;
 
         // List.last() -> Unsolved (will be resolved based on list element type)
-        self.add_builtin_method("List", "last",
-            DataType::List { element_type: Box::new(DataType::Unsolved) },
-            DataType::Unsolved)?;
+        self.add_builtin_method(
+            "List",
+            "last",
+            DataType::List {
+                element_type: Box::new(DataType::Unsolved),
+            },
+            DataType::Unsolved,
+        )?;
 
         // List.contains(item: T) -> Bool
-        self.add_builtin_method_with_params("List", "contains",
-            DataType::List { element_type: Box::new(DataType::Unsolved) },
+        self.add_builtin_method_with_params(
+            "List",
+            "contains",
+            DataType::List {
+                element_type: Box::new(DataType::Unsolved),
+            },
             vec![("item", DataType::Unsolved)],
-            DataType::Bool)?;
+            DataType::Bool,
+        )?;
 
         // List.slice(start: Int, end: Int) -> List of T
-        self.add_builtin_method_with_params("List", "slice",
-            DataType::List { element_type: Box::new(DataType::Unsolved) },
+        self.add_builtin_method_with_params(
+            "List",
+            "slice",
+            DataType::List {
+                element_type: Box::new(DataType::Unsolved),
+            },
             vec![("start", DataType::Int), ("end", DataType::Int)],
-            DataType::List { element_type: Box::new(DataType::Unsolved) })?;
+            DataType::List {
+                element_type: Box::new(DataType::Unsolved),
+            },
+        )?;
 
         // List.reverse() -> List of T
-        self.add_builtin_method("List", "reverse",
-            DataType::List { element_type: Box::new(DataType::Unsolved) },
-            DataType::List { element_type: Box::new(DataType::Unsolved) })?;
+        self.add_builtin_method(
+            "List",
+            "reverse",
+            DataType::List {
+                element_type: Box::new(DataType::Unsolved),
+            },
+            DataType::List {
+                element_type: Box::new(DataType::Unsolved),
+            },
+        )?;
 
         // List.join(separator: Str) -> Str (only for List of Str)
-        self.add_builtin_method_with_params("List", "join",
-            DataType::List { element_type: Box::new(DataType::Str) },
+        self.add_builtin_method_with_params(
+            "List",
+            "join",
+            DataType::List {
+                element_type: Box::new(DataType::Str),
+            },
             vec![("separator", DataType::Str)],
-            DataType::Str)?;
+            DataType::Str,
+        )?;
 
         // List.is_empty() -> Bool
-        self.add_builtin_method("List", "is_empty",
-            DataType::List { element_type: Box::new(DataType::Unsolved) },
-            DataType::Bool)?;
+        self.add_builtin_method(
+            "List",
+            "is_empty",
+            DataType::List {
+                element_type: Box::new(DataType::Unsolved),
+            },
+            DataType::Bool,
+        )?;
 
         // === Map Methods ===
 
         // Map.keys() -> List of K
-        self.add_builtin_method("Map", "keys",
-            DataType::Map { key_type: Box::new(DataType::Unsolved), value_type: Box::new(DataType::Unsolved) },
-            DataType::List { element_type: Box::new(DataType::Unsolved) })?;
+        self.add_builtin_method(
+            "Map",
+            "keys",
+            DataType::Map {
+                key_type: Box::new(DataType::Unsolved),
+                value_type: Box::new(DataType::Unsolved),
+            },
+            DataType::List {
+                element_type: Box::new(DataType::Unsolved),
+            },
+        )?;
 
         // Map.values() -> List of V
-        self.add_builtin_method("Map", "values",
-            DataType::Map { key_type: Box::new(DataType::Unsolved), value_type: Box::new(DataType::Unsolved) },
-            DataType::List { element_type: Box::new(DataType::Unsolved) })?;
+        self.add_builtin_method(
+            "Map",
+            "values",
+            DataType::Map {
+                key_type: Box::new(DataType::Unsolved),
+                value_type: Box::new(DataType::Unsolved),
+            },
+            DataType::List {
+                element_type: Box::new(DataType::Unsolved),
+            },
+        )?;
 
         // Map.contains_key(key: K) -> Bool
-        self.add_builtin_method_with_params("Map", "contains_key",
-            DataType::Map { key_type: Box::new(DataType::Unsolved), value_type: Box::new(DataType::Unsolved) },
+        self.add_builtin_method_with_params(
+            "Map",
+            "contains_key",
+            DataType::Map {
+                key_type: Box::new(DataType::Unsolved),
+                value_type: Box::new(DataType::Unsolved),
+            },
             vec![("key", DataType::Unsolved)],
-            DataType::Bool)?;
+            DataType::Bool,
+        )?;
 
         // Map.is_empty() -> Bool
-        self.add_builtin_method("Map", "is_empty",
-            DataType::Map { key_type: Box::new(DataType::Unsolved), value_type: Box::new(DataType::Unsolved) },
-            DataType::Bool)?;
+        self.add_builtin_method(
+            "Map",
+            "is_empty",
+            DataType::Map {
+                key_type: Box::new(DataType::Unsolved),
+                value_type: Box::new(DataType::Unsolved),
+            },
+            DataType::Bool,
+        )?;
 
         Ok(())
     }
@@ -168,7 +261,13 @@ impl SymbolTable {
         receiver_type: DataType,
         return_type: DataType,
     ) -> Result<(), CompileError> {
-        self.add_builtin_method_with_params(type_name, method_name, receiver_type, vec![], return_type)
+        self.add_builtin_method_with_params(
+            type_name,
+            method_name,
+            receiver_type,
+            vec![],
+            return_type,
+        )
     }
 
     fn add_builtin_method_with_params(
@@ -255,9 +354,7 @@ impl SymbolTable {
         current_scope_id: usize,
     ) -> Option<(usize, usize)> {
         if TRACE {
-            println!(
-                "Find  index for {symbol_name} in scope {current_scope_id}"
-            )
+            println!("Find  index for {symbol_name} in scope {current_scope_id}")
         }
         match self.get_index_in_scope(symbol_name, current_scope_id) {
             Some(index) => Some((current_scope_id, index)),
@@ -350,15 +447,20 @@ impl SymbolTable {
     pub fn borrow_runtime_value(&self, index: (usize, usize)) -> &Expr {
         &self.0[index.0].runtime_value[index.1]
     }
-    
+
     pub fn get_symbol_value(&self, index: &(usize, usize)) -> Option<&Expr> {
         self.0.get(index.0)?.data.get(index.1)
     }
-    
+
     pub fn get_symbol_type(&self, index: &(usize, usize)) -> Option<DataType> {
         let expr = self.0.get(index.0)?.data.get(index.1)?;
         match expr {
-            Expr::Let { data_type, value, mutable: _, .. } => {
+            Expr::Let {
+                data_type,
+                value,
+                mutable: _,
+                ..
+            } => {
                 // If type annotation is provided, use it; otherwise infer from value
                 if !matches!(data_type, DataType::Unsolved) {
                     Some(data_type.clone())
@@ -386,7 +488,10 @@ impl SymbolTable {
     }
 
     pub fn is_mutable(&self, index: &(usize, usize)) -> bool {
-        let expr = self.0.get(index.0).and_then(|scope| scope.data.get(index.1));
+        let expr = self
+            .0
+            .get(index.0)
+            .and_then(|scope| scope.data.get(index.1));
         match expr {
             Some(Expr::Let { mutable, .. }) => *mutable,
             _ => false,

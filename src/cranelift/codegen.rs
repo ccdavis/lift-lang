@@ -1,11 +1,11 @@
 // Core code generation struct and main compilation methods
 
-use super::types::{VarInfo, resolve_type_alias};
-use crate::syntax::{Expr, DataType};
+use super::types::{resolve_type_alias, VarInfo};
 use crate::symboltable::SymbolTable;
+use crate::syntax::{DataType, Expr};
 use cranelift::prelude::*;
-use cranelift_module::{FuncId, Module};
 use cranelift_codegen::ir::FuncRef;
+use cranelift_module::{FuncId, Module};
 use std::collections::HashMap;
 
 /// Main code generator for Cranelift
@@ -54,11 +54,20 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         }
 
         // Create a main function with signature: () -> i64
-        self.ctx.func.signature.returns.push(AbiParam::new(types::I64));
+        self.ctx
+            .func
+            .signature
+            .returns
+            .push(AbiParam::new(types::I64));
 
         // Create the function in the module
-        let func_id = self.module
-            .declare_function("main", cranelift_module::Linkage::Export, &self.ctx.func.signature)
+        let func_id = self
+            .module
+            .declare_function(
+                "main",
+                cranelift_module::Linkage::Export,
+                &self.ctx.func.signature,
+            )
             .map_err(|e| format!("Failed to declare main function: {}", e))?;
 
         // Build the function body
@@ -74,14 +83,18 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             // Declare runtime functions in this function's scope
             let mut runtime_refs = HashMap::new();
             for (name, func_id) in &self.runtime_funcs {
-                let func_ref = self.module.declare_func_in_func(*func_id, &mut builder.func);
+                let func_ref = self
+                    .module
+                    .declare_func_in_func(*func_id, &mut builder.func);
                 runtime_refs.insert(name.clone(), func_ref);
             }
 
             // Declare user functions in this function's scope
             let mut user_func_refs = HashMap::new();
             for (name, func_id) in &self.function_refs {
-                let func_ref = self.module.declare_func_in_func(*func_id, &mut builder.func);
+                let func_ref = self
+                    .module
+                    .declare_func_in_func(*func_id, &mut builder.func);
                 user_func_refs.insert(name.clone(), func_ref);
             }
 
@@ -92,7 +105,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 symbols,
                 &runtime_refs,
                 &user_func_refs,
-                &mut self.variables
+                &mut self.variables,
             )?;
 
             // Return the result (or 0 if Unit)
@@ -126,101 +139,240 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         match expr {
             // Literals
             Expr::Literal(lit) => Self::compile_literal_with_runtime(builder, lit, runtime_funcs),
-            Expr::RuntimeData(lit) => Self::compile_literal_with_runtime(builder, lit, runtime_funcs),
+            Expr::RuntimeData(lit) => {
+                Self::compile_literal_with_runtime(builder, lit, runtime_funcs)
+            }
 
             // Binary operations
-            Expr::BinaryExpr { left, op, right } => {
-                Self::compile_binary_expr(builder, left, op, right, symbols, runtime_funcs, user_func_refs, variables)
-            }
+            Expr::BinaryExpr { left, op, right } => Self::compile_binary_expr(
+                builder,
+                left,
+                op,
+                right,
+                symbols,
+                runtime_funcs,
+                user_func_refs,
+                variables,
+            ),
 
             // Unary operations
-            Expr::UnaryExpr { op, expr: inner } => {
-                Self::compile_unary_expr(builder, op, inner, symbols, runtime_funcs, user_func_refs, variables)
-            }
+            Expr::UnaryExpr { op, expr: inner } => Self::compile_unary_expr(
+                builder,
+                op,
+                inner,
+                symbols,
+                runtime_funcs,
+                user_func_refs,
+                variables,
+            ),
 
             // Output
             Expr::Output { data } => {
-                Self::compile_output(builder, data, symbols, runtime_funcs, user_func_refs, variables)?;
+                Self::compile_output(
+                    builder,
+                    data,
+                    symbols,
+                    runtime_funcs,
+                    user_func_refs,
+                    variables,
+                )?;
                 Ok(None) // output returns Unit
             }
 
             // Program and Block
-            Expr::Program { body, .. } => {
-                Self::compile_block_body(builder, body, symbols, runtime_funcs, user_func_refs, variables)
-            }
-            Expr::Block { body, .. } => {
-                Self::compile_block_body(builder, body, symbols, runtime_funcs, user_func_refs, variables)
-            }
+            Expr::Program { body, .. } => Self::compile_block_body(
+                builder,
+                body,
+                symbols,
+                runtime_funcs,
+                user_func_refs,
+                variables,
+            ),
+            Expr::Block { body, .. } => Self::compile_block_body(
+                builder,
+                body,
+                symbols,
+                runtime_funcs,
+                user_func_refs,
+                variables,
+            ),
 
             // Control flow
-            Expr::If { cond, then, final_else } => {
-                Self::compile_if_expr(builder, cond, then, final_else, symbols, runtime_funcs, user_func_refs, variables)
-            }
+            Expr::If {
+                cond,
+                then,
+                final_else,
+            } => Self::compile_if_expr(
+                builder,
+                cond,
+                then,
+                final_else,
+                symbols,
+                runtime_funcs,
+                user_func_refs,
+                variables,
+            ),
 
-            Expr::While { cond, body } => {
-                Self::compile_while_expr(builder, cond, body, symbols, runtime_funcs, user_func_refs, variables)
-            }
+            Expr::While { cond, body } => Self::compile_while_expr(
+                builder,
+                cond,
+                body,
+                symbols,
+                runtime_funcs,
+                user_func_refs,
+                variables,
+            ),
 
             // Variables
-            Expr::Let { var_name, value, data_type, .. } => {
-                Self::compile_let(builder, var_name, value, data_type, symbols, runtime_funcs, user_func_refs, variables)
-            }
+            Expr::Let {
+                var_name,
+                value,
+                data_type,
+                ..
+            } => Self::compile_let(
+                builder,
+                var_name,
+                value,
+                data_type,
+                symbols,
+                runtime_funcs,
+                user_func_refs,
+                variables,
+            ),
 
-            Expr::Variable { name, .. } => {
-                Self::compile_variable(builder, name, variables)
-            }
+            Expr::Variable { name, .. } => Self::compile_variable(builder, name, variables),
 
-            Expr::Assign { name, value, .. } => {
-                Self::compile_assign(builder, name, value, symbols, runtime_funcs, user_func_refs, variables)
-            }
+            Expr::Assign { name, value, .. } => Self::compile_assign(
+                builder,
+                name,
+                value,
+                symbols,
+                runtime_funcs,
+                user_func_refs,
+                variables,
+            ),
 
             // Collections
-            Expr::ListLiteral { data_type, data } => {
-                Self::compile_list_literal(builder, data_type, data, symbols, runtime_funcs, user_func_refs, variables)
-            }
+            Expr::ListLiteral { data_type, data } => Self::compile_list_literal(
+                builder,
+                data_type,
+                data,
+                symbols,
+                runtime_funcs,
+                user_func_refs,
+                variables,
+            ),
 
-            Expr::MapLiteral { key_type, value_type, data } => {
-                Self::compile_map_literal(builder, key_type, value_type, data, symbols, runtime_funcs, user_func_refs, variables)
-            }
+            Expr::MapLiteral {
+                key_type,
+                value_type,
+                data,
+            } => Self::compile_map_literal(
+                builder,
+                key_type,
+                value_type,
+                data,
+                symbols,
+                runtime_funcs,
+                user_func_refs,
+                variables,
+            ),
 
-            Expr::Index { expr, index } => {
-                Self::compile_index(builder, expr, index, symbols, runtime_funcs, user_func_refs, variables)
-            }
+            Expr::Index { expr, index } => Self::compile_index(
+                builder,
+                expr,
+                index,
+                symbols,
+                runtime_funcs,
+                user_func_refs,
+                variables,
+            ),
 
             // Built-in functions
-            Expr::Len { expr } => {
-                Self::compile_len(builder, expr, symbols, runtime_funcs, user_func_refs, variables)
-            }
+            Expr::Len { expr } => Self::compile_len(
+                builder,
+                expr,
+                symbols,
+                runtime_funcs,
+                user_func_refs,
+                variables,
+            ),
 
-            Expr::MethodCall { receiver, method_name, args, .. } => {
-                Self::compile_method_call(builder, receiver, method_name, args, symbols, runtime_funcs, user_func_refs, variables)
-            }
+            Expr::MethodCall {
+                receiver,
+                method_name,
+                args,
+                ..
+            } => Self::compile_method_call(
+                builder,
+                receiver,
+                method_name,
+                args,
+                symbols,
+                runtime_funcs,
+                user_func_refs,
+                variables,
+            ),
 
             // Range
-            Expr::Range(start, end) => {
-                Self::compile_range(builder, start, end, runtime_funcs)
-            }
+            Expr::Range(start, end) => Self::compile_range(builder, start, end, runtime_funcs),
 
             // Structs
-            Expr::StructLiteral { type_name, fields } => {
-                Self::compile_struct_literal(builder, type_name, fields, symbols, runtime_funcs, user_func_refs, variables)
-            }
+            Expr::StructLiteral { type_name, fields } => Self::compile_struct_literal(
+                builder,
+                type_name,
+                fields,
+                symbols,
+                runtime_funcs,
+                user_func_refs,
+                variables,
+            ),
 
-            Expr::FieldAccess { expr, field_name } => {
-                Self::compile_field_access(builder, expr, field_name, symbols, runtime_funcs, user_func_refs, variables)
-            }
+            Expr::FieldAccess { expr, field_name } => Self::compile_field_access(
+                builder,
+                expr,
+                field_name,
+                symbols,
+                runtime_funcs,
+                user_func_refs,
+                variables,
+            ),
 
-            Expr::FieldAssign { expr, field_name, value, .. } => {
-                Self::compile_field_assign(builder, expr, field_name, value, symbols, runtime_funcs, user_func_refs, variables)
-            }
+            Expr::FieldAssign {
+                expr,
+                field_name,
+                value,
+                ..
+            } => Self::compile_field_assign(
+                builder,
+                expr,
+                field_name,
+                value,
+                symbols,
+                runtime_funcs,
+                user_func_refs,
+                variables,
+            ),
 
             // Unit
             Expr::Unit => Ok(None),
 
             // Function calls
-            Expr::Call { fn_name, args, index, .. } => {
-                Self::compile_function_call(builder, fn_name, args, index, symbols, runtime_funcs, user_func_refs, variables)
-            }
+            Expr::Call {
+                fn_name,
+                args,
+                index,
+                ..
+            } => Self::compile_function_call(
+                builder,
+                fn_name,
+                args,
+                index,
+                symbols,
+                runtime_funcs,
+                user_func_refs,
+                variables,
+            ),
 
             // Function definitions (handled in preprocessing, so return Unit here)
             Expr::DefineFunction { .. } => Ok(None),

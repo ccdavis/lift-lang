@@ -1,9 +1,9 @@
 // Type Inference Module
 // Provides type inference capabilities for expressions without full type checking
 
+use super::{resolve_type_alias, types_compatible, DEBUG};
 use crate::symboltable::SymbolTable;
 use crate::syntax::{DataType, Expr, KeyData, LiteralData, Operator};
-use super::{resolve_type_alias, types_compatible, DEBUG};
 
 /// Type inference with symbol table lookup
 /// This function can resolve variable types and other context-dependent type information
@@ -38,21 +38,29 @@ pub fn determine_type_with_symbols(
                     match (&left_type, &right_type) {
                         (DataType::Int, DataType::Int) => Some(DataType::Int),
                         (DataType::Flt, DataType::Flt) => Some(DataType::Flt),
-                        (DataType::Int, DataType::Flt) | (DataType::Flt, DataType::Int) => Some(DataType::Flt),
-                        (DataType::Str, DataType::Str) if matches!(op, Operator::Add) => Some(DataType::Str),
+                        (DataType::Int, DataType::Flt) | (DataType::Flt, DataType::Int) => {
+                            Some(DataType::Flt)
+                        }
+                        (DataType::Str, DataType::Str) if matches!(op, Operator::Add) => {
+                            Some(DataType::Str)
+                        }
                         _ => None,
                     }
                 }
-                Operator::Gt | Operator::Lt | Operator::Gte | Operator::Lte |
-                Operator::Eq | Operator::Neq => Some(DataType::Bool),
+                Operator::Gt
+                | Operator::Lt
+                | Operator::Gte
+                | Operator::Lte
+                | Operator::Eq
+                | Operator::Neq => Some(DataType::Bool),
                 Operator::And | Operator::Or => Some(DataType::Bool),
                 Operator::Not => unreachable!("Not is unary"),
-                Operator::Range => {
-                    match (&left_type, &right_type) {
-                        (DataType::Int, DataType::Int) => Some(DataType::Range(Box::new(expression.clone()))),
-                        _ => None,
+                Operator::Range => match (&left_type, &right_type) {
+                    (DataType::Int, DataType::Int) => {
+                        Some(DataType::Range(Box::new(expression.clone())))
                     }
-                }
+                    _ => None,
+                },
             }
         }
 
@@ -60,12 +68,10 @@ pub fn determine_type_with_symbols(
             // Look up function return type
             if let Some(fn_expr) = symbols.get_symbol_value(index) {
                 match fn_expr {
-                    Expr::DefineFunction { value, .. } => {
-                        match value.as_ref() {
-                            Expr::Lambda { value: func, .. } => Some(func.return_type.clone()),
-                            _ => None
-                        }
-                    }
+                    Expr::DefineFunction { value, .. } => match value.as_ref() {
+                        Expr::Lambda { value: func, .. } => Some(func.return_type.clone()),
+                        _ => None,
+                    },
                     Expr::Lambda { value: func, .. } => Some(func.return_type.clone()),
                     _ => None,
                 }
@@ -74,9 +80,17 @@ pub fn determine_type_with_symbols(
             }
         }
 
-        Expr::MethodCall { fn_index, method_name, receiver, .. } => {
+        Expr::MethodCall {
+            fn_index,
+            method_name,
+            receiver,
+            ..
+        } => {
             if DEBUG {
-                println!("DEBUG: determine_type_with_symbols - MethodCall '{}' with fn_index {:?}", method_name, fn_index);
+                println!(
+                    "DEBUG: determine_type_with_symbols - MethodCall '{}' with fn_index {:?}",
+                    method_name, fn_index
+                );
             }
             // Look up method return type
             if let Some(fn_expr) = symbols.get_symbol_value(fn_index) {
@@ -89,34 +103,45 @@ pub fn determine_type_with_symbols(
                             Expr::Lambda { value: func, .. } => {
                                 let return_type = func.return_type.clone();
                                 if DEBUG {
-                                    println!("DEBUG: Method '{}' returns {:?}", method_name, return_type);
+                                    println!(
+                                        "DEBUG: Method '{}' returns {:?}",
+                                        method_name, return_type
+                                    );
                                 }
                                 // For List methods, we need to infer from the receiver
                                 match return_type {
                                     DataType::Unsolved => {
                                         // Methods that return the element type (first, last)
-                                        if let Some(receiver_type_raw) = determine_type_with_symbols(receiver, symbols, _scope) {
-                                            let receiver_type = resolve_type_alias(&receiver_type_raw, symbols);
+                                        if let Some(receiver_type_raw) =
+                                            determine_type_with_symbols(receiver, symbols, _scope)
+                                        {
+                                            let receiver_type =
+                                                resolve_type_alias(&receiver_type_raw, symbols);
                                             if let DataType::List { element_type } = receiver_type {
                                                 return Some(*element_type);
                                             }
                                         }
                                         Some(DataType::Unsolved)
                                     }
-                                    DataType::List { ref element_type } if matches!(**element_type, DataType::Unsolved) => {
+                                    DataType::List { ref element_type }
+                                        if matches!(**element_type, DataType::Unsolved) =>
+                                    {
                                         // Methods that return a list with the same element type (slice, reverse)
-                                        if let Some(receiver_type_raw) = determine_type_with_symbols(receiver, symbols, _scope) {
-                                            let receiver_type = resolve_type_alias(&receiver_type_raw, symbols);
+                                        if let Some(receiver_type_raw) =
+                                            determine_type_with_symbols(receiver, symbols, _scope)
+                                        {
+                                            let receiver_type =
+                                                resolve_type_alias(&receiver_type_raw, symbols);
                                             if let DataType::List { element_type } = receiver_type {
                                                 return Some(DataType::List { element_type });
                                             }
                                         }
                                         Some(return_type)
                                     }
-                                    _ => Some(return_type)
+                                    _ => Some(return_type),
                                 }
                             }
-                            _ => None
+                            _ => None,
                         }
                     }
                     Expr::Lambda { value: func, .. } => {
@@ -125,30 +150,41 @@ pub fn determine_type_with_symbols(
                         match return_type {
                             DataType::Unsolved => {
                                 // Methods that return the element type (first, last)
-                                if let Some(receiver_type_raw) = determine_type_with_symbols(receiver, symbols, _scope) {
-                                    let receiver_type = resolve_type_alias(&receiver_type_raw, symbols);
+                                if let Some(receiver_type_raw) =
+                                    determine_type_with_symbols(receiver, symbols, _scope)
+                                {
+                                    let receiver_type =
+                                        resolve_type_alias(&receiver_type_raw, symbols);
                                     if let DataType::List { element_type } = receiver_type {
                                         return Some(*element_type);
                                     }
                                 }
                                 Some(DataType::Unsolved)
                             }
-                            DataType::List { ref element_type } if matches!(**element_type, DataType::Unsolved) => {
+                            DataType::List { ref element_type }
+                                if matches!(**element_type, DataType::Unsolved) =>
+                            {
                                 // Methods that return a list with the same element type (slice, reverse)
-                                if let Some(receiver_type_raw) = determine_type_with_symbols(receiver, symbols, _scope) {
-                                    let receiver_type = resolve_type_alias(&receiver_type_raw, symbols);
+                                if let Some(receiver_type_raw) =
+                                    determine_type_with_symbols(receiver, symbols, _scope)
+                                {
+                                    let receiver_type =
+                                        resolve_type_alias(&receiver_type_raw, symbols);
                                     if let DataType::List { element_type } = receiver_type {
                                         return Some(DataType::List { element_type });
                                     }
                                 }
                                 Some(return_type)
                             }
-                            _ => Some(return_type)
+                            _ => Some(return_type),
                         }
                     }
                     _ => {
                         if DEBUG {
-                            println!("DEBUG: Symbol is not a DefineFunction or Lambda: {:?}", fn_expr);
+                            println!(
+                                "DEBUG: Symbol is not a DefineFunction or Lambda: {:?}",
+                                fn_expr
+                            );
                         }
                         None
                     }
@@ -174,7 +210,9 @@ pub fn determine_type_with_symbols(
             }
         }
 
-        Expr::If { then, final_else, .. } => {
+        Expr::If {
+            then, final_else, ..
+        } => {
             // If expression type is the type of its branches
             // Check if there's no else branch (Unit represents missing else)
             if matches!(final_else.as_ref(), Expr::Unit) {
@@ -210,7 +248,9 @@ pub fn determine_type_with_symbols(
             }
         }
 
-        Expr::UnaryExpr { op: Operator::Not, .. } => Some(DataType::Bool),
+        Expr::UnaryExpr {
+            op: Operator::Not, ..
+        } => Some(DataType::Bool),
 
         Expr::Len { .. } => Some(DataType::Int),
 
@@ -233,12 +273,11 @@ pub fn determine_type_with_symbols(
 
             // Extract field type from struct
             match resolved_type {
-                DataType::Struct(params) => {
-                    params.iter()
-                        .find(|p| p.name == *field_name)
-                        .map(|p| p.data_type.clone())
-                }
-                _ => None
+                DataType::Struct(params) => params
+                    .iter()
+                    .find(|p| p.name == *field_name)
+                    .map(|p| p.data_type.clone()),
+                _ => None,
             }
         }
 
@@ -273,30 +312,42 @@ pub fn determine_type(expression: &Expr) -> Option<DataType> {
                     match (&left_type, &right_type) {
                         (DataType::Int, DataType::Int) => Some(DataType::Int),
                         (DataType::Flt, DataType::Flt) => Some(DataType::Flt),
-                        (DataType::Int, DataType::Flt) | (DataType::Flt, DataType::Int) => Some(DataType::Flt),
-                        (DataType::Str, DataType::Str) if matches!(op, Operator::Add) => Some(DataType::Str),
+                        (DataType::Int, DataType::Flt) | (DataType::Flt, DataType::Int) => {
+                            Some(DataType::Flt)
+                        }
+                        (DataType::Str, DataType::Str) if matches!(op, Operator::Add) => {
+                            Some(DataType::Str)
+                        }
                         _ => None,
                     }
                 }
-                Operator::Gt | Operator::Lt | Operator::Gte | Operator::Lte |
-                Operator::Eq | Operator::Neq => Some(DataType::Bool),
+                Operator::Gt
+                | Operator::Lt
+                | Operator::Gte
+                | Operator::Lte
+                | Operator::Eq
+                | Operator::Neq => Some(DataType::Bool),
                 Operator::And | Operator::Or => Some(DataType::Bool),
                 Operator::Not => unreachable!("Not is unary"),
                 Operator::Range => {
                     // Range operator produces a Range type
                     match (&left_type, &right_type) {
-                        (DataType::Int, DataType::Int) => Some(DataType::Range(Box::new(Expr::BinaryExpr {
-                            left: left.clone(),
-                            op: Operator::Range,
-                            right: right.clone(),
-                        }))),
+                        (DataType::Int, DataType::Int) => {
+                            Some(DataType::Range(Box::new(Expr::BinaryExpr {
+                                left: left.clone(),
+                                op: Operator::Range,
+                                right: right.clone(),
+                            })))
+                        }
                         _ => None,
                     }
                 }
             }
         }
 
-        Expr::UnaryExpr { op: Operator::Not, .. } => Some(DataType::Bool),
+        Expr::UnaryExpr {
+            op: Operator::Not, ..
+        } => Some(DataType::Bool),
         Expr::UnaryExpr { .. } => None,
 
         Expr::Len { .. } => Some(DataType::Int),
@@ -315,7 +366,9 @@ pub fn determine_type(expression: &Expr) -> Option<DataType> {
             })
         }
 
-        Expr::If { then, final_else, .. } => {
+        Expr::If {
+            then, final_else, ..
+        } => {
             // If expression type is the type of its branches
             let then_type = determine_type(then)?;
             let else_type = determine_type(final_else)?;
@@ -335,7 +388,11 @@ pub fn determine_type(expression: &Expr) -> Option<DataType> {
             }
         }
 
-        Expr::MapLiteral { key_type, value_type, data } => {
+        Expr::MapLiteral {
+            key_type,
+            value_type,
+            data,
+        } => {
             let actual_key_type = if !matches!(key_type, DataType::Unsolved) {
                 key_type.clone()
             } else if !data.is_empty() {
@@ -363,20 +420,18 @@ pub fn determine_type(expression: &Expr) -> Option<DataType> {
             })
         }
 
-        Expr::Range(start, end) => {
-            match (start, end) {
-                (LiteralData::Int(_), LiteralData::Int(_)) => Some(DataType::Range(Box::new(Expr::Range(start.clone(), end.clone())))),
-                _ => None,
-            }
-        }
+        Expr::Range(start, end) => match (start, end) {
+            (LiteralData::Int(_), LiteralData::Int(_)) => Some(DataType::Range(Box::new(
+                Expr::Range(start.clone(), end.clone()),
+            ))),
+            _ => None,
+        },
 
-        Expr::Index { expr, .. } => {
-            match determine_type(expr)? {
-                DataType::List { element_type } => Some(*element_type),
-                DataType::Map { value_type, .. } => Some(*value_type),
-                _ => None,
-            }
-        }
+        Expr::Index { expr, .. } => match determine_type(expr)? {
+            DataType::List { element_type } => Some(*element_type),
+            DataType::Map { value_type, .. } => Some(*value_type),
+            _ => None,
+        },
 
         _ => None,
     }

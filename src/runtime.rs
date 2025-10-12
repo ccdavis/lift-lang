@@ -20,22 +20,22 @@ pub const TYPE_STRUCT: i8 = 7;
 // ============================================================================
 
 #[no_mangle]
-pub extern "C" fn lift_output_int(value: i64) {
+pub unsafe extern "C" fn lift_output_int(value: i64) {
     print!("{} ", value);
 }
 
 #[no_mangle]
-pub extern "C" fn lift_output_float(value: f64) {
+pub unsafe extern "C" fn lift_output_float(value: f64) {
     print!("{} ", value);
 }
 
 #[no_mangle]
-pub extern "C" fn lift_output_bool(value: i8) {
+pub unsafe extern "C" fn lift_output_bool(value: i8) {
     print!("{} ", if value != 0 { "true" } else { "false" });
 }
 
 #[no_mangle]
-pub extern "C" fn lift_output_str(ptr: *const c_char) {
+pub unsafe extern "C" fn lift_output_str(ptr: *const c_char) {
     if ptr.is_null() {
         return;
     }
@@ -49,7 +49,7 @@ pub extern "C" fn lift_output_str(ptr: *const c_char) {
 }
 
 #[no_mangle]
-pub extern "C" fn lift_output_newline() {
+pub unsafe extern "C" fn lift_output_newline() {
     println!();
 }
 
@@ -141,7 +141,7 @@ unsafe fn format_value_inline(val: i64, type_tag: i8) {
 }
 
 #[no_mangle]
-pub extern "C" fn lift_output_list(ptr: *const LiftList) {
+pub unsafe extern "C" fn lift_output_list(ptr: *const LiftList) {
     if ptr.is_null() {
         print!("[] ");
         return;
@@ -167,7 +167,7 @@ pub extern "C" fn lift_output_list(ptr: *const LiftList) {
                     if !str_ptr.is_null() {
                         let c_str = std::ffi::CStr::from_ptr(str_ptr);
                         if let Ok(s) = c_str.to_str() {
-                            print!("{}", s);  // Strings already have quotes
+                            print!("{}", s); // Strings already have quotes
                         }
                     }
                 }
@@ -185,39 +185,15 @@ pub extern "C" fn lift_output_list(ptr: *const LiftList) {
                         format_map_inline(map_ptr);
                     }
                 }
-                _ => print!("{}", val),  // Fallback for other types
+                _ => print!("{}", val), // Fallback for other types
             }
         }
         print!("] ");
     }
 }
 
-/// Helper function to format a value based on its type tag
-unsafe fn format_value_by_type(val: i64, type_tag: i8) -> String {
-    match type_tag {
-        TYPE_INT => format!("{}", val),
-        TYPE_FLT => {
-            let f = f64::from_bits(val as u64);
-            format!("{}", f)
-        }
-        TYPE_BOOL => format!("{}", if val != 0 { "true" } else { "false" }),
-        TYPE_STR => {
-            // val is a pointer to a C string
-            let str_ptr = val as *const c_char;
-            if !str_ptr.is_null() {
-                let c_str = std::ffi::CStr::from_ptr(str_ptr);
-                if let Ok(s) = c_str.to_str() {
-                    return s.to_string();  // Strings already have quotes
-                }
-            }
-            format!("{}", val)  // Fallback
-        }
-        _ => format!("{}", val),  // Fallback for other types
-    }
-}
-
 #[no_mangle]
-pub extern "C" fn lift_output_map(ptr: *const LiftMap) {
+pub unsafe extern "C" fn lift_output_map(ptr: *const LiftMap) {
     if ptr.is_null() {
         print!("{{}} ");
         return;
@@ -256,7 +232,7 @@ pub extern "C" fn lift_output_map(ptr: *const LiftMap) {
 // ============================================================================
 
 #[no_mangle]
-pub extern "C" fn lift_str_new(ptr: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn lift_str_new(ptr: *const c_char) -> *mut c_char {
     if ptr.is_null() {
         return std::ptr::null_mut();
     }
@@ -272,7 +248,7 @@ pub extern "C" fn lift_str_new(ptr: *const c_char) -> *mut c_char {
 }
 
 #[no_mangle]
-pub extern "C" fn lift_str_concat(s1: *const c_char, s2: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn lift_str_concat(s1: *const c_char, s2: *const c_char) -> *mut c_char {
     if s1.is_null() || s2.is_null() {
         return std::ptr::null_mut();
     }
@@ -298,7 +274,7 @@ pub extern "C" fn lift_str_concat(s1: *const c_char, s2: *const c_char) -> *mut 
 }
 
 #[no_mangle]
-pub extern "C" fn lift_str_len(ptr: *const c_char) -> i64 {
+pub unsafe extern "C" fn lift_str_len(ptr: *const c_char) -> i64 {
     if ptr.is_null() {
         return 0;
     }
@@ -314,7 +290,7 @@ pub extern "C" fn lift_str_len(ptr: *const c_char) -> i64 {
 }
 
 #[no_mangle]
-pub extern "C" fn lift_str_free(ptr: *mut c_char) {
+pub unsafe extern "C" fn lift_str_free(ptr: *mut c_char) {
     if !ptr.is_null() {
         unsafe {
             let _ = CString::from_raw(ptr);
@@ -327,7 +303,7 @@ pub extern "C" fn lift_str_free(ptr: *mut c_char) {
 // ============================================================================
 
 #[no_mangle]
-pub extern "C" fn lift_str_eq(s1: *const c_char, s2: *const c_char) -> i8 {
+pub unsafe extern "C" fn lift_str_eq(s1: *const c_char, s2: *const c_char) -> i8 {
     if s1.is_null() && s2.is_null() {
         return 1;
     }
@@ -352,7 +328,7 @@ pub extern "C" fn lift_str_eq(s1: *const c_char, s2: *const c_char) -> i8 {
 // ============================================================================
 
 /// Create a Lift string from a Rust string (for testing)
-pub fn make_lift_string(s: &str) -> *mut c_char {
+pub unsafe fn make_lift_string(s: &str) -> *mut c_char {
     let with_quotes = format!("'{}'", s);
     if let Ok(c_str) = CString::new(with_quotes) {
         c_str.into_raw()
@@ -362,7 +338,7 @@ pub fn make_lift_string(s: &str) -> *mut c_char {
 }
 
 /// Free a Lift string (for testing)
-pub fn free_lift_string(ptr: *mut c_char) {
+pub unsafe fn free_lift_string(ptr: *mut c_char) {
     lift_str_free(ptr);
 }
 
@@ -374,12 +350,12 @@ pub fn free_lift_string(ptr: *mut c_char) {
 #[repr(C)]
 pub struct LiftList {
     pub elements: Vec<i64>,
-    pub elem_type: i8,  // Type tag for elements (TYPE_INT, TYPE_STR, etc.)
+    pub elem_type: i8, // Type tag for elements (TYPE_INT, TYPE_STR, etc.)
 }
 
 /// Create a new list with given capacity and element type
 #[no_mangle]
-pub extern "C" fn lift_list_new(capacity: i64, elem_type: i8) -> *mut LiftList {
+pub unsafe extern "C" fn lift_list_new(capacity: i64, elem_type: i8) -> *mut LiftList {
     let cap = capacity.max(0) as usize;
     let list = Box::new(LiftList {
         elements: Vec::with_capacity(cap),
@@ -390,7 +366,7 @@ pub extern "C" fn lift_list_new(capacity: i64, elem_type: i8) -> *mut LiftList {
 
 /// Set an element in the list at given index
 #[no_mangle]
-pub extern "C" fn lift_list_set(list: *mut LiftList, index: i64, value: i64) {
+pub unsafe extern "C" fn lift_list_set(list: *mut LiftList, index: i64, value: i64) {
     if list.is_null() || index < 0 {
         return;
     }
@@ -407,7 +383,7 @@ pub extern "C" fn lift_list_set(list: *mut LiftList, index: i64, value: i64) {
 
 /// Get an element from the list at given index
 #[no_mangle]
-pub extern "C" fn lift_list_get(list: *const LiftList, index: i64) -> i64 {
+pub unsafe extern "C" fn lift_list_get(list: *const LiftList, index: i64) -> i64 {
     if list.is_null() || index < 0 {
         return 0;
     }
@@ -424,7 +400,7 @@ pub extern "C" fn lift_list_get(list: *const LiftList, index: i64) -> i64 {
 
 /// Get the length of a list
 #[no_mangle]
-pub extern "C" fn lift_list_len(list: *const LiftList) -> i64 {
+pub unsafe extern "C" fn lift_list_len(list: *const LiftList) -> i64 {
     if list.is_null() {
         return 0;
     }
@@ -436,7 +412,7 @@ pub extern "C" fn lift_list_len(list: *const LiftList) -> i64 {
 
 /// Free a list
 #[no_mangle]
-pub extern "C" fn lift_list_free(list: *mut LiftList) {
+pub unsafe extern "C" fn lift_list_free(list: *mut LiftList) {
     if list.is_null() {
         return;
     }
@@ -454,10 +430,10 @@ use std::collections::HashMap;
 
 /// Map key that properly handles different types with correct equality/hashing
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-enum MapKey {
+pub enum MapKey {
     Int(i64),
     Bool(bool),
-    Str(String),  // Actual string content, not pointer address
+    Str(String), // Actual string content, not pointer address
 }
 
 impl MapKey {
@@ -486,7 +462,13 @@ impl MapKey {
     fn to_i64(&self) -> i64 {
         match self {
             MapKey::Int(v) => *v,
-            MapKey::Bool(b) => if *b { 1 } else { 0 },
+            MapKey::Bool(b) => {
+                if *b {
+                    1
+                } else {
+                    0
+                }
+            }
             MapKey::Str(s) => {
                 // Need to allocate a new C string
                 let with_quotes = s.clone(); // String already has quotes
@@ -504,13 +486,13 @@ impl MapKey {
 #[repr(C)]
 pub struct LiftMap {
     pub entries: HashMap<MapKey, i64>,
-    pub key_type: i8,    // Type tag for keys (TYPE_INT, TYPE_STR, etc.)
-    pub value_type: i8,  // Type tag for values
+    pub key_type: i8,   // Type tag for keys (TYPE_INT, TYPE_STR, etc.)
+    pub value_type: i8, // Type tag for values
 }
 
 /// Create a new map with given capacity, key type, and value type
 #[no_mangle]
-pub extern "C" fn lift_map_new(capacity: i64, key_type: i8, value_type: i8) -> *mut LiftMap {
+pub unsafe extern "C" fn lift_map_new(capacity: i64, key_type: i8, value_type: i8) -> *mut LiftMap {
     let cap = capacity.max(0) as usize;
     let map = Box::new(LiftMap {
         entries: HashMap::with_capacity(cap),
@@ -522,7 +504,7 @@ pub extern "C" fn lift_map_new(capacity: i64, key_type: i8, value_type: i8) -> *
 
 /// Set a key-value pair in the map
 #[no_mangle]
-pub extern "C" fn lift_map_set(map: *mut LiftMap, key: i64, value: i64) {
+pub unsafe extern "C" fn lift_map_set(map: *mut LiftMap, key: i64, value: i64) {
     if map.is_null() {
         return;
     }
@@ -536,7 +518,7 @@ pub extern "C" fn lift_map_set(map: *mut LiftMap, key: i64, value: i64) {
 
 /// Get a value from the map by key
 #[no_mangle]
-pub extern "C" fn lift_map_get(map: *const LiftMap, key: i64) -> i64 {
+pub unsafe extern "C" fn lift_map_get(map: *const LiftMap, key: i64) -> i64 {
     if map.is_null() {
         return 0;
     }
@@ -552,7 +534,7 @@ pub extern "C" fn lift_map_get(map: *const LiftMap, key: i64) -> i64 {
 
 /// Get the number of entries in a map
 #[no_mangle]
-pub extern "C" fn lift_map_len(map: *const LiftMap) -> i64 {
+pub unsafe extern "C" fn lift_map_len(map: *const LiftMap) -> i64 {
     if map.is_null() {
         return 0;
     }
@@ -564,7 +546,7 @@ pub extern "C" fn lift_map_len(map: *const LiftMap) -> i64 {
 
 /// Free a map
 #[no_mangle]
-pub extern "C" fn lift_map_free(map: *mut LiftMap) {
+pub unsafe extern "C" fn lift_map_free(map: *mut LiftMap) {
     if map.is_null() {
         return;
     }
@@ -587,14 +569,14 @@ pub struct LiftRange {
 
 /// Create a new range
 #[no_mangle]
-pub extern "C" fn lift_range_new(start: i64, end: i64) -> *mut LiftRange {
+pub unsafe extern "C" fn lift_range_new(start: i64, end: i64) -> *mut LiftRange {
     let range = Box::new(LiftRange { start, end });
     Box::into_raw(range)
 }
 
 /// Get the start of a range
 #[no_mangle]
-pub extern "C" fn lift_range_start(range: *const LiftRange) -> i64 {
+pub unsafe extern "C" fn lift_range_start(range: *const LiftRange) -> i64 {
     if range.is_null() {
         return 0;
     }
@@ -606,7 +588,7 @@ pub extern "C" fn lift_range_start(range: *const LiftRange) -> i64 {
 
 /// Get the end of a range
 #[no_mangle]
-pub extern "C" fn lift_range_end(range: *const LiftRange) -> i64 {
+pub unsafe extern "C" fn lift_range_end(range: *const LiftRange) -> i64 {
     if range.is_null() {
         return 0;
     }
@@ -618,7 +600,7 @@ pub extern "C" fn lift_range_end(range: *const LiftRange) -> i64 {
 
 /// Free a range
 #[no_mangle]
-pub extern "C" fn lift_range_free(range: *mut LiftRange) {
+pub unsafe extern "C" fn lift_range_free(range: *mut LiftRange) {
     if !range.is_null() {
         unsafe {
             let _ = Box::from_raw(range);
@@ -628,7 +610,7 @@ pub extern "C" fn lift_range_free(range: *mut LiftRange) {
 
 /// Output a range
 #[no_mangle]
-pub extern "C" fn lift_output_range(range: *const LiftRange) {
+pub unsafe extern "C" fn lift_output_range(range: *const LiftRange) {
     if range.is_null() {
         print!("null ");
         return;
@@ -645,7 +627,7 @@ pub extern "C" fn lift_output_range(range: *const LiftRange) {
 
 /// Field value with type information
 #[derive(Debug, Clone)]
-pub(crate) struct StructFieldValue {
+pub struct StructFieldValue {
     pub type_tag: i8,
     pub value: i64,
 }
@@ -659,7 +641,10 @@ pub struct LiftStruct {
 
 /// Create a new struct with given type name and field capacity
 #[no_mangle]
-pub extern "C" fn lift_struct_new(type_name: *const c_char, field_count: i64) -> *mut LiftStruct {
+pub unsafe extern "C" fn lift_struct_new(
+    type_name: *const c_char,
+    field_count: i64,
+) -> *mut LiftStruct {
     if type_name.is_null() {
         return std::ptr::null_mut();
     }
@@ -680,11 +665,11 @@ pub extern "C" fn lift_struct_new(type_name: *const c_char, field_count: i64) ->
 
 /// Set a field value in a struct
 #[no_mangle]
-pub extern "C" fn lift_struct_set_field(
+pub unsafe extern "C" fn lift_struct_set_field(
     s: *mut LiftStruct,
     field_name: *const c_char,
     type_tag: i8,
-    value: i64
+    value: i64,
 ) {
     if s.is_null() || field_name.is_null() {
         return;
@@ -694,19 +679,18 @@ pub extern "C" fn lift_struct_set_field(
         let struct_ref = &mut *s;
         let c_str = std::ffi::CStr::from_ptr(field_name);
         if let Ok(name_str) = c_str.to_str() {
-            struct_ref.fields.insert(
-                name_str.to_string(),
-                StructFieldValue { type_tag, value }
-            );
+            struct_ref
+                .fields
+                .insert(name_str.to_string(), StructFieldValue { type_tag, value });
         }
     }
 }
 
 /// Get a field value from a struct
 #[no_mangle]
-pub extern "C" fn lift_struct_get_field(
+pub unsafe extern "C" fn lift_struct_get_field(
     s: *const LiftStruct,
-    field_name: *const c_char
+    field_name: *const c_char,
 ) -> i64 {
     if s.is_null() || field_name.is_null() {
         return 0;
@@ -726,9 +710,9 @@ pub extern "C" fn lift_struct_get_field(
 
 /// Get the type tag of a field in a struct
 #[no_mangle]
-pub extern "C" fn lift_struct_get_field_type(
+pub unsafe extern "C" fn lift_struct_get_field_type(
     s: *const LiftStruct,
-    field_name: *const c_char
+    field_name: *const c_char,
 ) -> i8 {
     if s.is_null() || field_name.is_null() {
         return -1;
@@ -748,7 +732,7 @@ pub extern "C" fn lift_struct_get_field_type(
 
 /// Free a struct
 #[no_mangle]
-pub extern "C" fn lift_struct_free(s: *mut LiftStruct) {
+pub unsafe extern "C" fn lift_struct_free(s: *mut LiftStruct) {
     if !s.is_null() {
         unsafe {
             let _ = Box::from_raw(s);
@@ -783,7 +767,7 @@ unsafe fn format_struct_inline(ptr: *const LiftStruct) {
 
 /// Output a struct (pretty-print with trailing space)
 #[no_mangle]
-pub extern "C" fn lift_output_struct(s: *const LiftStruct) {
+pub unsafe extern "C" fn lift_output_struct(s: *const LiftStruct) {
     if s.is_null() {
         print!("{{}} ");
         return;
@@ -834,7 +818,12 @@ unsafe fn compare_values_for_equality(val1: i64, type_tag1: i8, val2: i64, type_
                 return false;
             }
             for i in 0..l1.elements.len() {
-                if !compare_values_for_equality(l1.elements[i], l1.elem_type, l2.elements[i], l2.elem_type) {
+                if !compare_values_for_equality(
+                    l1.elements[i],
+                    l1.elem_type,
+                    l2.elements[i],
+                    l2.elem_type,
+                ) {
                     return false;
                 }
             }
@@ -851,13 +840,17 @@ unsafe fn compare_values_for_equality(val1: i64, type_tag1: i8, val2: i64, type_
             }
             let m1 = &*map1;
             let m2 = &*map2;
-            if m1.key_type != m2.key_type || m1.value_type != m2.value_type || m1.entries.len() != m2.entries.len() {
+            if m1.key_type != m2.key_type
+                || m1.value_type != m2.value_type
+                || m1.entries.len() != m2.entries.len()
+            {
                 return false;
             }
             for (key, val1) in &m1.entries {
                 match m2.entries.get(key) {
                     Some(val2) => {
-                        if !compare_values_for_equality(*val1, m1.value_type, *val2, m2.value_type) {
+                        if !compare_values_for_equality(*val1, m1.value_type, *val2, m2.value_type)
+                        {
                             return false;
                         }
                     }
@@ -885,7 +878,7 @@ unsafe fn compare_values_for_equality(val1: i64, type_tag1: i8, val2: i64, type_
 
 /// Compare two structs for structural equality
 #[no_mangle]
-pub extern "C" fn lift_struct_eq(s1: *const LiftStruct, s2: *const LiftStruct) -> i8 {
+pub unsafe extern "C" fn lift_struct_eq(s1: *const LiftStruct, s2: *const LiftStruct) -> i8 {
     if s1.is_null() && s2.is_null() {
         return 1;
     }
@@ -915,7 +908,7 @@ pub extern "C" fn lift_struct_eq(s1: *const LiftStruct, s2: *const LiftStruct) -
                         field_value1.value,
                         field_value1.type_tag,
                         field_value2.value,
-                        field_value2.type_tag
+                        field_value2.type_tag,
                     ) {
                         return 0;
                     }
@@ -931,7 +924,7 @@ pub extern "C" fn lift_struct_eq(s1: *const LiftStruct, s2: *const LiftStruct) -
 // ==================== String Methods ====================
 
 #[no_mangle]
-pub extern "C" fn lift_str_upper(s: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn lift_str_upper(s: *const c_char) -> *mut c_char {
     if s.is_null() {
         return std::ptr::null_mut();
     }
@@ -950,7 +943,7 @@ pub extern "C" fn lift_str_upper(s: *const c_char) -> *mut c_char {
 }
 
 #[no_mangle]
-pub extern "C" fn lift_str_lower(s: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn lift_str_lower(s: *const c_char) -> *mut c_char {
     if s.is_null() {
         return std::ptr::null_mut();
     }
@@ -969,7 +962,7 @@ pub extern "C" fn lift_str_lower(s: *const c_char) -> *mut c_char {
 }
 
 #[no_mangle]
-pub extern "C" fn lift_str_substring(s: *const c_char, start: i64, end: i64) -> *mut c_char {
+pub unsafe extern "C" fn lift_str_substring(s: *const c_char, start: i64, end: i64) -> *mut c_char {
     if s.is_null() {
         return std::ptr::null_mut();
     }
@@ -992,7 +985,7 @@ pub extern "C" fn lift_str_substring(s: *const c_char, start: i64, end: i64) -> 
 }
 
 #[no_mangle]
-pub extern "C" fn lift_str_contains(s: *const c_char, needle: *const c_char) -> i8 {
+pub unsafe extern "C" fn lift_str_contains(s: *const c_char, needle: *const c_char) -> i8 {
     if s.is_null() || needle.is_null() {
         return 0;
     }
@@ -1002,14 +995,18 @@ pub extern "C" fn lift_str_contains(s: *const c_char, needle: *const c_char) -> 
         if let (Ok(rust_str), Ok(rust_needle)) = (c_str.to_str(), c_needle.to_str()) {
             let trimmed = rust_str.trim_matches('\'');
             let needle_trimmed = rust_needle.trim_matches('\'');
-            return if trimmed.contains(needle_trimmed) { 1 } else { 0 };
+            return if trimmed.contains(needle_trimmed) {
+                1
+            } else {
+                0
+            };
         }
     }
     0
 }
 
 #[no_mangle]
-pub extern "C" fn lift_str_trim(s: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn lift_str_trim(s: *const c_char) -> *mut c_char {
     if s.is_null() {
         return std::ptr::null_mut();
     }
@@ -1028,7 +1025,10 @@ pub extern "C" fn lift_str_trim(s: *const c_char) -> *mut c_char {
 }
 
 #[no_mangle]
-pub extern "C" fn lift_str_split(s: *const c_char, delimiter: *const c_char) -> *mut LiftList {
+pub unsafe extern "C" fn lift_str_split(
+    s: *const c_char,
+    delimiter: *const c_char,
+) -> *mut LiftList {
     if s.is_null() || delimiter.is_null() {
         return std::ptr::null_mut();
     }
@@ -1058,7 +1058,11 @@ pub extern "C" fn lift_str_split(s: *const c_char, delimiter: *const c_char) -> 
 }
 
 #[no_mangle]
-pub extern "C" fn lift_str_replace(s: *const c_char, old: *const c_char, new: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn lift_str_replace(
+    s: *const c_char,
+    old: *const c_char,
+    new: *const c_char,
+) -> *mut c_char {
     if s.is_null() || old.is_null() || new.is_null() {
         return std::ptr::null_mut();
     }
@@ -1066,7 +1070,9 @@ pub extern "C" fn lift_str_replace(s: *const c_char, old: *const c_char, new: *c
         let c_str = std::ffi::CStr::from_ptr(s);
         let c_old = std::ffi::CStr::from_ptr(old);
         let c_new = std::ffi::CStr::from_ptr(new);
-        if let (Ok(rust_str), Ok(rust_old), Ok(rust_new)) = (c_str.to_str(), c_old.to_str(), c_new.to_str()) {
+        if let (Ok(rust_str), Ok(rust_old), Ok(rust_new)) =
+            (c_str.to_str(), c_old.to_str(), c_new.to_str())
+        {
             let trimmed = rust_str.trim_matches('\'');
             let old_trimmed = rust_old.trim_matches('\'');
             let new_trimmed = rust_new.trim_matches('\'');
@@ -1081,7 +1087,7 @@ pub extern "C" fn lift_str_replace(s: *const c_char, old: *const c_char, new: *c
 }
 
 #[no_mangle]
-pub extern "C" fn lift_str_starts_with(s: *const c_char, prefix: *const c_char) -> i8 {
+pub unsafe extern "C" fn lift_str_starts_with(s: *const c_char, prefix: *const c_char) -> i8 {
     if s.is_null() || prefix.is_null() {
         return 0;
     }
@@ -1091,14 +1097,18 @@ pub extern "C" fn lift_str_starts_with(s: *const c_char, prefix: *const c_char) 
         if let (Ok(rust_str), Ok(rust_prefix)) = (c_str.to_str(), c_prefix.to_str()) {
             let trimmed = rust_str.trim_matches('\'');
             let prefix_trimmed = rust_prefix.trim_matches('\'');
-            return if trimmed.starts_with(prefix_trimmed) { 1 } else { 0 };
+            return if trimmed.starts_with(prefix_trimmed) {
+                1
+            } else {
+                0
+            };
         }
     }
     0
 }
 
 #[no_mangle]
-pub extern "C" fn lift_str_ends_with(s: *const c_char, suffix: *const c_char) -> i8 {
+pub unsafe extern "C" fn lift_str_ends_with(s: *const c_char, suffix: *const c_char) -> i8 {
     if s.is_null() || suffix.is_null() {
         return 0;
     }
@@ -1108,14 +1118,18 @@ pub extern "C" fn lift_str_ends_with(s: *const c_char, suffix: *const c_char) ->
         if let (Ok(rust_str), Ok(rust_suffix)) = (c_str.to_str(), c_suffix.to_str()) {
             let trimmed = rust_str.trim_matches('\'');
             let suffix_trimmed = rust_suffix.trim_matches('\'');
-            return if trimmed.ends_with(suffix_trimmed) { 1 } else { 0 };
+            return if trimmed.ends_with(suffix_trimmed) {
+                1
+            } else {
+                0
+            };
         }
     }
     0
 }
 
 #[no_mangle]
-pub extern "C" fn lift_str_is_empty(s: *const c_char) -> i8 {
+pub unsafe extern "C" fn lift_str_is_empty(s: *const c_char) -> i8 {
     if s.is_null() {
         return 1;
     }
@@ -1132,7 +1146,7 @@ pub extern "C" fn lift_str_is_empty(s: *const c_char) -> i8 {
 // ==================== List Methods ====================
 
 #[no_mangle]
-pub extern "C" fn lift_list_first(list: *const LiftList) -> i64 {
+pub unsafe extern "C" fn lift_list_first(list: *const LiftList) -> i64 {
     if list.is_null() {
         return 0;
     }
@@ -1146,7 +1160,7 @@ pub extern "C" fn lift_list_first(list: *const LiftList) -> i64 {
 }
 
 #[no_mangle]
-pub extern "C" fn lift_list_last(list: *const LiftList) -> i64 {
+pub unsafe extern "C" fn lift_list_last(list: *const LiftList) -> i64 {
     if list.is_null() {
         return 0;
     }
@@ -1160,18 +1174,26 @@ pub extern "C" fn lift_list_last(list: *const LiftList) -> i64 {
 }
 
 #[no_mangle]
-pub extern "C" fn lift_list_contains(list: *const LiftList, item: i64) -> i8 {
+pub unsafe extern "C" fn lift_list_contains(list: *const LiftList, item: i64) -> i8 {
     if list.is_null() {
         return 0;
     }
     unsafe {
         let list_ref = &*list;
-        if list_ref.elements.contains(&item) { 1 } else { 0 }
+        if list_ref.elements.contains(&item) {
+            1
+        } else {
+            0
+        }
     }
 }
 
 #[no_mangle]
-pub extern "C" fn lift_list_slice(list: *const LiftList, start: i64, end: i64) -> *mut LiftList {
+pub unsafe extern "C" fn lift_list_slice(
+    list: *const LiftList,
+    start: i64,
+    end: i64,
+) -> *mut LiftList {
     if list.is_null() {
         return std::ptr::null_mut();
     }
@@ -1188,14 +1210,14 @@ pub extern "C" fn lift_list_slice(list: *const LiftList, start: i64, end: i64) -
 
         let new_list = Box::new(LiftList {
             elements: sliced,
-            elem_type: list_ref.elem_type,  // Preserve element type from original list
+            elem_type: list_ref.elem_type, // Preserve element type from original list
         });
         Box::into_raw(new_list)
     }
 }
 
 #[no_mangle]
-pub extern "C" fn lift_list_reverse(list: *const LiftList) -> *mut LiftList {
+pub unsafe extern "C" fn lift_list_reverse(list: *const LiftList) -> *mut LiftList {
     if list.is_null() {
         return std::ptr::null_mut();
     }
@@ -1206,14 +1228,17 @@ pub extern "C" fn lift_list_reverse(list: *const LiftList) -> *mut LiftList {
 
         let new_list = Box::new(LiftList {
             elements: reversed,
-            elem_type: list_ref.elem_type,  // Preserve element type from original list
+            elem_type: list_ref.elem_type, // Preserve element type from original list
         });
         Box::into_raw(new_list)
     }
 }
 
 #[no_mangle]
-pub extern "C" fn lift_list_join(list: *const LiftList, separator: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn lift_list_join(
+    list: *const LiftList,
+    separator: *const c_char,
+) -> *mut c_char {
     if list.is_null() || separator.is_null() {
         return std::ptr::null_mut();
     }
@@ -1224,18 +1249,22 @@ pub extern "C" fn lift_list_join(list: *const LiftList, separator: *const c_char
             let sep_trimmed = rust_sep.trim_matches('\'');
 
             // Convert i64 elements (which are string pointers) to strings
-            let strings: Vec<String> = list_ref.elements.iter().map(|&elem| {
-                let str_ptr = elem as *const c_char;
-                if !str_ptr.is_null() {
-                    if let Ok(c_str) = std::ffi::CStr::from_ptr(str_ptr).to_str() {
-                        c_str.trim_matches('\'').to_string()
+            let strings: Vec<String> = list_ref
+                .elements
+                .iter()
+                .map(|&elem| {
+                    let str_ptr = elem as *const c_char;
+                    if !str_ptr.is_null() {
+                        if let Ok(c_str) = std::ffi::CStr::from_ptr(str_ptr).to_str() {
+                            c_str.trim_matches('\'').to_string()
+                        } else {
+                            String::new()
+                        }
                     } else {
                         String::new()
                     }
-                } else {
-                    String::new()
-                }
-            }).collect();
+                })
+                .collect();
 
             let joined = strings.join(sep_trimmed);
             let result = format!("'{}'", joined);
@@ -1248,20 +1277,24 @@ pub extern "C" fn lift_list_join(list: *const LiftList, separator: *const c_char
 }
 
 #[no_mangle]
-pub extern "C" fn lift_list_is_empty(list: *const LiftList) -> i8 {
+pub unsafe extern "C" fn lift_list_is_empty(list: *const LiftList) -> i8 {
     if list.is_null() {
         return 1;
     }
     unsafe {
         let list_ref = &*list;
-        if list_ref.elements.is_empty() { 1 } else { 0 }
+        if list_ref.elements.is_empty() {
+            1
+        } else {
+            0
+        }
     }
 }
 
 // ==================== Map Methods ====================
 
 #[no_mangle]
-pub extern "C" fn lift_map_keys(map: *const LiftMap) -> *mut LiftList {
+pub unsafe extern "C" fn lift_map_keys(map: *const LiftMap) -> *mut LiftList {
     if map.is_null() {
         return std::ptr::null_mut();
     }
@@ -1275,14 +1308,14 @@ pub extern "C" fn lift_map_keys(map: *const LiftMap) -> *mut LiftList {
 
         let list = Box::new(LiftList {
             elements: key_values,
-            elem_type: map_ref.key_type,  // Keys have the map's key type
+            elem_type: map_ref.key_type, // Keys have the map's key type
         });
         Box::into_raw(list)
     }
 }
 
 #[no_mangle]
-pub extern "C" fn lift_map_values(map: *const LiftMap) -> *mut LiftList {
+pub unsafe extern "C" fn lift_map_values(map: *const LiftMap) -> *mut LiftList {
     if map.is_null() {
         return std::ptr::null_mut();
     }
@@ -1295,21 +1328,25 @@ pub extern "C" fn lift_map_values(map: *const LiftMap) -> *mut LiftList {
 
         let list = Box::new(LiftList {
             elements: values,
-            elem_type: map_ref.value_type,  // Values have the map's value type
+            elem_type: map_ref.value_type, // Values have the map's value type
         });
         Box::into_raw(list)
     }
 }
 
 #[no_mangle]
-pub extern "C" fn lift_map_contains_key(map: *const LiftMap, key: i64) -> i8 {
+pub unsafe extern "C" fn lift_map_contains_key(map: *const LiftMap, key: i64) -> i8 {
     if map.is_null() {
         return 0;
     }
     unsafe {
         let map_ref = &*map;
         if let Some(map_key) = MapKey::from_i64(key, map_ref.key_type) {
-            if map_ref.entries.contains_key(&map_key) { 1 } else { 0 }
+            if map_ref.entries.contains_key(&map_key) {
+                1
+            } else {
+                0
+            }
         } else {
             0
         }
@@ -1317,13 +1354,17 @@ pub extern "C" fn lift_map_contains_key(map: *const LiftMap, key: i64) -> i8 {
 }
 
 #[no_mangle]
-pub extern "C" fn lift_map_is_empty(map: *const LiftMap) -> i8 {
+pub unsafe extern "C" fn lift_map_is_empty(map: *const LiftMap) -> i8 {
     if map.is_null() {
         return 1;
     }
     unsafe {
         let map_ref = &*map;
-        if map_ref.entries.is_empty() { 1 } else { 0 }
+        if map_ref.entries.is_empty() {
+            1
+        } else {
+            0
+        }
     }
 }
 
@@ -1343,9 +1384,9 @@ mod tests {
             let c_str = std::ffi::CStr::from_ptr(result);
             assert_eq!(c_str.to_str().unwrap(), "'Hello World'");
 
-            lift_str_free(s1 as *mut c_char);
-            lift_str_free(s2 as *mut c_char);
-            lift_str_free(result);
+            free_lift_string(s1 as *mut c_char);
+            free_lift_string(s2 as *mut c_char);
+            free_lift_string(result);
         }
     }
 
@@ -1355,7 +1396,7 @@ mod tests {
             let s = make_lift_string("Hello");
             let len = lift_str_len(s);
             assert_eq!(len, 5);
-            lift_str_free(s as *mut c_char);
+            free_lift_string(s as *mut c_char);
         }
     }
 
@@ -1369,9 +1410,9 @@ mod tests {
             assert_eq!(lift_str_eq(s1, s2), 1);
             assert_eq!(lift_str_eq(s1, s3), 0);
 
-            lift_str_free(s1 as *mut c_char);
-            lift_str_free(s2 as *mut c_char);
-            lift_str_free(s3 as *mut c_char);
+            free_lift_string(s1 as *mut c_char);
+            free_lift_string(s2 as *mut c_char);
+            free_lift_string(s3 as *mut c_char);
         }
     }
 }

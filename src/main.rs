@@ -1,11 +1,11 @@
+mod compile_types;
+mod compiler;
+mod cranelift;
 mod interpreter;
+mod runtime;
 mod semantic; // Modular semantic analysis
 mod symboltable;
 mod syntax;
-mod compile_types;
-mod runtime;
-mod cranelift;
-mod compiler;
 
 use lalrpop_util::{lalrpop_mod, ParseError};
 use std::error;
@@ -70,7 +70,10 @@ pub fn repl() {
                             }
                         }
                         Err(ref parse_error) => match parse_error {
-                            ParseError::UnrecognizedEof { location: _, expected: _ } => {
+                            ParseError::UnrecognizedEof {
+                                location: _,
+                                expected: _,
+                            } => {
                                 buffer.push('\n');
                                 prompt = ">>".to_string();
                             }
@@ -99,7 +102,9 @@ pub fn repl() {
                 }
             } // match
         } // loop
-        if quit {break;}
+        if quit {
+            break;
+        }
     } // loop
     let _ = rl.save_history("history.txt");
 }
@@ -128,8 +133,8 @@ fn interpret_code(code: &str) -> Result<(), Box<dyn error::Error>> {
 }
 
 fn compile_code(code: &str) -> Result<(), Box<dyn error::Error>> {
-    use syntax::DataType;
     use semantic::determine_type_with_symbols;
+    use syntax::DataType;
 
     let parser = grammar::ProgramParser::new();
     let mut ast = match parser.parse(code) {
@@ -185,7 +190,8 @@ fn main() {
         repl();
     } else {
         // Find the program file (skip flags)
-        let program_file = args.iter()
+        let program_file = args
+            .iter()
             .skip(1)
             .find(|arg| !arg.starts_with('-'))
             .expect("No program file specified");

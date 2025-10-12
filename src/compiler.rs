@@ -2,8 +2,8 @@
 
 use crate::cranelift::CodeGenerator;
 use crate::runtime;
-use crate::syntax::Expr;
 use crate::symboltable::SymbolTable;
+use crate::syntax::Expr;
 use cranelift_jit::{JITBuilder, JITModule};
 use std::error::Error;
 
@@ -22,7 +22,10 @@ impl JITCompiler {
         builder.symbol("lift_output_float", runtime::lift_output_float as *const u8);
         builder.symbol("lift_output_bool", runtime::lift_output_bool as *const u8);
         builder.symbol("lift_output_str", runtime::lift_output_str as *const u8);
-        builder.symbol("lift_output_newline", runtime::lift_output_newline as *const u8);
+        builder.symbol(
+            "lift_output_newline",
+            runtime::lift_output_newline as *const u8,
+        );
         builder.symbol("lift_output_list", runtime::lift_output_list as *const u8);
         builder.symbol("lift_output_map", runtime::lift_output_map as *const u8);
         builder.symbol("lift_str_new", runtime::lift_str_new as *const u8);
@@ -45,37 +48,67 @@ impl JITCompiler {
         // String method symbols
         builder.symbol("lift_str_upper", runtime::lift_str_upper as *const u8);
         builder.symbol("lift_str_lower", runtime::lift_str_lower as *const u8);
-        builder.symbol("lift_str_substring", runtime::lift_str_substring as *const u8);
+        builder.symbol(
+            "lift_str_substring",
+            runtime::lift_str_substring as *const u8,
+        );
         builder.symbol("lift_str_contains", runtime::lift_str_contains as *const u8);
         builder.symbol("lift_str_trim", runtime::lift_str_trim as *const u8);
         builder.symbol("lift_str_split", runtime::lift_str_split as *const u8);
         builder.symbol("lift_str_replace", runtime::lift_str_replace as *const u8);
-        builder.symbol("lift_str_starts_with", runtime::lift_str_starts_with as *const u8);
-        builder.symbol("lift_str_ends_with", runtime::lift_str_ends_with as *const u8);
+        builder.symbol(
+            "lift_str_starts_with",
+            runtime::lift_str_starts_with as *const u8,
+        );
+        builder.symbol(
+            "lift_str_ends_with",
+            runtime::lift_str_ends_with as *const u8,
+        );
         builder.symbol("lift_str_is_empty", runtime::lift_str_is_empty as *const u8);
 
         // List method symbols
         builder.symbol("lift_list_first", runtime::lift_list_first as *const u8);
         builder.symbol("lift_list_last", runtime::lift_list_last as *const u8);
-        builder.symbol("lift_list_contains", runtime::lift_list_contains as *const u8);
+        builder.symbol(
+            "lift_list_contains",
+            runtime::lift_list_contains as *const u8,
+        );
         builder.symbol("lift_list_slice", runtime::lift_list_slice as *const u8);
         builder.symbol("lift_list_reverse", runtime::lift_list_reverse as *const u8);
         builder.symbol("lift_list_join", runtime::lift_list_join as *const u8);
-        builder.symbol("lift_list_is_empty", runtime::lift_list_is_empty as *const u8);
+        builder.symbol(
+            "lift_list_is_empty",
+            runtime::lift_list_is_empty as *const u8,
+        );
 
         // Map method symbols
         builder.symbol("lift_map_keys", runtime::lift_map_keys as *const u8);
         builder.symbol("lift_map_values", runtime::lift_map_values as *const u8);
-        builder.symbol("lift_map_contains_key", runtime::lift_map_contains_key as *const u8);
+        builder.symbol(
+            "lift_map_contains_key",
+            runtime::lift_map_contains_key as *const u8,
+        );
         builder.symbol("lift_map_is_empty", runtime::lift_map_is_empty as *const u8);
 
         // Struct symbols
         builder.symbol("lift_struct_new", runtime::lift_struct_new as *const u8);
-        builder.symbol("lift_struct_set_field", runtime::lift_struct_set_field as *const u8);
-        builder.symbol("lift_struct_get_field", runtime::lift_struct_get_field as *const u8);
-        builder.symbol("lift_struct_get_field_type", runtime::lift_struct_get_field_type as *const u8);
+        builder.symbol(
+            "lift_struct_set_field",
+            runtime::lift_struct_set_field as *const u8,
+        );
+        builder.symbol(
+            "lift_struct_get_field",
+            runtime::lift_struct_get_field as *const u8,
+        );
+        builder.symbol(
+            "lift_struct_get_field_type",
+            runtime::lift_struct_get_field_type as *const u8,
+        );
         builder.symbol("lift_struct_eq", runtime::lift_struct_eq as *const u8);
-        builder.symbol("lift_output_struct", runtime::lift_output_struct as *const u8);
+        builder.symbol(
+            "lift_output_struct",
+            runtime::lift_output_struct as *const u8,
+        );
         builder.symbol("lift_struct_free", runtime::lift_struct_free as *const u8);
 
         // Create the JIT module
@@ -681,8 +714,14 @@ mod tests {
             key_type: crate::syntax::DataType::Int,
             value_type: crate::syntax::DataType::Int,
             data: vec![
-                (crate::syntax::KeyData::Int(1), Expr::Literal(LiteralData::Int(100))),
-                (crate::syntax::KeyData::Int(2), Expr::Literal(LiteralData::Int(200))),
+                (
+                    crate::syntax::KeyData::Int(1),
+                    Expr::Literal(LiteralData::Int(100)),
+                ),
+                (
+                    crate::syntax::KeyData::Int(2),
+                    Expr::Literal(LiteralData::Int(200)),
+                ),
             ],
         };
 
@@ -713,8 +752,14 @@ mod tests {
                         key_type: crate::syntax::DataType::Int,
                         value_type: crate::syntax::DataType::Int,
                         data: vec![
-                            (crate::syntax::KeyData::Int(1), Expr::Literal(LiteralData::Int(25))),
-                            (crate::syntax::KeyData::Int(2), Expr::Literal(LiteralData::Int(30))),
+                            (
+                                crate::syntax::KeyData::Int(1),
+                                Expr::Literal(LiteralData::Int(25)),
+                            ),
+                            (
+                                crate::syntax::KeyData::Int(2),
+                                Expr::Literal(LiteralData::Int(30)),
+                            ),
                         ],
                     }),
                     mutable: false,
@@ -908,8 +953,14 @@ mod tests {
                         key_type: crate::syntax::DataType::Bool,
                         value_type: crate::syntax::DataType::Int,
                         data: vec![
-                            (crate::syntax::KeyData::Bool(true), Expr::Literal(LiteralData::Int(100))),
-                            (crate::syntax::KeyData::Bool(false), Expr::Literal(LiteralData::Int(200))),
+                            (
+                                crate::syntax::KeyData::Bool(true),
+                                Expr::Literal(LiteralData::Int(100)),
+                            ),
+                            (
+                                crate::syntax::KeyData::Bool(false),
+                                Expr::Literal(LiteralData::Int(200)),
+                            ),
                         ],
                     }),
                     mutable: false,
@@ -1009,9 +1060,18 @@ mod tests {
                         key_type: crate::syntax::DataType::Int,
                         value_type: crate::syntax::DataType::Int,
                         data: vec![
-                            (crate::syntax::KeyData::Int(1), Expr::Literal(LiteralData::Int(25))),
-                            (crate::syntax::KeyData::Int(2), Expr::Literal(LiteralData::Int(30))),
-                            (crate::syntax::KeyData::Int(3), Expr::Literal(LiteralData::Int(35))),
+                            (
+                                crate::syntax::KeyData::Int(1),
+                                Expr::Literal(LiteralData::Int(25)),
+                            ),
+                            (
+                                crate::syntax::KeyData::Int(2),
+                                Expr::Literal(LiteralData::Int(30)),
+                            ),
+                            (
+                                crate::syntax::KeyData::Int(3),
+                                Expr::Literal(LiteralData::Int(35)),
+                            ),
                         ],
                     }),
                     mutable: false,
@@ -1370,10 +1430,7 @@ mod tests {
         let expr = Expr::Block {
             body: vec![
                 Expr::Output {
-                    data: vec![Expr::Range(
-                        LiteralData::Int(1),
-                        LiteralData::Int(10),
-                    )],
+                    data: vec![Expr::Range(LiteralData::Int(1), LiteralData::Int(10))],
                 },
                 Expr::Literal(LiteralData::Int(0)),
             ],
@@ -1416,7 +1473,7 @@ mod tests {
                     index: (0, 0),
                     data_type: DataType::Range(Box::new(Expr::Range(
                         LiteralData::Int(0),
-                        LiteralData::Int(0)
+                        LiteralData::Int(0),
                     ))),
                     value: Box::new(Expr::BinaryExpr {
                         left: Box::new(Expr::Variable {
@@ -1453,7 +1510,7 @@ mod tests {
 
     #[test]
     fn test_compile_simple_function() {
-        use crate::syntax::{DataType, Function, Param};
+        use crate::syntax::{DataType, Function};
 
         let mut compiler = JITCompiler::new().unwrap();
 
@@ -1674,7 +1731,7 @@ mod tests {
 
     #[test]
     fn test_compile_str_upper() {
-        use crate::syntax::{DataType, Function, KeywordArg};
+        use crate::syntax::DataType;
 
         let mut compiler = JITCompiler::new().unwrap();
 

@@ -1,18 +1,21 @@
 // Function compilation methods for Cranelift code generation
 
+use super::types::VarInfo;
 use super::CodeGenerator;
-use super::types::{VarInfo, data_type_to_cranelift_type, data_type_to_type_tag};
-use crate::syntax::{Expr, DataType};
 use crate::symboltable::SymbolTable;
+use crate::syntax::Expr;
 use cranelift::prelude::*;
 use cranelift_codegen::ir::FuncRef;
-use cranelift_module::{Module, FuncId};
+use cranelift_module::Module;
 use std::collections::HashMap;
-use std::ffi::CString;
 
 impl<'a, M: Module> CodeGenerator<'a, M> {
     /// Collect all function definitions from an expression tree
-    pub(super) fn collect_function_definitions<'e>(&self, expr: &'e Expr, functions: &mut Vec<(&'e str, &'e Expr)>) {
+    pub(super) fn collect_function_definitions<'e>(
+        &self,
+        expr: &'e Expr,
+        functions: &mut Vec<(&'e str, &'e Expr)>,
+    ) {
         match expr {
             Expr::DefineFunction { fn_name, value, .. } => {
                 functions.push((fn_name, value));
@@ -22,7 +25,11 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                     self.collect_function_definitions(e, functions);
                 }
             }
-            Expr::If { cond, then, final_else } => {
+            Expr::If {
+                cond,
+                then,
+                final_else,
+            } => {
                 self.collect_function_definitions(cond, functions);
                 self.collect_function_definitions(then, functions);
                 self.collect_function_definitions(final_else, functions);
@@ -37,7 +44,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             Expr::Assign { value, .. } => {
                 self.collect_function_definitions(value, functions);
             }
-            _ => {}  // Other expressions don't contain function definitions
+            _ => {} // Other expressions don't contain function definitions
         }
     }
 
@@ -51,7 +58,12 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         // Extract the Lambda
         let function = match lambda_expr {
             Expr::Lambda { value, .. } => value,
-            _ => return Err(format!("DefineFunction value must be a Lambda, got: {:?}", lambda_expr)),
+            _ => {
+                return Err(format!(
+                    "DefineFunction value must be a Lambda, got: {:?}",
+                    lambda_expr
+                ))
+            }
         };
 
         // Build Cranelift function signature
@@ -72,7 +84,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         sig.returns.push(AbiParam::new(return_type));
 
         // Declare the function
-        let func_id = self.module
+        let func_id = self
+            .module
             .declare_function(fn_name, cranelift_module::Linkage::Local, &sig)
             .map_err(|e| format!("Failed to declare function {}: {}", fn_name, e))?;
 
@@ -96,14 +109,18 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             // Declare runtime functions in this function's scope
             let mut runtime_refs = HashMap::new();
             for (name, func_id) in &self.runtime_funcs {
-                let func_ref = self.module.declare_func_in_func(*func_id, &mut builder.func);
+                let func_ref = self
+                    .module
+                    .declare_func_in_func(*func_id, &mut builder.func);
                 runtime_refs.insert(name.clone(), func_ref);
             }
 
             // Declare other user functions in this scope (for recursion and mutual recursion)
             let mut user_func_refs = HashMap::new();
             for (name, func_id) in &self.function_refs {
-                let func_ref = self.module.declare_func_in_func(*func_id, &mut builder.func);
+                let func_ref = self
+                    .module
+                    .declare_func_in_func(*func_id, &mut builder.func);
                 user_func_refs.insert(name.clone(), func_ref);
             }
 
@@ -116,33 +133,40 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 let param_value = block_params[i];
                 // Resolve TypeRef to underlying type
                 let resolved_param_type = Self::resolve_type_alias(&param.data_type, symbols);
-                let param_type = Self::data_type_to_cranelift_type(&resolved_param_type, pointer_type);
+                let param_type =
+                    Self::data_type_to_cranelift_type(&resolved_param_type, pointer_type);
 
                 if param.copy {
                     // cpy parameter: allocate stack slot and store value
                     let slot = builder.create_sized_stack_slot(StackSlotData::new(
                         StackSlotKind::ExplicitSlot,
-                        8,  // 8 bytes for i64/f64/pointer
-                        0
+                        8, // 8 bytes for i64/f64/pointer
+                        0,
                     ));
                     builder.ins().stack_store(param_value, slot, 0);
-                    variables.insert(param.name.clone(), VarInfo {
-                        slot,
-                        cranelift_type: param_type,
-                    });
+                    variables.insert(
+                        param.name.clone(),
+                        VarInfo {
+                            slot,
+                            cranelift_type: param_type,
+                        },
+                    );
                 } else {
                     // Regular parameter: create stack slot for immutable access
                     // (we can't reassign to block params, so we store them)
                     let slot = builder.create_sized_stack_slot(StackSlotData::new(
                         StackSlotKind::ExplicitSlot,
                         8,
-                        0
+                        0,
                     ));
                     builder.ins().stack_store(param_value, slot, 0);
-                    variables.insert(param.name.clone(), VarInfo {
-                        slot,
-                        cranelift_type: param_type,
-                    });
+                    variables.insert(
+                        param.name.clone(),
+                        VarInfo {
+                            slot,
+                            cranelift_type: param_type,
+                        },
+                    );
                 }
             }
 
@@ -153,11 +177,12 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 symbols,
                 &runtime_refs,
                 &user_func_refs,
-                &mut variables
+                &mut variables,
             )?;
 
             // Handle return value - all functions must return a value
-            let return_value = result.ok_or_else(|| format!("Function '{}' must return a value", fn_name))?;
+            let return_value =
+                result.ok_or_else(|| format!("Function '{}' must return a value", fn_name))?;
             builder.ins().return_(&[return_value]);
 
             // Finalize
@@ -199,38 +224,53 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                     symbols,
                     runtime_funcs,
                     user_func_refs,
-                    variables
+                    variables,
                 );
             }
         }
 
         // Regular function call - look up the function reference
-        let func_ref = user_func_refs.get(fn_name)
+        let func_ref = user_func_refs
+            .get(fn_name)
             .ok_or_else(|| format!("Undefined function: {}", fn_name))?;
 
         // Get function from symbol table to determine parameter order
-        let func_expr = symbols.get_symbol_value(index)
+        let func_expr = symbols
+            .get_symbol_value(index)
             .ok_or_else(|| format!("Function {} not in symbol table", fn_name))?;
 
         // Extract the Function from DefineFunction -> Lambda or directly from Lambda
         let function = match func_expr {
-            Expr::DefineFunction { value, .. } => {
-                match value.as_ref() {
-                    Expr::Lambda { value: f, .. } => f,
-                    _ => return Err(format!("{} DefineFunction does not contain Lambda", fn_name)),
+            Expr::DefineFunction { value, .. } => match value.as_ref() {
+                Expr::Lambda { value: f, .. } => f,
+                _ => {
+                    return Err(format!(
+                        "{} DefineFunction does not contain Lambda",
+                        fn_name
+                    ))
                 }
-            }
+            },
             Expr::Lambda { value: f, .. } => f,
-            _ => return Err(format!("{} is not a function (got: {:?})", fn_name, func_expr)),
+            _ => {
+                return Err(format!(
+                    "{} is not a function (got: {:?})",
+                    fn_name, func_expr
+                ))
+            }
         };
 
         // Get parameter names in order
-        let param_names = function.params.iter().map(|p| p.name.clone()).collect::<Vec<_>>();
+        let param_names = function
+            .params
+            .iter()
+            .map(|p| p.name.clone())
+            .collect::<Vec<_>>();
 
         // Evaluate arguments in parameter order
         let mut arg_values = Vec::new();
         for param_name in &param_names {
-            let arg = args.iter()
+            let arg = args
+                .iter()
                 .find(|a| &a.name == param_name)
                 .ok_or_else(|| format!("Missing argument: {}", param_name))?;
 
@@ -240,8 +280,9 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 symbols,
                 runtime_funcs,
                 user_func_refs,
-                variables
-            )?.ok_or_else(|| format!("Function argument '{}' cannot be Unit", param_name))?;
+                variables,
+            )?
+            .ok_or_else(|| format!("Function argument '{}' cannot be Unit", param_name))?;
 
             arg_values.push(val);
         }
@@ -252,7 +293,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         // Get return value (if any)
         let results = builder.inst_results(inst);
         if results.is_empty() {
-            Ok(None)  // Unit return
+            Ok(None) // Unit return
         } else {
             Ok(Some(results[0]))
         }
@@ -296,15 +337,27 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
 
         // Compile receiver
         let receiver_val = Self::compile_expr_static(
-            builder, receiver, symbols, runtime_funcs, user_func_refs, variables
-        )?.ok_or("Method receiver cannot be Unit")?;
+            builder,
+            receiver,
+            symbols,
+            runtime_funcs,
+            user_func_refs,
+            variables,
+        )?
+        .ok_or("Method receiver cannot be Unit")?;
 
         // Compile arguments and build argument list (receiver is first arg)
         let mut arg_vals = vec![receiver_val];
         for arg in args {
             let val = Self::compile_expr_static(
-                builder, &arg.value, symbols, runtime_funcs, user_func_refs, variables
-            )?.ok_or_else(|| format!("Method arg '{}' cannot be Unit", arg.name))?;
+                builder,
+                &arg.value,
+                symbols,
+                runtime_funcs,
+                user_func_refs,
+                variables,
+            )?
+            .ok_or_else(|| format!("Method arg '{}' cannot be Unit", arg.name))?;
             arg_vals.push(val);
         }
 
@@ -312,33 +365,34 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         if let Some(builtin) = builtin_opt {
             // Built-in method - map to runtime function
             let runtime_func_name = match builtin {
-            BuiltinMethod::StrUpper => "lift_str_upper",
-            BuiltinMethod::StrLower => "lift_str_lower",
-            BuiltinMethod::StrSubstring => "lift_str_substring",
-            BuiltinMethod::StrContains => "lift_str_contains",
-            BuiltinMethod::StrTrim => "lift_str_trim",
-            BuiltinMethod::StrSplit => "lift_str_split",
-            BuiltinMethod::StrReplace => "lift_str_replace",
-            BuiltinMethod::StrStartsWith => "lift_str_starts_with",
-            BuiltinMethod::StrEndsWith => "lift_str_ends_with",
-            BuiltinMethod::StrIsEmpty => "lift_str_is_empty",
+                BuiltinMethod::StrUpper => "lift_str_upper",
+                BuiltinMethod::StrLower => "lift_str_lower",
+                BuiltinMethod::StrSubstring => "lift_str_substring",
+                BuiltinMethod::StrContains => "lift_str_contains",
+                BuiltinMethod::StrTrim => "lift_str_trim",
+                BuiltinMethod::StrSplit => "lift_str_split",
+                BuiltinMethod::StrReplace => "lift_str_replace",
+                BuiltinMethod::StrStartsWith => "lift_str_starts_with",
+                BuiltinMethod::StrEndsWith => "lift_str_ends_with",
+                BuiltinMethod::StrIsEmpty => "lift_str_is_empty",
 
-            BuiltinMethod::ListFirst => "lift_list_first",
-            BuiltinMethod::ListLast => "lift_list_last",
-            BuiltinMethod::ListContains => "lift_list_contains",
-            BuiltinMethod::ListSlice => "lift_list_slice",
-            BuiltinMethod::ListReverse => "lift_list_reverse",
-            BuiltinMethod::ListJoin => "lift_list_join",
-            BuiltinMethod::ListIsEmpty => "lift_list_is_empty",
+                BuiltinMethod::ListFirst => "lift_list_first",
+                BuiltinMethod::ListLast => "lift_list_last",
+                BuiltinMethod::ListContains => "lift_list_contains",
+                BuiltinMethod::ListSlice => "lift_list_slice",
+                BuiltinMethod::ListReverse => "lift_list_reverse",
+                BuiltinMethod::ListJoin => "lift_list_join",
+                BuiltinMethod::ListIsEmpty => "lift_list_is_empty",
 
-            BuiltinMethod::MapKeys => "lift_map_keys",
-            BuiltinMethod::MapValues => "lift_map_values",
-            BuiltinMethod::MapContainsKey => "lift_map_contains_key",
-            BuiltinMethod::MapIsEmpty => "lift_map_is_empty",
-        };
+                BuiltinMethod::MapKeys => "lift_map_keys",
+                BuiltinMethod::MapValues => "lift_map_values",
+                BuiltinMethod::MapContainsKey => "lift_map_contains_key",
+                BuiltinMethod::MapIsEmpty => "lift_map_is_empty",
+            };
 
             // Call runtime function
-            let func_ref = runtime_funcs.get(runtime_func_name)
+            let func_ref = runtime_funcs
+                .get(runtime_func_name)
                 .ok_or_else(|| format!("Runtime function not found: {}", runtime_func_name))?;
 
             let inst = builder.ins().call(*func_ref, &arg_vals);
@@ -350,11 +404,16 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             } else {
                 let result = results[0];
                 // Convert i8 bool to i64 if needed
-                let needs_extension = matches!(builtin,
-                    BuiltinMethod::StrContains | BuiltinMethod::StrStartsWith |
-                    BuiltinMethod::StrEndsWith | BuiltinMethod::StrIsEmpty |
-                    BuiltinMethod::ListContains | BuiltinMethod::ListIsEmpty |
-                    BuiltinMethod::MapContainsKey | BuiltinMethod::MapIsEmpty
+                let needs_extension = matches!(
+                    builtin,
+                    BuiltinMethod::StrContains
+                        | BuiltinMethod::StrStartsWith
+                        | BuiltinMethod::StrEndsWith
+                        | BuiltinMethod::StrIsEmpty
+                        | BuiltinMethod::ListContains
+                        | BuiltinMethod::ListIsEmpty
+                        | BuiltinMethod::MapContainsKey
+                        | BuiltinMethod::MapIsEmpty
                 );
 
                 if needs_extension {
@@ -377,13 +436,20 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             let func_ref = if let Some(orig_name) = original_type_name {
                 let original_method_name = format!("{}.{}", orig_name, method_name);
                 // Try original first
-                user_func_refs.get(&original_method_name)
+                user_func_refs
+                    .get(&original_method_name)
                     // Fall back to resolved type
                     .or_else(|| user_func_refs.get(&resolved_method_name))
-                    .ok_or_else(|| format!("Undefined method: {} (also tried {})", original_method_name, resolved_method_name))?
+                    .ok_or_else(|| {
+                        format!(
+                            "Undefined method: {} (also tried {})",
+                            original_method_name, resolved_method_name
+                        )
+                    })?
             } else {
                 // No type alias, just use resolved type name
-                user_func_refs.get(&resolved_method_name)
+                user_func_refs
+                    .get(&resolved_method_name)
                     .ok_or_else(|| format!("Undefined method: {}", resolved_method_name))?
             };
 
@@ -396,5 +462,4 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             }
         }
     }
-
 }
