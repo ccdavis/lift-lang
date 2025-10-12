@@ -1,4 +1,4 @@
-use crate::semantic_analysis::*;
+use crate::semantic::*;
 use crate::symboltable::SymbolTable;
 use crate::syntax::DataType;
 use crate::syntax::Expr;
@@ -207,8 +207,43 @@ impl Expr {
                     data: evaluated_map,
                 })
             },
+            Expr::StructLiteral { ref type_name, ref fields } => {
+                // Evaluate each field value and convert to runtime representation
+                let mut evaluated_fields = HashMap::new();
+                for (field_name, field_value) in fields {
+                    let evaluated_value = field_value.interpret(symbols, current_scope)?;
+                    evaluated_fields.insert(field_name.clone(), evaluated_value);
+                }
+                Ok(Expr::RuntimeStruct {
+                    type_name: type_name.clone(),
+                    fields: evaluated_fields,
+                })
+            },
             Expr::RuntimeList { .. } => Ok(self.clone()), // Already in runtime form
             Expr::RuntimeMap { .. } => Ok(self.clone()),  // Already in runtime form
+            Expr::RuntimeStruct { .. } => Ok(self.clone()), // Already in runtime form
+            Expr::FieldAccess { expr, field_name } => {
+                // 1. Evaluate the expression to get the struct
+                let struct_value = expr.interpret(symbols, current_scope)?;
+
+                // 2. Extract the field from the runtime struct
+                match struct_value {
+                    Expr::RuntimeStruct { fields, .. } => {
+                        fields.get(field_name)
+                            .cloned()
+                            .ok_or_else(|| Box::new(RuntimeError::new(
+                                &format!("Field '{}' not found in struct", field_name),
+                                None,
+                                None,
+                            )) as Box<dyn Error>)
+                    }
+                    _ => Err(Box::new(RuntimeError::new(
+                        &format!("Cannot access field '{}' on non-struct value", field_name),
+                        None,
+                        None,
+                    )))
+                }
+            }
             Expr::Range(..) => Ok(self.clone()), // Range is a value type
             Expr::Index { expr, index } => {
                 let evaluated_expr = expr.interpret(symbols, current_scope)?;
@@ -317,6 +352,41 @@ impl Expr {
                 symbols.update_runtime_value(evaluated_value, index);
                 // Assignment expressions return Unit
                 Ok(Expr::Unit)
+            },
+            Expr::FieldAssign { expr, field_name, value, index } => {
+                // 1. Evaluate the value expression
+                let new_value = value.interpret(symbols, current_scope)?;
+
+                // 2. Get the current struct from the symbol table
+                let current_struct = symbols.get_runtime_value(index)
+                    .ok_or_else(|| Box::new(RuntimeError::new(
+                        "Struct variable not found in symbol table",
+                        None,
+                        None,
+                    )) as Box<dyn Error>)?;
+
+                // 3. Clone the struct and update the field
+                match current_struct {
+                    Expr::RuntimeStruct { type_name, mut fields } => {
+                        // Update the specific field
+                        fields.insert(field_name.clone(), new_value);
+
+                        // 4. Store the updated struct back to the symbol table
+                        let updated_struct = Expr::RuntimeStruct {
+                            type_name,
+                            fields,
+                        };
+                        symbols.update_runtime_value(updated_struct, index);
+
+                        // Field assignment returns Unit
+                        Ok(Expr::Unit)
+                    }
+                    _ => Err(Box::new(RuntimeError::new(
+                        "Cannot assign to field of non-struct value",
+                        None,
+                        None,
+                    )))
+                }
             },
             _ => panic!(
                 "Interpreter error: interpret() not implemented for '{self:?}'"
@@ -721,6 +791,46 @@ fn interpret_binary(
                  Expr::Literal(ref r_data) | Expr::RuntimeData(ref r_data)) => {
                     result = l_data.apply_binary_operator(r_data, op);
                 }
+                // Handle struct comparisons (only = and <>)
+                (Expr::RuntimeStruct { type_name: type1, fields: fields1 },
+                 Expr::RuntimeStruct { type_name: type2, fields: fields2 }) => {
+                    match op {
+                        Operator::Eq | Operator::Neq => {
+                            // Structs are equal if they have the same type and all fields match
+                            let structs_equal = if type1 != type2 {
+                                // Different types are never equal
+                                false
+                            } else if fields1.len() != fields2.len() {
+                                // Different number of fields
+                                false
+                            } else {
+                                // Check all fields match
+                                fields1.iter().all(|(field_name, field_value1)| {
+                                    if let Some(field_value2) = fields2.get(field_name) {
+                                        // Recursively compare field values
+                                        compare_exprs_for_equality(field_value1, field_value2)
+                                    } else {
+                                        false
+                                    }
+                                })
+                            };
+
+                            let comparison_result = if matches!(op, Operator::Eq) {
+                                structs_equal
+                            } else {
+                                !structs_equal
+                            };
+
+                            result = Ok(Expr::RuntimeData(LiteralData::Bool(comparison_result)));
+                        }
+                        _ => {
+                            let msg = format!(
+                                "Operator {op:?} not supported for structs. Only = and <> are allowed."
+                            );
+                            error = Some(RuntimeError::new(&msg, None, None));
+                        }
+                    }
+                }
                 _ => {
                     let msg = format!(
                         "Expressions don't evaluate to anything applicable to a binary operator: {:?}, {:?}",
@@ -735,5 +845,47 @@ fn interpret_binary(
         Err(e.into())
     } else {
         result
+    }
+}
+
+// Helper function to recursively compare two expressions for equality
+fn compare_exprs_for_equality(expr1: &Expr, expr2: &Expr) -> bool {
+    match (expr1, expr2) {
+        // Compare literals
+        (Expr::Literal(l1) | Expr::RuntimeData(l1),
+         Expr::Literal(l2) | Expr::RuntimeData(l2)) => l1 == l2,
+
+        // Compare structs recursively
+        (Expr::RuntimeStruct { type_name: t1, fields: f1 },
+         Expr::RuntimeStruct { type_name: t2, fields: f2 }) => {
+            t1 == t2 && f1.len() == f2.len() &&
+            f1.iter().all(|(name, val1)| {
+                f2.get(name).map_or(false, |val2| compare_exprs_for_equality(val1, val2))
+            })
+        }
+
+        // Compare lists
+        (Expr::RuntimeList { data: d1, .. },
+         Expr::RuntimeList { data: d2, .. }) => {
+            d1.len() == d2.len() &&
+            d1.iter().zip(d2.iter()).all(|(v1, v2)| compare_exprs_for_equality(v1, v2))
+        }
+
+        // Compare maps
+        (Expr::RuntimeMap { data: d1, .. },
+         Expr::RuntimeMap { data: d2, .. }) => {
+            d1.len() == d2.len() &&
+            d1.iter().all(|(k, v1)| {
+                d2.get(k).map_or(false, |v2| compare_exprs_for_equality(v1, v2))
+            })
+        }
+
+        // Compare ranges
+        (Expr::Range(start1, end1), Expr::Range(start2, end2)) => {
+            start1 == start2 && end1 == end2
+        }
+
+        // Different types are not equal
+        _ => false,
     }
 }

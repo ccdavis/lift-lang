@@ -1,4 +1,4 @@
-use crate::semantic_analysis::CompileError;
+use crate::semantic::CompileError;
 use crate::syntax::BuiltinMethod;
 use crate::syntax::DataType;
 use crate::syntax::Expr;
