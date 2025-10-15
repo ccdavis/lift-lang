@@ -484,7 +484,7 @@ keys(self: ages)                    // ['Alice', 'Bob', 'Carol']
    - All methods support both method syntax (`obj.method()`) and UFCS (`method(self: obj)`)
    - Full type safety with proper type inference for generic return types
    - Test files: `tests/test_string_methods.lt`, `tests/test_list_methods.lt`, `tests/test_map_methods.lt`
-   - See `TIER1_IMPLEMENTATION_SUMMARY.md` for complete documentation
+   - See `docs/TIER1_IMPLEMENTATION_SUMMARY.md` for complete documentation
 
 2. **Method Syntax and UFCS** (2025-10-04)
    - Methods can be defined on types: `function Type.method_name(params): ReturnType { ... }`
