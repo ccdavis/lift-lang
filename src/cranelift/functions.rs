@@ -189,10 +189,20 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             builder.finalize();
         }
 
+        // DEBUG: Print the Cranelift IR for this function
+        if std::env::var("LIFT_DEBUG_IR").is_ok() {
+            eprintln!("=== Cranelift IR for function {} ===", fn_name);
+            eprintln!("{}", func_ctx.func.display());
+        }
+
         // Define the function in the module
         self.module
             .define_function(func_id, &mut func_ctx)
-            .map_err(|e| format!("Failed to define function {}: {}", fn_name, e))?;
+            .map_err(|e| {
+                eprintln!("Cranelift IR that failed verification:");
+                eprintln!("{}", func_ctx.func.display());
+                format!("Failed to define function {}: {}", fn_name, e)
+            })?;
 
         // Clear context
         self.module.clear_context(&mut func_ctx);

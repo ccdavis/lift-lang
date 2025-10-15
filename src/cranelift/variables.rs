@@ -11,6 +11,10 @@ use std::collections::HashMap;
 
 impl<'a, M: Module> CodeGenerator<'a, M> {
     /// Compile a let binding (variable declaration)
+    ///
+    /// Like Rust, this supports variable rebinding: if a variable with the same name
+    /// already exists, we reuse its stack slot (effectively making it an assignment).
+    /// This is essential for `let` declarations inside loop bodies.
     pub(super) fn compile_let(
         builder: &mut FunctionBuilder,
         var_name: &str,
@@ -33,6 +37,42 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             variables,
         )?
         .ok_or_else(|| format!("Let binding for '{}' requires a value", var_name))?;
+
+        // Check if this variable already exists (rebinding case)
+        if let Some(existing_var_info) = variables.get(var_name) {
+            // Variable already exists - reuse its stack slot (like Rust shadowing)
+            // This is crucial for let declarations inside while loops
+
+            // Determine the type of the new value
+            let lift_type_raw = if !matches!(data_type, DataType::Unsolved) {
+                data_type.clone()
+            } else {
+                determine_type_with_symbols(value, symbols, 0)
+                    .ok_or_else(|| format!("Cannot determine type for variable '{}'", var_name))?
+            };
+
+            let lift_type = Self::resolve_type_alias(&lift_type_raw, symbols);
+
+            let new_cranelift_type = match lift_type {
+                DataType::Flt => types::F64,
+                DataType::Int | DataType::Bool => types::I64,
+                DataType::Str | DataType::List { .. } | DataType::Map { .. } => types::I64,
+                _ => types::I64,
+            };
+
+            // Check if the type matches the existing variable's type
+            if new_cranelift_type != existing_var_info.cranelift_type {
+                return Err(format!(
+                    "Cannot rebind variable '{}' with a different type. Original type: {:?}, New type: {:?}",
+                    var_name, existing_var_info.cranelift_type, new_cranelift_type
+                ));
+            }
+
+            builder.ins().stack_store(val, existing_var_info.slot, 0);
+            return Ok(None);
+        }
+
+        // New variable - create a new stack slot
 
         // Determine the Lift type from the Let's data_type if available, otherwise infer from value
         let lift_type_raw = if !matches!(data_type, DataType::Unsolved) {

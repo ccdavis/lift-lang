@@ -726,6 +726,9 @@ impl LiteralData {
         let result = match (op, self, rhs) {
             (Add, Int(l), Int(r)) => Int(l + r),
             (Add, Flt(l), Flt(r)) => Flt(l + r),
+            // Int→Flt promotion for Add
+            (Add, Flt(l), Int(r)) => Flt(l + (*r as f64)),
+            (Add, Int(l), Flt(r)) => Flt((*l as f64) + r),
             (Add, Str(l), Str(r)) => {
                 // Strip quotes from both strings, concatenate, then add quotes back
                 let l_content = l.trim_matches('\'');
@@ -734,30 +737,57 @@ impl LiteralData {
             }
             (Sub, Int(l), Int(r)) => Int(l - r),
             (Sub, Flt(l), Flt(r)) => Flt(l - r),
+            // Int→Flt promotion for Sub
+            (Sub, Flt(l), Int(r)) => Flt(l - (*r as f64)),
+            (Sub, Int(l), Flt(r)) => Flt((*l as f64) - r),
             (Mul, Int(l), Int(r)) => Int(l * r),
             (Mul, Flt(l), Flt(r)) => Flt(l * r),
+            // Int→Flt promotion for Mul
+            (Mul, Flt(l), Int(r)) => Flt(l * (*r as f64)),
+            (Mul, Int(l), Flt(r)) => Flt((*l as f64) * r),
             (Div, Int(l), Int(r)) => Int(l / r),
             (Div, Flt(l), Flt(r)) => Flt(l / r),
+            // Int→Flt promotion for Div
+            (Div, Flt(l), Int(r)) => Flt(l / (*r as f64)),
+            (Div, Int(l), Flt(r)) => Flt((*l as f64) / r),
 
             (Gt, Int(l), Int(r)) => Bool(l > r),
             (Gt, Flt(l), Flt(r)) => Bool(l > r),
+            // Int→Flt promotion for Gt
+            (Gt, Flt(l), Int(r)) => Bool(l > &(*r as f64)),
+            (Gt, Int(l), Flt(r)) => Bool(&(*l as f64) > r),
 
             (Lt, Int(l), Int(r)) => Bool(l < r),
             (Lt, Flt(l), Flt(r)) => Bool(l < r),
+            // Int→Flt promotion for Lt
+            (Lt, Flt(l), Int(r)) => Bool(l < &(*r as f64)),
+            (Lt, Int(l), Flt(r)) => Bool(&(*l as f64) < r),
 
             (Gte, Int(l), Int(r)) => Bool(l >= r),
             (Gte, Flt(l), Flt(r)) => Bool(l >= r),
+            // Int→Flt promotion for Gte
+            (Gte, Flt(l), Int(r)) => Bool(l >= &(*r as f64)),
+            (Gte, Int(l), Flt(r)) => Bool(&(*l as f64) >= r),
 
             (Lte, Int(l), Int(r)) => Bool(l <= r),
             (Lte, Flt(l), Flt(r)) => Bool(l <= r),
+            // Int→Flt promotion for Lte
+            (Lte, Flt(l), Int(r)) => Bool(l <= &(*r as f64)),
+            (Lte, Int(l), Flt(r)) => Bool(&(*l as f64) <= r),
 
             (Eq, Int(l), Int(r)) => Bool(l == r),
             (Eq, Flt(l), Flt(r)) => Bool(l == r),
+            // Int→Flt promotion for Eq
+            (Eq, Flt(l), Int(r)) => Bool(l == &(*r as f64)),
+            (Eq, Int(l), Flt(r)) => Bool(&(*l as f64) == r),
             (Eq, Bool(l), Bool(r)) => Bool(l == r),
             (Eq, Str(ref l), Str(ref r)) => Bool(l == r),
 
             (Neq, Int(l), Int(r)) => Bool(l != r),
             (Neq, Flt(l), Flt(r)) => Bool(l != r),
+            // Int→Flt promotion for Neq
+            (Neq, Flt(l), Int(r)) => Bool(l != &(*r as f64)),
+            (Neq, Int(l), Flt(r)) => Bool(&(*l as f64) != r),
             (Neq, Bool(l), Bool(r)) => Bool(l != r),
             (Neq, Str(l), Str(r)) => Bool(l != r),
             (And, Bool(l), Bool(r)) => Bool(*l && *r),

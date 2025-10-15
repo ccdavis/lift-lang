@@ -166,7 +166,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
 
         // Handle float operations
         if is_float_op {
-            let left_val = Self::compile_expr_static(
+            let mut left_val = Self::compile_expr_static(
                 builder,
                 left,
                 symbols,
@@ -175,7 +175,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 variables,
             )?
             .ok_or("Float operation requires non-Unit left operand")?;
-            let right_val = Self::compile_expr_static(
+            let mut right_val = Self::compile_expr_static(
                 builder,
                 right,
                 symbols,
@@ -184,6 +184,16 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 variables,
             )?
             .ok_or("Float operation requires non-Unit right operand")?;
+
+            // Promote Int to Flt if necessary
+            // If left is Int but right is Flt, convert left to Flt
+            if matches!(left_type, Some(DataType::Int)) && matches!(right_type, Some(DataType::Flt)) {
+                left_val = builder.ins().fcvt_from_sint(types::F64, left_val);
+            }
+            // If right is Int but left is Flt, convert right to Flt
+            if matches!(right_type, Some(DataType::Int)) && matches!(left_type, Some(DataType::Flt)) {
+                right_val = builder.ins().fcvt_from_sint(types::F64, right_val);
+            }
 
             let result = match op {
                 Operator::Add => builder.ins().fadd(left_val, right_val),
