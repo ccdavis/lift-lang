@@ -658,23 +658,15 @@ fn interpret_lambda(
 
 fn interpret_var(
     symbols: &mut SymbolTable,
-    name: &str,
+    _name: &str,
     index: &(usize, usize),
 ) -> InterpreterResult {
-    let stored_value: Expr = match symbols.get_runtime_value(index) {
-        Some(value) => value,
-        None => {
-            return Err(Box::new(RuntimeError::new(
-                &format!("Symbol '{name}' not found at runtime"),
-                None,
-                None,
-            )))
-        }
-    };
-    if let Expr::RuntimeData(d) = stored_value {
-        Ok(Expr::Literal(d))
-    } else {
-        Ok(stored_value)
+    // Optimization: Borrow instead of cloning, then only clone what we need
+    let stored_value = symbols.borrow_runtime_value(*index);
+
+    match stored_value {
+        Expr::RuntimeData(d) => Ok(Expr::Literal(d.clone())),
+        _ => Ok(stored_value.clone())
     }
 }
 
@@ -730,10 +722,15 @@ impl LiteralData {
             (Add, Flt(l), Int(r)) => Flt(l + (*r as f64)),
             (Add, Int(l), Flt(r)) => Flt((*l as f64) + r),
             (Add, Str(l), Str(r)) => {
-                // Strip quotes from both strings, concatenate, then add quotes back
+                // Optimized string concatenation: pre-allocate with capacity
                 let l_content = l.trim_matches('\'');
                 let r_content = r.trim_matches('\'');
-                LiteralData::Str(format!("'{}{}'", l_content, r_content).into())
+                let mut result = String::with_capacity(l_content.len() + r_content.len() + 2);
+                result.push('\'');
+                result.push_str(l_content);
+                result.push_str(r_content);
+                result.push('\'');
+                LiteralData::Str(result.into())
             }
             (Sub, Int(l), Int(r)) => Int(l - r),
             (Sub, Flt(l), Flt(r)) => Flt(l - r),
@@ -837,6 +834,28 @@ fn interpret_binary(
     // are literal values (primary expressions) and don't need to be interpreted.
     // This saves a clone().
     match (left, right) {
+        // FAST PATH: Variable × Variable (most common case in loops)
+        // Avoids full interpret() calls and directly accesses runtime values
+        (Expr::Variable { index: l_idx, .. }, Expr::Variable { index: r_idx, .. }) => {
+            let l_val = symbols.borrow_runtime_value(*l_idx);
+            let r_val = symbols.borrow_runtime_value(*r_idx);
+
+            match (l_val, r_val) {
+                (Expr::RuntimeData(l_data), Expr::RuntimeData(r_data)) |
+                (Expr::Literal(l_data), Expr::RuntimeData(r_data)) |
+                (Expr::RuntimeData(l_data), Expr::Literal(r_data)) |
+                (Expr::Literal(l_data), Expr::Literal(r_data)) => {
+                    result = l_data.apply_binary_operator(r_data, op);
+                }
+                _ => {
+                    let msg = format!(
+                        "Variables must contain literal values for binary operations. Got {:?} and {:?}",
+                        l_val, r_val
+                    );
+                    error = Some(RuntimeError::new(&msg, None, None));
+                }
+            }
+        }
         (Expr::Literal(l_value), Expr::Literal(r_value)) => {
             result = l_value.apply_binary_operator(r_value, op)
         }
