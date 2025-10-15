@@ -1,0 +1,63 @@
+// Mandelbrot Set Visualizer - Recursive approach
+// More efficient in Lift than iterative loops
+
+// Recursive mandelbrot checker
+function mandelbrot_iter(cx: Flt, cy: Flt, zx: Flt, zy: Flt, iter: Int, max_iter: Int): Bool {
+    if iter >= max_iter {
+        true  // In set
+    } else {
+        let zx2 = zx * zx;
+        let zy2 = zy * zy;
+        if zx2 + zy2 > 4.0 {
+            false  // Escaped
+        } else {
+            let new_zx = zx2 - zy2 + cx;
+            let new_zy = 2.0 * zx * zy + cy;
+            mandelbrot_iter(cx: cx, cy: cy, zx: new_zx, zy: new_zy, iter: iter + 1, max_iter: max_iter)
+        }
+    }
+};
+
+function in_set(cx: Flt, cy: Flt, max_iter: Int): Bool {
+    mandelbrot_iter(cx: cx, cy: cy, zx: 0.0, zy: 0.0, iter: 0, max_iter: max_iter)
+};
+
+// Build a row string recursively
+function build_row(cx: Flt, cy: Flt, dx: Flt, count: Int, max_iter: Int, acc: Str): Str {
+    if count = 0 {
+        acc
+    } else {
+        let char = if in_set(cx: cx, cy: cy, max_iter: max_iter) { '*' } else { '.' };
+        build_row(cx: cx + dx, cy: cy, dx: dx, count: count - 1, max_iter: max_iter, acc: acc + char)
+    }
+};
+
+// Render all rows recursively
+function render_rows(cx_start: Flt, cy: Flt, dx: Flt, dy: Flt, width: Int, max_iter: Int, rows_left: Int): Int {
+    if rows_left = 0 {
+        0
+    } else {
+        let row = build_row(cx: cx_start, cy: cy, dx: dx, count: width, max_iter: max_iter, acc: '');
+        output(row);
+        render_rows(cx_start: cx_start, cy: cy + dy, dx: dx, dy: dy, width: width, max_iter: max_iter, rows_left: rows_left - 1)
+    }
+};
+
+// Main visualization
+function visualize(): Int {
+    let width = 60;
+    let height = 30;
+    let max_iter = 50;
+
+    let x_min = -2.0;
+    let x_max = 1.0;
+    let y_min = -1.0;
+    let y_max = 1.0;
+
+    let dx = (x_max - x_min) / 60.0;
+    let dy = (y_max - y_min) / 30.0;
+
+    render_rows(cx_start: x_min, cy: y_max, dx: dx, dy: 0.0 - dy, width: width, max_iter: max_iter, rows_left: height)
+};
+
+visualize()

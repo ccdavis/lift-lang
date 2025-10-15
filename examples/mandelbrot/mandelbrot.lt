@@ -1,0 +1,77 @@
+// Mandelbrot Set Visualizer in Lift
+// Computes and displays the Mandelbrot set using ASCII art
+
+// Check if a point is in the Mandelbrot set
+// Returns the number of iterations before escape (or max_iter if in set)
+function mandelbrot(cx: Flt, cy: Flt, max_iter: Int): Int {
+    let var zx = 0.0;
+    let var zy = 0.0;
+    let var iter = 0;
+    let var escaped = 0;  // 0 = not escaped, 1 = escaped
+
+    while iter < max_iter and escaped = 0 {
+        let zx_squared = zx * zx;
+        let zy_squared = zy * zy;
+
+        // Check if escaped (|z| > 2, so |z|^2 > 4)
+        if zx_squared + zy_squared > 4.0 {
+            escaped := 1;
+            0
+        } else {
+            // z = z^2 + c
+            let new_zy = 2.0 * zx * zy + cy;
+            zx := zx_squared - zy_squared + cx;
+            zy := new_zy;
+            iter := iter + 1;
+            0
+        }
+    };
+
+    iter
+};
+
+// Main visualization function
+function visualize(): Int {
+    let width = 60;
+    let height = 30;
+    let max_iter = 50;
+
+    // Mandelbrot set bounds
+    let x_min = -2.5;
+    let x_max = 1.0;
+    let y_min = -1.0;
+    let y_max = 1.0;
+
+    let x_scale = (x_max - x_min) / 60.0;  // Using literal instead of width
+    let y_scale = (y_max - y_min) / 30.0;  // Using literal instead of height
+
+    let var y = 0;
+    while y < height {
+        let y_flt = 1.0 * y;  // Convert to float
+        let cy = y_min + (30.0 - y_flt - 1.0) * y_scale;  // Using literal, flip Y axis
+
+        let var x = 0;
+        let var line = '';
+        while x < width {
+            let x_flt = 1.0 * x;  // Convert to float
+            let cx = x_min + x_flt * x_scale;
+            let iterations = mandelbrot(cx: cx, cy: cy, max_iter: max_iter);
+
+            if iterations < max_iter {
+                line := line + '.'
+            } else {
+                line := line + '*'
+            };
+
+            x := x + 1
+        };
+
+        output(line);
+        y := y + 1
+    };
+
+    0
+};
+
+// Run the visualization
+visualize()
