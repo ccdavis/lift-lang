@@ -19,12 +19,11 @@ This directory contains Mandelbrot set visualizers implemented in Lift and Pytho
   - 20,000 points for accurate performance measurements
   - **Fastest implementation overall!**
 
-#### Reference Versions
+#### Alternative Versions
 - **`mandelbrot_iterative.lt`** - Iterative implementation (60×30, 50 iterations)
-  - ✅ Code is correct
-  - ❌ Interpreter too slow (>60s timeout)
-  - ❌ JIT compiler has bug (let in while loops)
-  - For reference only
+  - ✅ Works with interpreter (slower)
+  - ✅ Works with JIT compiler
+  - Uses iterative while loops
 
 ### Python Implementations
 

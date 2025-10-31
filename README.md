@@ -10,6 +10,7 @@ Lift consists of expressions and type definitions. Technically a type definition
 function cube(input: Int): Int {
     input * input * input
 };
+```
 
 Or for special single expression functions:
 ```scala
@@ -21,10 +22,11 @@ function cube(input: Int): Int = input * input * input;
 Type definitions and function definitions evaluate to the unit type while updating their scope with their definition.
 
 ```scala
-type Html = String;
+type Age = Int;
+type Html = Str;
 ```
 
-Besides structure and enum types, assigning  existing types to names make a new type, not an alias. 
+Type definitions create aliases to existing types. 
 
 This does the same as the special function definition form:
 ```scala
@@ -36,10 +38,9 @@ let cube = lambda(input: Int): Int {
 As with other expression languages like Rust or Ruby, lists of expressions make up function bodies and blocks after conditionals.  The last expression in a list provides the return value, no explicit return required.
 
 ```scala
-function microblog_post_html(headline: String, content: String, author: String): String {
-    let posting_time = "<h3> Posted at " + String(date_time()) + "</h3>";
-    let heading = "<h1>" + headline + "</h1>" + posting_time;
-    heading + "<p>" + content + "</p>"
+function microblog_post_html(headline: Str, content: Str, author: Str): Str {
+    let heading = '<h1>' + headline + '</h1>';
+    heading + '<p>' + content + '</p>'
 };
 ```
 
@@ -81,6 +82,12 @@ cargo run  # Starts REPL
 
 ### Type Checking
 The type checking step is fully implemented for all expression types, with strict checking suitable for compilation and type inference from literals.
+
+## Documentation
+
+- **[Syntax Reference (BNF)](docs/SYNTAX.md)** - Formal syntax specification in Backus-Naur Form
+- **[Language Guide (CLAUDE.md)](CLAUDE.md)** - Comprehensive development guide with examples
+- **[Documentation Index](docs/README.md)** - Complete documentation overview
 
 
 

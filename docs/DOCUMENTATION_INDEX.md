@@ -1,6 +1,6 @@
 # Lift Language - Documentation Index
 
-**Last Updated:** October 4, 2025
+**Last Updated:** October 31, 2025
 
 This index helps you find the right documentation for your needs.
 
@@ -8,15 +8,15 @@ This index helps you find the right documentation for your needs.
 
 ## 📚 Core Documentation
 
-### [`CLAUDE.md`](CLAUDE.md)
+### [`../CLAUDE.md`](../CLAUDE.md)
 **Primary technical documentation** for the Lift language.
 
 **Contents:**
 - Development commands (build, test, run)
-- Architecture overview (parser, AST, interpreter, type system)
+- Architecture overview (parser, AST, interpreter, type system, compiler)
 - Language design principles
 - Complete language features reference
-- **Built-in methods documentation** ⭐ NEW
+- Built-in methods documentation
 - Recent changes and version history
 - Known limitations
 - Test programs reference
@@ -39,6 +39,25 @@ This index helps you find the right documentation for your needs.
 - Progress tracking
 
 **Use when:** Planning what features to implement next.
+
+---
+
+## 📖 Language Reference
+
+### [`SYNTAX.md`](SYNTAX.md)
+**Formal syntax specification** in BNF notation.
+
+**Contents:**
+- Complete BNF grammar for Lift
+- Program structure and expressions
+- Type system and type definitions
+- Control flow constructs
+- Functions and lambdas
+- Operators and precedence
+- Lexical elements
+- Complete syntax examples
+
+**Use when:** You need a formal reference for the language syntax.
 
 ---
 
@@ -108,8 +127,9 @@ cargo test
 
 ### "I want to learn Lift"
 1. Start with [`WHATS_NEW.md`](WHATS_NEW.md) for recent features
-2. Read [`CLAUDE.md`](CLAUDE.md) for complete language guide
-3. Try examples in `tests/` directory
+2. Review [`SYNTAX.md`](SYNTAX.md) for formal syntax reference
+3. Read [`CLAUDE.md`](CLAUDE.md) for complete language guide
+4. Try examples in `tests/` directory
 
 ### "I want to add a feature"
 1. Check [`FEATURE_RECOMMENDATIONS.md`](FEATURE_RECOMMENDATIONS.md) for planned features
@@ -137,12 +157,13 @@ cargo test
 
 | File | Type | Audience | Length |
 |------|------|----------|--------|
+| `SYNTAX.md` | Language Reference | Everyone | Long (~450 lines) |
 | `CLAUDE.md` | Technical Reference | Developers | Long (~500 lines) |
 | `FEATURE_RECOMMENDATIONS.md` | Planning Guide | Contributors | Long (~450 lines) |
-| `WHATS_NEW.md` | User Announcement | Users & Developers | Medium (~150 lines) |
+| `WHATS_NEW.md` | User Announcement | Users & Developers | Medium (~200 lines) |
 | `TIER1_IMPLEMENTATION_SUMMARY.md` | Technical Report | Developers | Long (~300 lines) |
-| `DOCUMENTATION_INDEX.md` (this file) | Navigation | Everyone | Short |
-| `README.md` | Project Overview | Everyone | Short (if exists) |
+| `DOCUMENTATION_INDEX.md` (this file) | Navigation | Everyone | Medium |
+| `README.md` | Project Overview | Everyone | Short |
 
 ---
 

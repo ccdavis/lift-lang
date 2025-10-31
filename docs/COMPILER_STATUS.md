@@ -1,15 +1,18 @@
 # Lift Compiler Status Report
-**Date:** 2025-10-10
-**Test Coverage:** 62/78 passing (79.5%)
-**Branch:** cranelift-backend
+
+The Lift JIT compiler provides native x86-64 code generation using the Cranelift backend.
 
 ---
 
-## Current Session Summary (2025-10-10)
+## Current Status
 
-### Work Completed Today
+### Test Coverage: 79.5%
 
-**Major Fixes (+10 tests, +13% coverage)**
+**Passing:** 62/78 tests
+**Failing:** 9 tests
+**Skipped:** 7 tests (error tests, unsupported features)
+
+### Recent Major Improvements
 
 1. **Map String Indexing Fixed** ✅ (+4 tests)
    - **Problem**: HashMap was comparing string pointer addresses instead of content
@@ -240,20 +243,6 @@ function Angle.normalize(): Angle {
 **Recommendation:** Option A (if-else fix) then Option B (polish)
 - Potential to reach **~87% coverage** (67/78 tests)
 - Would make compiler production-ready for most use cases
-
----
-
-## Git Status
-
-**Branch:** cranelift-backend
-**Uncommitted changes:**
-- M src/codegen.rs (IR bug fix, type resolution improvements)
-- M src/runtime.rs (MapKey enum, recursive formatting)
-- M src/symboltable.rs (scope_count method)
-- M COMPILER_STATUS.md (this file)
-- ?? COMPILER_HANDOFF.md
-
-**Ready to commit:** Yes
 
 ---
 

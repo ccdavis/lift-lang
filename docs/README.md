@@ -55,22 +55,17 @@ This directory contains comprehensive documentation for the Lift programming lan
 ### What's New
 - **[WHATS_NEW.md](WHATS_NEW.md)** - Recent language additions and changes
 
+### Language Reference
+- **[SYNTAX.md](SYNTAX.md)** - Formal syntax specification in BNF notation
+
 ## Compiler & Implementation
 
 ### Compiler Status
-- **[COMPILER_STATUS.md](COMPILER_STATUS.md)** - JIT compiler feature coverage
-- **[COMPILER_TODO_CHECKLIST.md](COMPILER_TODO_CHECKLIST.md)** - Compiler development checklist
-- **[COMPILER_COMPLETION_HANDOFF.md](COMPILER_COMPLETION_HANDOFF.md)** - Compiler handoff documentation
+- **[COMPILER_STATUS.md](COMPILER_STATUS.md)** - JIT compiler feature coverage and current status
 
 ### Struct Implementation
-- **[STRUCT_IMPLEMENTATION_STATUS.md](STRUCT_IMPLEMENTATION_STATUS.md)** - Current struct support status
-- **[STRUCT_IMPLEMENTATION_PLAN.md](STRUCT_IMPLEMENTATION_PLAN.md)** - Struct implementation roadmap
+- **[STRUCT_IMPLEMENTATION_STATUS.md](STRUCT_IMPLEMENTATION_STATUS.md)** - Current struct support status (100% complete)
 - **[STRUCT_COMPILER_DESIGN.md](STRUCT_COMPILER_DESIGN.md)** - Struct compiler design
-
-### Development Phases
-- **[PHASE5_COMPLETE.md](PHASE5_COMPLETE.md)** - Phase 5 completion summary
-- **[PHASE6_HANDOFF.md](PHASE6_HANDOFF.md)** - Phase 6 handoff documentation
-- **[SEMANTIC_REFACTORING_STATUS.md](SEMANTIC_REFACTORING_STATUS.md)** - Semantic analysis refactoring
 
 ## Feature Planning
 - **[FEATURE_ANALYSIS.md](FEATURE_ANALYSIS.md)** - Feature analysis and planning
