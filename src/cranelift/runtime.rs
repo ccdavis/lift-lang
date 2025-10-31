@@ -640,6 +640,88 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         self.runtime_funcs
             .insert("lift_struct_free".to_string(), func_id);
 
+        // ==================== Reference Counting Declarations ====================
+
+        // lift_list_retain(*mut RcList)
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        let func_id = self
+            .module
+            .declare_function("lift_list_retain", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_list_retain: {}", e))?;
+        self.runtime_funcs
+            .insert("lift_list_retain".to_string(), func_id);
+
+        // lift_list_release(*mut RcList)
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        let func_id = self
+            .module
+            .declare_function("lift_list_release", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_list_release: {}", e))?;
+        self.runtime_funcs
+            .insert("lift_list_release".to_string(), func_id);
+
+        // lift_map_retain(*mut RcMap)
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        let func_id = self
+            .module
+            .declare_function("lift_map_retain", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_map_retain: {}", e))?;
+        self.runtime_funcs
+            .insert("lift_map_retain".to_string(), func_id);
+
+        // lift_map_release(*mut RcMap)
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        let func_id = self
+            .module
+            .declare_function("lift_map_release", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_map_release: {}", e))?;
+        self.runtime_funcs
+            .insert("lift_map_release".to_string(), func_id);
+
+        // lift_struct_retain(*mut RcStruct)
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        let func_id = self
+            .module
+            .declare_function("lift_struct_retain", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_struct_retain: {}", e))?;
+        self.runtime_funcs
+            .insert("lift_struct_retain".to_string(), func_id);
+
+        // lift_struct_release(*mut RcStruct)
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        let func_id = self
+            .module
+            .declare_function("lift_struct_release", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_struct_release: {}", e))?;
+        self.runtime_funcs
+            .insert("lift_struct_release".to_string(), func_id);
+
+        // lift_range_retain(*mut RcRange)
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        let func_id = self
+            .module
+            .declare_function("lift_range_retain", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_range_retain: {}", e))?;
+        self.runtime_funcs
+            .insert("lift_range_retain".to_string(), func_id);
+
+        // lift_range_release(*mut RcRange)
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        let func_id = self
+            .module
+            .declare_function("lift_range_release", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_range_release: {}", e))?;
+        self.runtime_funcs
+            .insert("lift_range_release".to_string(), func_id);
+
         Ok(())
     }
 }

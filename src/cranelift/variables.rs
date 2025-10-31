@@ -24,6 +24,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         runtime_funcs: &HashMap<String, FuncRef>,
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
+        scope_allocations: &mut Vec<Vec<(Value, String)>>,
     ) -> Result<Option<Value>, String> {
         use crate::semantic::determine_type_with_symbols;
 
@@ -35,6 +36,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             runtime_funcs,
             user_func_refs,
             variables,
+            scope_allocations,
         )?
         .ok_or_else(|| format!("Let binding for '{}' requires a value", var_name))?;
 
@@ -139,6 +141,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         runtime_funcs: &HashMap<String, FuncRef>,
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
+        scope_allocations: &mut Vec<Vec<(Value, String)>>,
     ) -> Result<Option<Value>, String> {
         // Compile the new value
         let val = Self::compile_expr_static(
@@ -148,6 +151,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             runtime_funcs,
             user_func_refs,
             variables,
+            scope_allocations,
         )?
         .ok_or_else(|| format!("Assignment to '{}' requires a value", name))?;
 

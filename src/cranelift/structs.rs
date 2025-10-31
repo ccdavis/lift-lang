@@ -18,6 +18,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         runtime_funcs: &HashMap<String, FuncRef>,
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
+        scope_allocations: &mut Vec<Vec<(Value, String)>>,
     ) -> Result<Option<Value>, String> {
         use crate::syntax::DataType;
 
@@ -91,6 +92,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             )?
             .ok_or_else(|| format!("Struct field '{}' must produce a value", field_name))?;
 
@@ -133,6 +135,9 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             );
         }
 
+        // Record allocation for reference counting
+        Self::record_allocation(scope_allocations, struct_ptr, "struct");
+
         Ok(Some(struct_ptr))
     }
 
@@ -144,6 +149,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         runtime_funcs: &HashMap<String, FuncRef>,
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
+        scope_allocations: &mut Vec<Vec<(Value, String)>>,
     ) -> Result<Option<Value>, String> {
         // Compile the struct expression
         let struct_val = Self::compile_expr_static(
@@ -153,6 +159,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             runtime_funcs,
             user_func_refs,
             variables,
+            scope_allocations,
         )?
         .ok_or_else(|| "Field access expression must produce a value".to_string())?;
 
@@ -200,6 +207,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         runtime_funcs: &HashMap<String, FuncRef>,
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
+        scope_allocations: &mut Vec<Vec<(Value, String)>>,
     ) -> Result<Option<Value>, String> {
         use crate::syntax::DataType;
 
@@ -242,6 +250,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             runtime_funcs,
             user_func_refs,
             variables,
+            scope_allocations,
         )?
         .ok_or_else(|| "Field assignment value must produce a value".to_string())?;
 

@@ -18,6 +18,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         runtime_funcs: &HashMap<String, FuncRef>,
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
+        scope_allocations: &mut Vec<Vec<(Value, String)>>,
     ) -> Result<Option<Value>, String> {
         use crate::semantic::determine_type_with_symbols;
         use crate::syntax::DataType;
@@ -64,6 +65,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             )?
             .ok_or_else(|| "List element must produce a value".to_string())?;
 
@@ -93,6 +95,9 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 .call(*set_func_ref, &[list_ptr, index, elem_val]);
         }
 
+        // Record allocation for reference counting
+        Self::record_allocation(scope_allocations, list_ptr, "list");
+
         Ok(Some(list_ptr))
     }
 
@@ -105,6 +110,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         runtime_funcs: &HashMap<String, FuncRef>,
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
+        scope_allocations: &mut Vec<Vec<(Value, String)>>,
     ) -> Result<Option<Value>, String> {
         use crate::semantic::determine_type_with_symbols;
         use crate::syntax::{DataType, KeyData};
@@ -216,6 +222,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             )?
             .ok_or_else(|| "Map value must produce a value".to_string())?;
 
@@ -244,6 +251,9 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 .call(*set_func_ref, &[map_ptr, key_val, value_val]);
         }
 
+        // Record allocation for reference counting
+        Self::record_allocation(scope_allocations, map_ptr, "map");
+
         Ok(Some(map_ptr))
     }
 
@@ -255,6 +265,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         runtime_funcs: &HashMap<String, FuncRef>,
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
+        scope_allocations: &mut Vec<Vec<(Value, String)>>,
     ) -> Result<Option<Value>, String> {
         use crate::semantic::determine_type_with_symbols;
         use crate::syntax::DataType;
@@ -267,6 +278,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             runtime_funcs,
             user_func_refs,
             variables,
+            scope_allocations,
         )?
         .ok_or("Index requires non-Unit collection")?;
 
@@ -278,6 +290,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             runtime_funcs,
             user_func_refs,
             variables,
+            scope_allocations,
         )?
         .ok_or("Index requires non-Unit index value")?;
 
@@ -356,6 +369,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         runtime_funcs: &HashMap<String, FuncRef>,
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
+        scope_allocations: &mut Vec<Vec<(Value, String)>>,
     ) -> Result<Option<Value>, String> {
         use crate::semantic::determine_type_with_symbols;
         use crate::syntax::DataType;
@@ -368,6 +382,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             runtime_funcs,
             user_func_refs,
             variables,
+            scope_allocations,
         )?
         .ok_or("len() requires non-Unit expression")?;
 

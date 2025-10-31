@@ -170,7 +170,10 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 }
             }
 
-            // Compile function body
+            // Compile function body with scope tracking
+            let mut scope_allocations = Vec::new();
+            Self::enter_scope(&mut scope_allocations);
+
             let result = Self::compile_expr_static(
                 &mut builder,
                 &function.body,
@@ -178,11 +181,19 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 &runtime_refs,
                 &user_func_refs,
                 &mut variables,
+                &mut scope_allocations,
             )?;
 
             // Handle return value - all functions must return a value
             let return_value =
                 result.ok_or_else(|| format!("Function '{}' must return a value", fn_name))?;
+
+            // Untrack return value so it doesn't get released
+            Self::untrack_allocation(&mut scope_allocations, return_value);
+
+            // Clean up all other allocations before returning
+            Self::exit_scope(&mut builder, &runtime_refs, &mut scope_allocations);
+
             builder.ins().return_(&[return_value]);
 
             // Finalize
@@ -219,6 +230,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         runtime_funcs: &HashMap<String, FuncRef>,
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
+        scope_allocations: &mut Vec<Vec<(Value, String)>>,
     ) -> Result<Option<Value>, String> {
         // Check if this is UFCS (Uniform Function Call Syntax)
         // UFCS calls have first argument named "self"
@@ -235,6 +247,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                     runtime_funcs,
                     user_func_refs,
                     variables,
+                    scope_allocations,
                 );
             }
         }
@@ -291,6 +304,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             )?
             .ok_or_else(|| format!("Function argument '{}' cannot be Unit", param_name))?;
 
@@ -318,6 +332,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         runtime_funcs: &HashMap<String, FuncRef>,
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
+        scope_allocations: &mut Vec<Vec<(Value, String)>>,
     ) -> Result<Option<Value>, String> {
         use crate::semantic::determine_type_with_symbols;
         use crate::syntax::{BuiltinMethod, DataType};
@@ -353,6 +368,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             runtime_funcs,
             user_func_refs,
             variables,
+            scope_allocations,
         )?
         .ok_or("Method receiver cannot be Unit")?;
 
@@ -366,6 +382,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             )?
             .ok_or_else(|| format!("Method arg '{}' cannot be Unit", arg.name))?;
             arg_vals.push(val);
@@ -426,12 +443,40 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                         | BuiltinMethod::MapIsEmpty
                 );
 
-                if needs_extension {
-                    let extended = builder.ins().uextend(types::I64, result);
-                    Ok(Some(extended))
+                let final_result = if needs_extension {
+                    builder.ins().uextend(types::I64, result)
                 } else {
-                    Ok(Some(result))
+                    result
+                };
+
+                // Track allocations for methods that return heap-allocated objects
+                let allocates_list = matches!(
+                    builtin,
+                    BuiltinMethod::StrSplit
+                        | BuiltinMethod::ListSlice
+                        | BuiltinMethod::ListReverse
+                        | BuiltinMethod::MapKeys
+                        | BuiltinMethod::MapValues
+                );
+
+                let allocates_string = matches!(
+                    builtin,
+                    BuiltinMethod::StrUpper
+                        | BuiltinMethod::StrLower
+                        | BuiltinMethod::StrSubstring
+                        | BuiltinMethod::StrTrim
+                        | BuiltinMethod::StrReplace
+                        | BuiltinMethod::ListJoin
+                );
+
+                if allocates_list {
+                    Self::record_allocation(scope_allocations, final_result, "list");
+                } else if allocates_string {
+                    // Note: Strings are not yet reference counted, but this is future-proof
+                    // Self::record_allocation(scope_allocations, final_result, "string");
                 }
+
+                Ok(Some(final_result))
             }
         } else {
             // User-defined method - look it up and call as function

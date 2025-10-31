@@ -22,6 +22,10 @@ pub struct CodeGenerator<'a, M: Module> {
 
     // User-defined function references: maps function names to FuncId
     pub(super) function_refs: HashMap<String, FuncId>,
+
+    // Track heap allocations per scope for cleanup
+    // Maps scope depth to list of (pointer_value, type_name)
+    pub(super) scope_allocations: Vec<Vec<(Value, String)>>,
 }
 
 impl<'a, M: Module> CodeGenerator<'a, M> {
@@ -35,6 +39,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             variables: HashMap::new(),
             runtime_funcs: HashMap::new(),
             function_refs: HashMap::new(),
+            scope_allocations: Vec::new(),
         }
     }
 
@@ -98,6 +103,10 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 user_func_refs.insert(name.clone(), func_ref);
             }
 
+            // Initialize scope tracking for the main function
+            let mut scope_allocations: Vec<Vec<(Value, String)>> = Vec::new();
+            Self::enter_scope(&mut scope_allocations);
+
             // Compile the program expression with user function support
             let result = Self::compile_expr_static(
                 &mut builder,
@@ -106,7 +115,11 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 &runtime_refs,
                 &user_func_refs,
                 &mut self.variables,
+                &mut scope_allocations,
             )?;
+
+            // Clean up allocations before returning
+            Self::exit_scope(&mut builder, &runtime_refs, &mut scope_allocations);
 
             // Return the result (or 0 if Unit)
             let return_value = result.unwrap_or_else(|| builder.ins().iconst(types::I64, 0));
@@ -135,6 +148,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         runtime_funcs: &HashMap<String, FuncRef>,
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
+        scope_allocations: &mut Vec<Vec<(Value, String)>>,
     ) -> Result<Option<Value>, String> {
         match expr {
             // Literals
@@ -153,6 +167,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             ),
 
             // Unary operations
@@ -164,6 +179,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             ),
 
             // Output
@@ -175,6 +191,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                     runtime_funcs,
                     user_func_refs,
                     variables,
+                    scope_allocations,
                 )?;
                 Ok(None) // output returns Unit
             }
@@ -187,6 +204,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             ),
             Expr::Block { body, .. } => Self::compile_block_body(
                 builder,
@@ -195,6 +213,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             ),
 
             // Control flow
@@ -211,6 +230,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             ),
 
             Expr::While { cond, body } => Self::compile_while_expr(
@@ -221,6 +241,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             ),
 
             // Variables
@@ -238,6 +259,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             ),
 
             Expr::Variable { name, .. } => Self::compile_variable(builder, name, variables),
@@ -250,6 +272,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             ),
 
             // Collections
@@ -261,6 +284,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             ),
 
             Expr::MapLiteral {
@@ -276,6 +300,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             ),
 
             Expr::Index { expr, index } => Self::compile_index(
@@ -286,6 +311,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             ),
 
             // Built-in functions
@@ -296,6 +322,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             ),
 
             Expr::MethodCall {
@@ -312,10 +339,13 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             ),
 
             // Range
-            Expr::Range(start, end) => Self::compile_range(builder, start, end, runtime_funcs),
+            Expr::Range(start, end) => {
+                Self::compile_range(builder, start, end, runtime_funcs, scope_allocations)
+            }
 
             // Structs
             Expr::StructLiteral { type_name, fields } => Self::compile_struct_literal(
@@ -326,6 +356,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             ),
 
             Expr::FieldAccess { expr, field_name } => Self::compile_field_access(
@@ -336,6 +367,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             ),
 
             Expr::FieldAssign {
@@ -352,6 +384,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             ),
 
             // Unit
@@ -372,6 +405,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             ),
 
             // Function definitions (handled in preprocessing, so return Unit here)
@@ -392,5 +426,59 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
     /// Convert Lift DataType to Cranelift Type (re-exported from types module)
     pub(super) fn data_type_to_cranelift_type(dt: &DataType, pointer_type: Type) -> Type {
         super::types::data_type_to_cranelift_type(dt, pointer_type)
+    }
+
+    // ==================== Reference Counting Helper Methods ====================
+
+    /// Enter a new scope for allocation tracking
+    pub(super) fn enter_scope(scope_allocations: &mut Vec<Vec<(Value, String)>>) {
+        scope_allocations.push(Vec::new());
+    }
+
+    /// Exit the current scope and release all allocations
+    pub(super) fn exit_scope(
+        builder: &mut FunctionBuilder,
+        runtime_funcs: &HashMap<String, FuncRef>,
+        scope_allocations: &mut Vec<Vec<(Value, String)>>,
+    ) {
+        if let Some(allocations) = scope_allocations.pop() {
+            for (ptr, type_name) in allocations {
+                Self::emit_release_call(builder, runtime_funcs, ptr, &type_name);
+            }
+        }
+    }
+
+    /// Record an allocation in the current scope
+    pub(super) fn record_allocation(
+        scope_allocations: &mut Vec<Vec<(Value, String)>>,
+        ptr: Value,
+        type_name: &str,
+    ) {
+        if let Some(current_scope) = scope_allocations.last_mut() {
+            current_scope.push((ptr, type_name.to_string()));
+        }
+    }
+
+    /// Remove an allocation from tracking (used for return values that escape the scope)
+    pub(super) fn untrack_allocation(
+        scope_allocations: &mut Vec<Vec<(Value, String)>>,
+        ptr: Value,
+    ) {
+        if let Some(current_scope) = scope_allocations.last_mut() {
+            current_scope.retain(|(p, _)| *p != ptr);
+        }
+    }
+
+    /// Emit a call to the appropriate release function for a heap-allocated value
+    pub(super) fn emit_release_call(
+        builder: &mut FunctionBuilder,
+        runtime_funcs: &HashMap<String, FuncRef>,
+        ptr: Value,
+        type_name: &str,
+    ) {
+        let func_name = format!("lift_{}_release", type_name);
+        if let Some(&func_ref) = runtime_funcs.get(&func_name) {
+            builder.ins().call(func_ref, &[ptr]);
+        }
     }
 }

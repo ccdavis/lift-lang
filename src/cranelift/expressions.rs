@@ -86,6 +86,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         runtime_funcs: &HashMap<String, FuncRef>,
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
+        scope_allocations: &mut Vec<Vec<(Value, String)>>,
     ) -> Result<Option<Value>, String> {
         use crate::semantic::determine_type_with_symbols;
         use crate::syntax::DataType;
@@ -113,6 +114,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             )?
             .ok_or("String operation requires non-Unit left operand")?;
             let right_val = Self::compile_expr_static(
@@ -122,6 +124,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             )?
             .ok_or("String operation requires non-Unit right operand")?;
 
@@ -173,6 +176,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             )?
             .ok_or("Float operation requires non-Unit left operand")?;
             let mut right_val = Self::compile_expr_static(
@@ -182,6 +186,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             )?
             .ok_or("Float operation requires non-Unit right operand")?;
 
@@ -246,6 +251,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             )?
             .ok_or("Struct comparison requires non-Unit left operand")?;
             let right_val = Self::compile_expr_static(
@@ -255,6 +261,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             )?
             .ok_or("Struct comparison requires non-Unit right operand")?;
 
@@ -297,6 +304,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             )?
             .ok_or("Range operation requires non-Unit left operand")?;
             let right_val = Self::compile_expr_static(
@@ -306,6 +314,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             )?
             .ok_or("Range operation requires non-Unit right operand")?;
 
@@ -326,6 +335,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             runtime_funcs,
             user_func_refs,
             variables,
+            scope_allocations,
         )?
         .ok_or("Binary operation requires non-Unit left operand")?;
         let right_val = Self::compile_expr_static(
@@ -335,6 +345,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             runtime_funcs,
             user_func_refs,
             variables,
+            scope_allocations,
         )?
         .ok_or("Binary operation requires non-Unit right operand")?;
 
@@ -407,6 +418,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         runtime_funcs: &HashMap<String, FuncRef>,
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
+        scope_allocations: &mut Vec<Vec<(Value, String)>>,
     ) -> Result<Option<Value>, String> {
         let val = Self::compile_expr_static(
             builder,
@@ -415,6 +427,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             runtime_funcs,
             user_func_refs,
             variables,
+            scope_allocations,
         )?
         .ok_or("Unary operation requires non-Unit operand")?;
 
@@ -443,6 +456,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         runtime_funcs: &HashMap<String, FuncRef>,
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
+        scope_allocations: &mut Vec<Vec<(Value, String)>>,
     ) -> Result<Option<Value>, String> {
         let mut last_value = None;
 
@@ -454,6 +468,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             )?;
         }
 
@@ -469,6 +484,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         runtime_funcs: &HashMap<String, FuncRef>,
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
+        scope_allocations: &mut Vec<Vec<(Value, String)>>,
     ) -> Result<Option<Value>, String> {
         // Evaluate the condition
         let cond_val = Self::compile_expr_static(
@@ -478,6 +494,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             runtime_funcs,
             user_func_refs,
             variables,
+            scope_allocations,
         )?
         .ok_or("If condition must produce a value")?;
 
@@ -509,6 +526,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         // Compile the then branch
         builder.switch_to_block(then_block);
         builder.seal_block(then_block);
+
+        Self::enter_scope(scope_allocations);
         let then_val = Self::compile_expr_static(
             builder,
             then_expr,
@@ -516,19 +535,26 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             runtime_funcs,
             user_func_refs,
             variables,
+            scope_allocations,
         )?;
 
+        // Untrack return value if it's a heap allocation (so it doesn't get released)
         if produces_value {
             let then_result = then_val.unwrap_or_else(|| builder.ins().iconst(types::I64, 0));
+            Self::untrack_allocation(scope_allocations, then_result);
             builder
                 .ins()
                 .stack_store(then_result, result_slot.unwrap(), 0);
         }
+
+        Self::exit_scope(builder, runtime_funcs, scope_allocations);
         builder.ins().jump(merge_block, &[]);
 
         // Compile the else branch
         builder.switch_to_block(else_block);
         builder.seal_block(else_block);
+
+        Self::enter_scope(scope_allocations);
         let else_val = Self::compile_expr_static(
             builder,
             else_expr,
@@ -536,14 +562,19 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             runtime_funcs,
             user_func_refs,
             variables,
+            scope_allocations,
         )?;
 
+        // Untrack return value if it's a heap allocation (so it doesn't get released)
         if produces_value {
             let else_result = else_val.unwrap_or_else(|| builder.ins().iconst(types::I64, 0));
+            Self::untrack_allocation(scope_allocations, else_result);
             builder
                 .ins()
                 .stack_store(else_result, result_slot.unwrap(), 0);
         }
+
+        Self::exit_scope(builder, runtime_funcs, scope_allocations);
         builder.ins().jump(merge_block, &[]);
 
         // Switch to merge block and load the result
@@ -568,6 +599,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         runtime_funcs: &HashMap<String, FuncRef>,
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
+        scope_allocations: &mut Vec<Vec<(Value, String)>>,
     ) -> Result<Option<Value>, String> {
         // Create blocks for loop header, body, and exit
         let loop_header = builder.create_block();
@@ -586,6 +618,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             runtime_funcs,
             user_func_refs,
             variables,
+            scope_allocations,
         )?
         .ok_or("While condition must produce a value")?;
 
@@ -594,6 +627,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
 
         // Loop body: execute body and jump back to header
         builder.switch_to_block(loop_body);
+
+        Self::enter_scope(scope_allocations);
         Self::compile_expr_static(
             builder,
             body,
@@ -601,7 +636,10 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             runtime_funcs,
             user_func_refs,
             variables,
+            scope_allocations,
         )?;
+        Self::exit_scope(builder, runtime_funcs, scope_allocations);
+
         builder.ins().jump(loop_header, &[]);
         builder.seal_block(loop_body);
 
@@ -620,6 +658,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         runtime_funcs: &HashMap<String, FuncRef>,
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
+        scope_allocations: &mut Vec<Vec<(Value, String)>>,
     ) -> Result<(), String> {
         use crate::semantic::determine_type_with_symbols;
         use crate::syntax::DataType;
@@ -640,6 +679,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 runtime_funcs,
                 user_func_refs,
                 variables,
+                scope_allocations,
             )?
             .ok_or_else(|| "Output requires non-Unit expression".to_string())?;
 
@@ -691,6 +731,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         start: &LiteralData,
         end: &LiteralData,
         runtime_funcs: &HashMap<String, FuncRef>,
+        scope_allocations: &mut Vec<Vec<(Value, String)>>,
     ) -> Result<Option<Value>, String> {
         // Extract integer values from start and end
         let start_val = match start {
@@ -709,6 +750,9 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             .ok_or_else(|| "Runtime function lift_range_new not found".to_string())?;
         let inst = builder.ins().call(*func_ref, &[start_val, end_val]);
         let range_ptr = builder.inst_results(inst)[0];
+
+        // Record allocation for reference counting
+        Self::record_allocation(scope_allocations, range_ptr, "range");
 
         Ok(Some(range_ptr))
     }
