@@ -3,6 +3,101 @@
 
 use std::ffi::CString;
 use std::os::raw::c_char;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+// ============================================================================
+// Reference Counting Infrastructure
+// ============================================================================
+
+/// Reference-counted wrapper for heap-allocated data
+/// This provides automatic memory management via reference counting
+#[repr(C)]
+pub struct RefCounted<T> {
+    /// Reference count - how many pointers currently reference this data
+    ref_count: AtomicUsize,
+    /// The actual data being reference counted
+    data: T,
+}
+
+impl<T> RefCounted<T> {
+    /// Create a new reference-counted value with initial count of 1
+    pub fn new(data: T) -> *mut Self {
+        let rc = Box::new(RefCounted {
+            ref_count: AtomicUsize::new(1),
+            data,
+        });
+        Box::into_raw(rc)
+    }
+
+    /// Increment the reference count (called when copying a pointer)
+    pub unsafe fn retain(ptr: *mut Self) {
+        if ptr.is_null() {
+            return;
+        }
+        let rc = &*ptr;
+        let old_count = rc.ref_count.fetch_add(1, Ordering::Relaxed);
+        // Sanity check: if count was 0, something went very wrong
+        if old_count == 0 {
+            panic!("Attempted to retain a freed RefCounted object");
+        }
+    }
+
+    /// Decrement the reference count and free if it reaches zero
+    /// Returns true if the object was freed
+    pub unsafe fn release(ptr: *mut Self) -> bool {
+        if ptr.is_null() {
+            return false;
+        }
+        let rc = &*ptr;
+        let old_count = rc.ref_count.fetch_sub(1, Ordering::Release);
+
+        if old_count == 1 {
+            // We were the last reference - free the memory
+            // Acquire ordering ensures all previous operations are visible
+            std::sync::atomic::fence(Ordering::Acquire);
+            let _box = Box::from_raw(ptr);
+            // Box will be dropped, calling T's destructor
+            return true;
+        } else if old_count == 0 {
+            panic!("Reference count underflow");
+        }
+        false
+    }
+
+    /// Get a reference to the data (for reading)
+    pub unsafe fn get(ptr: *const Self) -> Option<&'static T> {
+        if ptr.is_null() {
+            return None;
+        }
+        let rc = &*ptr;
+        Some(&rc.data)
+    }
+
+    /// Get a mutable reference to the data (for writing)
+    pub unsafe fn get_mut(ptr: *mut Self) -> Option<&'static mut T> {
+        if ptr.is_null() {
+            return None;
+        }
+        let rc = &mut *ptr;
+        Some(&mut rc.data)
+    }
+
+    /// Get the current reference count (for debugging)
+    pub unsafe fn count(ptr: *const Self) -> usize {
+        if ptr.is_null() {
+            return 0;
+        }
+        let rc = &*ptr;
+        rc.ref_count.load(Ordering::Relaxed)
+    }
+}
+
+// Type aliases for reference-counted collections
+pub type RcList = RefCounted<LiftList>;
+pub type RcMap = RefCounted<LiftMap>;
+pub type RcStruct = RefCounted<LiftStruct>;
+pub type RcString = RefCounted<CString>;
+pub type RcRange = RefCounted<LiftRange>;
 
 // Type tags for collection elements
 // These correspond to Lift DataType variants
@@ -54,51 +149,57 @@ pub unsafe extern "C" fn lift_output_newline() {
 }
 
 /// Format a list inline (without trailing space) for nested collections
-unsafe fn format_list_inline(ptr: *const LiftList) {
+unsafe fn format_list_inline(ptr: *const RcList) {
     if ptr.is_null() {
         print!("[]");
         return;
     }
-    let list = &*ptr;
-    print!("[");
-    for (i, &val) in list.elements.iter().enumerate() {
-        if i > 0 {
-            print!(",");
+    if let Some(list) = RefCounted::get(ptr) {
+        print!("[");
+        for (i, &val) in list.elements.iter().enumerate() {
+            if i > 0 {
+                print!(",");
+            }
+            format_value_inline(val, list.elem_type);
         }
-        format_value_inline(val, list.elem_type);
+        print!("]");
+    } else {
+        print!("[]");
     }
-    print!("]");
 }
 
 /// Format a map inline (without trailing space) for nested collections
-unsafe fn format_map_inline(ptr: *const LiftMap) {
+unsafe fn format_map_inline(ptr: *const RcMap) {
     if ptr.is_null() {
         print!("{{}}");
         return;
     }
-    let map = &*ptr;
-    print!("{{");
-    let mut keys: Vec<_> = map.entries.keys().collect();
-    keys.sort();
+    if let Some(map) = RefCounted::get(ptr) {
+        print!("{{");
+        let mut keys: Vec<_> = map.entries.keys().collect();
+        keys.sort();
 
-    for (i, key) in keys.iter().enumerate() {
-        if i > 0 {
-            print!(",");
+        for (i, key) in keys.iter().enumerate() {
+            if i > 0 {
+                print!(",");
+            }
+            let val = map.entries[key];
+
+            // Format key
+            match key {
+                MapKey::Int(v) => print!("{}", v),
+                MapKey::Bool(b) => print!("{}", if *b { "true" } else { "false" }),
+                MapKey::Str(s) => print!("{}", s),
+            };
+            print!(":");
+
+            // Format value
+            format_value_inline(val, map.value_type);
         }
-        let val = map.entries[key];
-
-        // Format key
-        match key {
-            MapKey::Int(v) => print!("{}", v),
-            MapKey::Bool(b) => print!("{}", if *b { "true" } else { "false" }),
-            MapKey::Str(s) => print!("{}", s),
-        };
-        print!(":");
-
-        // Format value
-        format_value_inline(val, map.value_type);
+        print!("}}");
+    } else {
+        print!("{{}}");
     }
-    print!("}}");
 }
 
 /// Format a value inline (without trailing space) based on its type
@@ -119,19 +220,19 @@ unsafe fn format_value_inline(val: i64, type_tag: i8) {
             }
         }
         TYPE_LIST => {
-            let nested_ptr = val as *const LiftList;
+            let nested_ptr = val as *const RcList;
             if !nested_ptr.is_null() {
                 format_list_inline(nested_ptr);
             }
         }
         TYPE_MAP => {
-            let map_ptr = val as *const LiftMap;
+            let map_ptr = val as *const RcMap;
             if !map_ptr.is_null() {
                 format_map_inline(map_ptr);
             }
         }
         TYPE_STRUCT => {
-            let struct_ptr = val as *const LiftStruct;
+            let struct_ptr = val as *const RcStruct;
             if !struct_ptr.is_null() {
                 format_struct_inline(struct_ptr);
             }
@@ -141,89 +242,95 @@ unsafe fn format_value_inline(val: i64, type_tag: i8) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn lift_output_list(ptr: *const LiftList) {
+pub unsafe extern "C" fn lift_output_list(ptr: *const RcList) {
     if ptr.is_null() {
         print!("[] ");
         return;
     }
     unsafe {
-        let list = &*ptr;
-        print!("[");
-        for (i, &val) in list.elements.iter().enumerate() {
-            if i > 0 {
-                print!(",");
-            }
-            // Format element based on its type
-            match list.elem_type {
-                TYPE_INT => print!("{}", val),
-                TYPE_FLT => {
-                    let f = f64::from_bits(val as u64);
-                    print!("{}", f);
+        if let Some(list) = RefCounted::get(ptr) {
+            print!("[");
+            for (i, &val) in list.elements.iter().enumerate() {
+                if i > 0 {
+                    print!(",");
                 }
-                TYPE_BOOL => print!("{}", if val != 0 { "true" } else { "false" }),
-                TYPE_STR => {
-                    // val is a pointer to a C string
-                    let str_ptr = val as *const c_char;
-                    if !str_ptr.is_null() {
-                        let c_str = std::ffi::CStr::from_ptr(str_ptr);
-                        if let Ok(s) = c_str.to_str() {
-                            print!("{}", s); // Strings already have quotes
+                // Format element based on its type
+                match list.elem_type {
+                    TYPE_INT => print!("{}", val),
+                    TYPE_FLT => {
+                        let f = f64::from_bits(val as u64);
+                        print!("{}", f);
+                    }
+                    TYPE_BOOL => print!("{}", if val != 0 { "true" } else { "false" }),
+                    TYPE_STR => {
+                        // val is a pointer to a C string
+                        let str_ptr = val as *const c_char;
+                        if !str_ptr.is_null() {
+                            let c_str = std::ffi::CStr::from_ptr(str_ptr);
+                            if let Ok(s) = c_str.to_str() {
+                                print!("{}", s); // Strings already have quotes
+                            }
                         }
                     }
-                }
-                TYPE_LIST => {
-                    // val is a pointer to a nested LiftList - recursively format
-                    let nested_ptr = val as *const LiftList;
-                    if !nested_ptr.is_null() {
-                        format_list_inline(nested_ptr);
+                    TYPE_LIST => {
+                        // val is a pointer to a nested RcList - recursively format
+                        let nested_ptr = val as *const RcList;
+                        if !nested_ptr.is_null() {
+                            format_list_inline(nested_ptr);
+                        }
                     }
-                }
-                TYPE_MAP => {
-                    // val is a pointer to a LiftMap - recursively format
-                    let map_ptr = val as *const LiftMap;
-                    if !map_ptr.is_null() {
-                        format_map_inline(map_ptr);
+                    TYPE_MAP => {
+                        // val is a pointer to a RcMap - recursively format
+                        let map_ptr = val as *const RcMap;
+                        if !map_ptr.is_null() {
+                            format_map_inline(map_ptr);
+                        }
                     }
+                    _ => print!("{}", val), // Fallback for other types
                 }
-                _ => print!("{}", val), // Fallback for other types
             }
+            print!("] ");
+        } else {
+            print!("[] ");
         }
-        print!("] ");
     }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn lift_output_map(ptr: *const LiftMap) {
+pub unsafe extern "C" fn lift_output_map(ptr: *const RcMap) {
     if ptr.is_null() {
         print!("{{}} ");
         return;
     }
     unsafe {
-        let map = &*ptr;
-        print!("{{");
-        let mut keys: Vec<_> = map.entries.keys().collect();
+        if let Some(map) = RefCounted::get(ptr) {
+            print!("{{");
+            let mut keys: Vec<_> = map.entries.keys().collect();
 
-        // Sort keys (MapKey implements Ord via derived traits)
-        keys.sort();
+            // Sort keys (MapKey implements Ord via derived traits)
+            keys.sort();
 
-        for (i, key) in keys.iter().enumerate() {
-            if i > 0 {
-                print!(",");
+            for (i, key) in keys.iter().enumerate() {
+                if i > 0 {
+                    print!(",");
+                }
+                let val = map.entries[key];
+
+                // Format key based on its type
+                match key {
+                    MapKey::Int(v) => print!("{}", v),
+                    MapKey::Bool(b) => print!("{}", if *b { "true" } else { "false" }),
+                    MapKey::Str(s) => print!("{}", s),
+                };
+                print!(":");
+
+                // Format value (handles nested collections)
+                format_value_inline(val, map.value_type);
             }
-            let val = map.entries[key];
-
-            // Format key based on its type
-            match key {
-                MapKey::Int(v) => print!("{}", v),
-                MapKey::Bool(b) => print!("{}", if *b { "true" } else { "false" }),
-                MapKey::Str(s) => print!("{}", s),
-            };
-            print!(":");
-
-            // Format value (handles nested collections)
-            format_value_inline(val, map.value_type);
+            print!("}} ");
+        } else {
+            print!("{{}} ");
         }
-        print!("}} ");
     }
 }
 
@@ -355,43 +462,63 @@ pub struct LiftList {
 
 /// Create a new list with given capacity and element type
 #[no_mangle]
-pub unsafe extern "C" fn lift_list_new(capacity: i64, elem_type: i8) -> *mut LiftList {
+pub unsafe extern "C" fn lift_list_new(capacity: i64, elem_type: i8) -> *mut RcList {
     let cap = capacity.max(0) as usize;
-    let list = Box::new(LiftList {
+    let list = LiftList {
         elements: Vec::with_capacity(cap),
         elem_type,
-    });
-    Box::into_raw(list)
+    };
+    RefCounted::new(list)
+}
+
+/// Increment reference count for a list (used when copying pointers)
+#[no_mangle]
+pub unsafe extern "C" fn lift_list_retain(list: *mut RcList) {
+    RefCounted::retain(list);
+}
+
+/// Decrement reference count for a list and free if it reaches zero
+#[no_mangle]
+pub unsafe extern "C" fn lift_list_release(list: *mut RcList) {
+    if RefCounted::release(list) {
+        // List was freed - recursively release nested collections
+        // Note: This happens automatically via Drop, but we need to manually
+        // release nested ref-counted types
+    }
 }
 
 /// Set an element in the list at given index
 #[no_mangle]
-pub unsafe extern "C" fn lift_list_set(list: *mut LiftList, index: i64, value: i64) {
+pub unsafe extern "C" fn lift_list_set(list: *mut RcList, index: i64, value: i64) {
     if list.is_null() || index < 0 {
         return;
     }
     unsafe {
-        let list_ref = &mut *list;
-        let idx = index as usize;
-        // Resize if needed
-        if idx >= list_ref.elements.len() {
-            list_ref.elements.resize(idx + 1, 0);
+        if let Some(list_ref) = RefCounted::get_mut(list) {
+            let idx = index as usize;
+            // Resize if needed
+            if idx >= list_ref.elements.len() {
+                list_ref.elements.resize(idx + 1, 0);
+            }
+            list_ref.elements[idx] = value;
         }
-        list_ref.elements[idx] = value;
     }
 }
 
 /// Get an element from the list at given index
 #[no_mangle]
-pub unsafe extern "C" fn lift_list_get(list: *const LiftList, index: i64) -> i64 {
+pub unsafe extern "C" fn lift_list_get(list: *const RcList, index: i64) -> i64 {
     if list.is_null() || index < 0 {
         return 0;
     }
     unsafe {
-        let list_ref = &*list;
-        let idx = index as usize;
-        if idx < list_ref.elements.len() {
-            list_ref.elements[idx]
+        if let Some(list_ref) = RefCounted::get(list) {
+            let idx = index as usize;
+            if idx < list_ref.elements.len() {
+                list_ref.elements[idx]
+            } else {
+                0
+            }
         } else {
             0
         }
@@ -400,26 +527,23 @@ pub unsafe extern "C" fn lift_list_get(list: *const LiftList, index: i64) -> i64
 
 /// Get the length of a list
 #[no_mangle]
-pub unsafe extern "C" fn lift_list_len(list: *const LiftList) -> i64 {
+pub unsafe extern "C" fn lift_list_len(list: *const RcList) -> i64 {
     if list.is_null() {
         return 0;
     }
     unsafe {
-        let list_ref = &*list;
-        list_ref.elements.len() as i64
+        if let Some(list_ref) = RefCounted::get(list) {
+            list_ref.elements.len() as i64
+        } else {
+            0
+        }
     }
 }
 
-/// Free a list
+/// Free a list (deprecated - use lift_list_release instead)
 #[no_mangle]
-pub unsafe extern "C" fn lift_list_free(list: *mut LiftList) {
-    if list.is_null() {
-        return;
-    }
-    unsafe {
-        let _list_box = Box::from_raw(list);
-        // Vec will be automatically dropped
-    }
+pub unsafe extern "C" fn lift_list_free(list: *mut RcList) {
+    lift_list_release(list);
 }
 
 // ============================================================================
@@ -492,40 +616,56 @@ pub struct LiftMap {
 
 /// Create a new map with given capacity, key type, and value type
 #[no_mangle]
-pub unsafe extern "C" fn lift_map_new(capacity: i64, key_type: i8, value_type: i8) -> *mut LiftMap {
+pub unsafe extern "C" fn lift_map_new(capacity: i64, key_type: i8, value_type: i8) -> *mut RcMap {
     let cap = capacity.max(0) as usize;
-    let map = Box::new(LiftMap {
+    let map = LiftMap {
         entries: HashMap::with_capacity(cap),
         key_type,
         value_type,
-    });
-    Box::into_raw(map)
+    };
+    RefCounted::new(map)
+}
+
+/// Increment reference count for a map
+#[no_mangle]
+pub unsafe extern "C" fn lift_map_retain(map: *mut RcMap) {
+    RefCounted::retain(map);
+}
+
+/// Decrement reference count for a map and free if it reaches zero
+#[no_mangle]
+pub unsafe extern "C" fn lift_map_release(map: *mut RcMap) {
+    RefCounted::release(map);
 }
 
 /// Set a key-value pair in the map
 #[no_mangle]
-pub unsafe extern "C" fn lift_map_set(map: *mut LiftMap, key: i64, value: i64) {
+pub unsafe extern "C" fn lift_map_set(map: *mut RcMap, key: i64, value: i64) {
     if map.is_null() {
         return;
     }
     unsafe {
-        let map_ref = &mut *map;
-        if let Some(map_key) = MapKey::from_i64(key, map_ref.key_type) {
-            map_ref.entries.insert(map_key, value);
+        if let Some(map_ref) = RefCounted::get_mut(map) {
+            if let Some(map_key) = MapKey::from_i64(key, map_ref.key_type) {
+                map_ref.entries.insert(map_key, value);
+            }
         }
     }
 }
 
 /// Get a value from the map by key
 #[no_mangle]
-pub unsafe extern "C" fn lift_map_get(map: *const LiftMap, key: i64) -> i64 {
+pub unsafe extern "C" fn lift_map_get(map: *const RcMap, key: i64) -> i64 {
     if map.is_null() {
         return 0;
     }
     unsafe {
-        let map_ref = &*map;
-        if let Some(map_key) = MapKey::from_i64(key, map_ref.key_type) {
-            map_ref.entries.get(&map_key).copied().unwrap_or(0)
+        if let Some(map_ref) = RefCounted::get(map) {
+            if let Some(map_key) = MapKey::from_i64(key, map_ref.key_type) {
+                map_ref.entries.get(&map_key).copied().unwrap_or(0)
+            } else {
+                0
+            }
         } else {
             0
         }
@@ -534,26 +674,23 @@ pub unsafe extern "C" fn lift_map_get(map: *const LiftMap, key: i64) -> i64 {
 
 /// Get the number of entries in a map
 #[no_mangle]
-pub unsafe extern "C" fn lift_map_len(map: *const LiftMap) -> i64 {
+pub unsafe extern "C" fn lift_map_len(map: *const RcMap) -> i64 {
     if map.is_null() {
         return 0;
     }
     unsafe {
-        let map_ref = &*map;
-        map_ref.entries.len() as i64
+        if let Some(map_ref) = RefCounted::get(map) {
+            map_ref.entries.len() as i64
+        } else {
+            0
+        }
     }
 }
 
-/// Free a map
+/// Free a map (deprecated - use lift_map_release instead)
 #[no_mangle]
-pub unsafe extern "C" fn lift_map_free(map: *mut LiftMap) {
-    if map.is_null() {
-        return;
-    }
-    unsafe {
-        let _map_box = Box::from_raw(map);
-        // HashMap will be automatically dropped
-    }
+pub unsafe extern "C" fn lift_map_free(map: *mut RcMap) {
+    lift_map_release(map);
 }
 
 // ============================================================================
@@ -569,55 +706,72 @@ pub struct LiftRange {
 
 /// Create a new range
 #[no_mangle]
-pub unsafe extern "C" fn lift_range_new(start: i64, end: i64) -> *mut LiftRange {
-    let range = Box::new(LiftRange { start, end });
-    Box::into_raw(range)
+pub unsafe extern "C" fn lift_range_new(start: i64, end: i64) -> *mut RcRange {
+    let range = LiftRange { start, end };
+    RefCounted::new(range)
+}
+
+/// Increment reference count for a range
+#[no_mangle]
+pub unsafe extern "C" fn lift_range_retain(range: *mut RcRange) {
+    RefCounted::retain(range);
+}
+
+/// Decrement reference count for a range and free if it reaches zero
+#[no_mangle]
+pub unsafe extern "C" fn lift_range_release(range: *mut RcRange) {
+    RefCounted::release(range);
 }
 
 /// Get the start of a range
 #[no_mangle]
-pub unsafe extern "C" fn lift_range_start(range: *const LiftRange) -> i64 {
+pub unsafe extern "C" fn lift_range_start(range: *const RcRange) -> i64 {
     if range.is_null() {
         return 0;
     }
     unsafe {
-        let range_ref = &*range;
-        range_ref.start
+        if let Some(range_ref) = RefCounted::get(range) {
+            range_ref.start
+        } else {
+            0
+        }
     }
 }
 
 /// Get the end of a range
 #[no_mangle]
-pub unsafe extern "C" fn lift_range_end(range: *const LiftRange) -> i64 {
+pub unsafe extern "C" fn lift_range_end(range: *const RcRange) -> i64 {
     if range.is_null() {
         return 0;
     }
     unsafe {
-        let range_ref = &*range;
-        range_ref.end
-    }
-}
-
-/// Free a range
-#[no_mangle]
-pub unsafe extern "C" fn lift_range_free(range: *mut LiftRange) {
-    if !range.is_null() {
-        unsafe {
-            let _ = Box::from_raw(range);
+        if let Some(range_ref) = RefCounted::get(range) {
+            range_ref.end
+        } else {
+            0
         }
     }
 }
 
+/// Free a range (deprecated - use lift_range_release instead)
+#[no_mangle]
+pub unsafe extern "C" fn lift_range_free(range: *mut RcRange) {
+    lift_range_release(range);
+}
+
 /// Output a range
 #[no_mangle]
-pub unsafe extern "C" fn lift_output_range(range: *const LiftRange) {
+pub unsafe extern "C" fn lift_output_range(range: *const RcRange) {
     if range.is_null() {
         print!("null ");
         return;
     }
     unsafe {
-        let range_ref = &*range;
-        print!("{}..{} ", range_ref.start, range_ref.end);
+        if let Some(range_ref) = RefCounted::get(range) {
+            print!("{}..{} ", range_ref.start, range_ref.end);
+        } else {
+            print!("null ");
+        }
     }
 }
 
@@ -644,7 +798,7 @@ pub struct LiftStruct {
 pub unsafe extern "C" fn lift_struct_new(
     type_name: *const c_char,
     field_count: i64,
-) -> *mut LiftStruct {
+) -> *mut RcStruct {
     if type_name.is_null() {
         return std::ptr::null_mut();
     }
@@ -653,20 +807,32 @@ pub unsafe extern "C" fn lift_struct_new(
         let c_str = std::ffi::CStr::from_ptr(type_name);
         if let Ok(name_str) = c_str.to_str() {
             let cap = field_count.max(0) as usize;
-            let lift_struct = Box::new(LiftStruct {
+            let lift_struct = LiftStruct {
                 type_name: name_str.to_string(),
                 fields: HashMap::with_capacity(cap),
-            });
-            return Box::into_raw(lift_struct);
+            };
+            return RefCounted::new(lift_struct);
         }
     }
     std::ptr::null_mut()
 }
 
+/// Increment reference count for a struct
+#[no_mangle]
+pub unsafe extern "C" fn lift_struct_retain(s: *mut RcStruct) {
+    RefCounted::retain(s);
+}
+
+/// Decrement reference count for a struct and free if it reaches zero
+#[no_mangle]
+pub unsafe extern "C" fn lift_struct_release(s: *mut RcStruct) {
+    RefCounted::release(s);
+}
+
 /// Set a field value in a struct
 #[no_mangle]
 pub unsafe extern "C" fn lift_struct_set_field(
-    s: *mut LiftStruct,
+    s: *mut RcStruct,
     field_name: *const c_char,
     type_tag: i8,
     value: i64,
@@ -676,12 +842,13 @@ pub unsafe extern "C" fn lift_struct_set_field(
     }
 
     unsafe {
-        let struct_ref = &mut *s;
-        let c_str = std::ffi::CStr::from_ptr(field_name);
-        if let Ok(name_str) = c_str.to_str() {
-            struct_ref
-                .fields
-                .insert(name_str.to_string(), StructFieldValue { type_tag, value });
+        if let Some(struct_ref) = RefCounted::get_mut(s) {
+            let c_str = std::ffi::CStr::from_ptr(field_name);
+            if let Ok(name_str) = c_str.to_str() {
+                struct_ref
+                    .fields
+                    .insert(name_str.to_string(), StructFieldValue { type_tag, value });
+            }
         }
     }
 }
@@ -689,7 +856,7 @@ pub unsafe extern "C" fn lift_struct_set_field(
 /// Get a field value from a struct
 #[no_mangle]
 pub unsafe extern "C" fn lift_struct_get_field(
-    s: *const LiftStruct,
+    s: *const RcStruct,
     field_name: *const c_char,
 ) -> i64 {
     if s.is_null() || field_name.is_null() {
@@ -697,11 +864,12 @@ pub unsafe extern "C" fn lift_struct_get_field(
     }
 
     unsafe {
-        let struct_ref = &*s;
-        let c_str = std::ffi::CStr::from_ptr(field_name);
-        if let Ok(name_str) = c_str.to_str() {
-            if let Some(field_value) = struct_ref.fields.get(name_str) {
-                return field_value.value;
+        if let Some(struct_ref) = RefCounted::get(s) {
+            let c_str = std::ffi::CStr::from_ptr(field_name);
+            if let Ok(name_str) = c_str.to_str() {
+                if let Some(field_value) = struct_ref.fields.get(name_str) {
+                    return field_value.value;
+                }
             }
         }
     }
@@ -711,7 +879,7 @@ pub unsafe extern "C" fn lift_struct_get_field(
 /// Get the type tag of a field in a struct
 #[no_mangle]
 pub unsafe extern "C" fn lift_struct_get_field_type(
-    s: *const LiftStruct,
+    s: *const RcStruct,
     field_name: *const c_char,
 ) -> i8 {
     if s.is_null() || field_name.is_null() {
@@ -719,55 +887,54 @@ pub unsafe extern "C" fn lift_struct_get_field_type(
     }
 
     unsafe {
-        let struct_ref = &*s;
-        let c_str = std::ffi::CStr::from_ptr(field_name);
-        if let Ok(name_str) = c_str.to_str() {
-            if let Some(field_value) = struct_ref.fields.get(name_str) {
-                return field_value.type_tag;
+        if let Some(struct_ref) = RefCounted::get(s) {
+            let c_str = std::ffi::CStr::from_ptr(field_name);
+            if let Ok(name_str) = c_str.to_str() {
+                if let Some(field_value) = struct_ref.fields.get(name_str) {
+                    return field_value.type_tag;
+                }
             }
         }
     }
     -1
 }
 
-/// Free a struct
+/// Free a struct (deprecated - use lift_struct_release instead)
 #[no_mangle]
-pub unsafe extern "C" fn lift_struct_free(s: *mut LiftStruct) {
-    if !s.is_null() {
-        unsafe {
-            let _ = Box::from_raw(s);
-            // HashMap and String will be automatically dropped
-        }
-    }
+pub unsafe extern "C" fn lift_struct_free(s: *mut RcStruct) {
+    lift_struct_release(s);
 }
 
 /// Format a struct inline (without trailing space) for nested collections
-unsafe fn format_struct_inline(ptr: *const LiftStruct) {
+unsafe fn format_struct_inline(ptr: *const RcStruct) {
     if ptr.is_null() {
         print!("{{}}");
         return;
     }
-    let s = &*ptr;
-    print!("{} {{", s.type_name);
+    if let Some(s) = RefCounted::get(ptr) {
+        print!("{} {{", s.type_name);
 
-    // Sort fields by name for consistent output
-    let mut field_names: Vec<&String> = s.fields.keys().collect();
-    field_names.sort();
+        // Sort fields by name for consistent output
+        let mut field_names: Vec<&String> = s.fields.keys().collect();
+        field_names.sort();
 
-    for (i, field_name) in field_names.iter().enumerate() {
-        if i > 0 {
-            print!(",");
+        for (i, field_name) in field_names.iter().enumerate() {
+            if i > 0 {
+                print!(",");
+            }
+            let field_value = &s.fields[*field_name];
+            print!("{}:", field_name);
+            format_value_inline(field_value.value, field_value.type_tag);
         }
-        let field_value = &s.fields[*field_name];
-        print!("{}:", field_name);
-        format_value_inline(field_value.value, field_value.type_tag);
+        print!("}}");
+    } else {
+        print!("{{}}");
     }
-    print!("}}");
 }
 
 /// Output a struct (pretty-print with trailing space)
 #[no_mangle]
-pub unsafe extern "C" fn lift_output_struct(s: *const LiftStruct) {
+pub unsafe extern "C" fn lift_output_struct(s: *const RcStruct) {
     if s.is_null() {
         print!("{{}} ");
         return;
@@ -799,78 +966,84 @@ unsafe fn compare_values_for_equality(val1: i64, type_tag1: i8, val2: i64, type_
             lift_str_eq(ptr1, ptr2) != 0
         }
         TYPE_STRUCT => {
-            let s1 = val1 as *const LiftStruct;
-            let s2 = val2 as *const LiftStruct;
+            let s1 = val1 as *const RcStruct;
+            let s2 = val2 as *const RcStruct;
             lift_struct_eq(s1, s2) != 0
         }
         TYPE_LIST => {
-            let list1 = val1 as *const LiftList;
-            let list2 = val2 as *const LiftList;
+            let list1 = val1 as *const RcList;
+            let list2 = val2 as *const RcList;
             if list1.is_null() && list2.is_null() {
                 return true;
             }
             if list1.is_null() || list2.is_null() {
                 return false;
             }
-            let l1 = &*list1;
-            let l2 = &*list2;
-            if l1.elem_type != l2.elem_type || l1.elements.len() != l2.elements.len() {
-                return false;
-            }
-            for i in 0..l1.elements.len() {
-                if !compare_values_for_equality(
-                    l1.elements[i],
-                    l1.elem_type,
-                    l2.elements[i],
-                    l2.elem_type,
-                ) {
+            if let (Some(l1), Some(l2)) = (RefCounted::get(list1), RefCounted::get(list2)) {
+                if l1.elem_type != l2.elem_type || l1.elements.len() != l2.elements.len() {
                     return false;
                 }
+                for i in 0..l1.elements.len() {
+                    if !compare_values_for_equality(
+                        l1.elements[i],
+                        l1.elem_type,
+                        l2.elements[i],
+                        l2.elem_type,
+                    ) {
+                        return false;
+                    }
+                }
+                true
+            } else {
+                false
             }
-            true
         }
         TYPE_MAP => {
-            let map1 = val1 as *const LiftMap;
-            let map2 = val2 as *const LiftMap;
+            let map1 = val1 as *const RcMap;
+            let map2 = val2 as *const RcMap;
             if map1.is_null() && map2.is_null() {
                 return true;
             }
             if map1.is_null() || map2.is_null() {
                 return false;
             }
-            let m1 = &*map1;
-            let m2 = &*map2;
-            if m1.key_type != m2.key_type
-                || m1.value_type != m2.value_type
-                || m1.entries.len() != m2.entries.len()
-            {
-                return false;
-            }
-            for (key, val1) in &m1.entries {
-                match m2.entries.get(key) {
-                    Some(val2) => {
-                        if !compare_values_for_equality(*val1, m1.value_type, *val2, m2.value_type)
-                        {
-                            return false;
-                        }
-                    }
-                    None => return false,
+            if let (Some(m1), Some(m2)) = (RefCounted::get(map1), RefCounted::get(map2)) {
+                if m1.key_type != m2.key_type
+                    || m1.value_type != m2.value_type
+                    || m1.entries.len() != m2.entries.len()
+                {
+                    return false;
                 }
+                for (key, val1) in &m1.entries {
+                    match m2.entries.get(key) {
+                        Some(val2) => {
+                            if !compare_values_for_equality(*val1, m1.value_type, *val2, m2.value_type)
+                            {
+                                return false;
+                            }
+                        }
+                        None => return false,
+                    }
+                }
+                true
+            } else {
+                false
             }
-            true
         }
         TYPE_RANGE => {
-            let r1 = val1 as *const LiftRange;
-            let r2 = val2 as *const LiftRange;
+            let r1 = val1 as *const RcRange;
+            let r2 = val2 as *const RcRange;
             if r1.is_null() && r2.is_null() {
                 return true;
             }
             if r1.is_null() || r2.is_null() {
                 return false;
             }
-            let range1 = &*r1;
-            let range2 = &*r2;
-            range1.start == range2.start && range1.end == range2.end
+            if let (Some(range1), Some(range2)) = (RefCounted::get(r1), RefCounted::get(r2)) {
+                range1.start == range2.start && range1.end == range2.end
+            } else {
+                false
+            }
         }
         _ => val1 == val2, // Fallback for unknown types
     }
@@ -878,7 +1051,7 @@ unsafe fn compare_values_for_equality(val1: i64, type_tag1: i8, val2: i64, type_
 
 /// Compare two structs for structural equality
 #[no_mangle]
-pub unsafe extern "C" fn lift_struct_eq(s1: *const LiftStruct, s2: *const LiftStruct) -> i8 {
+pub unsafe extern "C" fn lift_struct_eq(s1: *const RcStruct, s2: *const RcStruct) -> i8 {
     if s1.is_null() && s2.is_null() {
         return 1;
     }
@@ -887,37 +1060,38 @@ pub unsafe extern "C" fn lift_struct_eq(s1: *const LiftStruct, s2: *const LiftSt
     }
 
     unsafe {
-        let struct1 = &*s1;
-        let struct2 = &*s2;
-
-        // Check type names match
-        if struct1.type_name != struct2.type_name {
-            return 0;
-        }
-
-        // Check same number of fields
-        if struct1.fields.len() != struct2.fields.len() {
-            return 0;
-        }
-
-        // Check all fields match
-        for (field_name, field_value1) in &struct1.fields {
-            match struct2.fields.get(field_name) {
-                Some(field_value2) => {
-                    if !compare_values_for_equality(
-                        field_value1.value,
-                        field_value1.type_tag,
-                        field_value2.value,
-                        field_value2.type_tag,
-                    ) {
-                        return 0;
-                    }
-                }
-                None => return 0, // Field not found in second struct
+        if let (Some(struct1), Some(struct2)) = (RefCounted::get(s1), RefCounted::get(s2)) {
+            // Check type names match
+            if struct1.type_name != struct2.type_name {
+                return 0;
             }
-        }
 
-        1 // All fields match
+            // Check same number of fields
+            if struct1.fields.len() != struct2.fields.len() {
+                return 0;
+            }
+
+            // Check all fields match
+            for (field_name, field_value1) in &struct1.fields {
+                match struct2.fields.get(field_name) {
+                    Some(field_value2) => {
+                        if !compare_values_for_equality(
+                            field_value1.value,
+                            field_value1.type_tag,
+                            field_value2.value,
+                            field_value2.type_tag,
+                        ) {
+                            return 0;
+                        }
+                    }
+                    None => return 0, // Field not found in second struct
+                }
+            }
+
+            1 // All fields match
+        } else {
+            0
+        }
     }
 }
 
@@ -1028,7 +1202,7 @@ pub unsafe extern "C" fn lift_str_trim(s: *const c_char) -> *mut c_char {
 pub unsafe extern "C" fn lift_str_split(
     s: *const c_char,
     delimiter: *const c_char,
-) -> *mut LiftList {
+) -> *mut RcList {
     if s.is_null() || delimiter.is_null() {
         return std::ptr::null_mut();
     }
@@ -1047,11 +1221,11 @@ pub unsafe extern "C" fn lift_str_split(
                 })
                 .collect();
 
-            let list = Box::new(LiftList {
+            let list = LiftList {
                 elements: parts,
                 elem_type: TYPE_STR,
-            });
-            return Box::into_raw(list);
+            };
+            return RefCounted::new(list);
         }
     }
     std::ptr::null_mut()
@@ -1146,203 +1320,47 @@ pub unsafe extern "C" fn lift_str_is_empty(s: *const c_char) -> i8 {
 // ==================== List Methods ====================
 
 #[no_mangle]
-pub unsafe extern "C" fn lift_list_first(list: *const LiftList) -> i64 {
+pub unsafe extern "C" fn lift_list_first(list: *const RcList) -> i64 {
     if list.is_null() {
         return 0;
     }
     unsafe {
-        let list_ref = &*list;
-        if list_ref.elements.is_empty() {
-            panic!("Cannot get first element of empty list");
-        }
-        list_ref.elements[0]
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn lift_list_last(list: *const LiftList) -> i64 {
-    if list.is_null() {
-        return 0;
-    }
-    unsafe {
-        let list_ref = &*list;
-        if list_ref.elements.is_empty() {
-            panic!("Cannot get last element of empty list");
-        }
-        list_ref.elements[list_ref.elements.len() - 1]
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn lift_list_contains(list: *const LiftList, item: i64) -> i8 {
-    if list.is_null() {
-        return 0;
-    }
-    unsafe {
-        let list_ref = &*list;
-        if list_ref.elements.contains(&item) {
-            1
-        } else {
-            0
-        }
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn lift_list_slice(
-    list: *const LiftList,
-    start: i64,
-    end: i64,
-) -> *mut LiftList {
-    if list.is_null() {
-        return std::ptr::null_mut();
-    }
-    unsafe {
-        let list_ref = &*list;
-        let start_idx = start.max(0) as usize;
-        let end_idx = end.min(list_ref.elements.len() as i64) as usize;
-
-        let sliced: Vec<i64> = if start_idx <= end_idx {
-            list_ref.elements[start_idx..end_idx].to_vec()
-        } else {
-            Vec::new()
-        };
-
-        let new_list = Box::new(LiftList {
-            elements: sliced,
-            elem_type: list_ref.elem_type, // Preserve element type from original list
-        });
-        Box::into_raw(new_list)
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn lift_list_reverse(list: *const LiftList) -> *mut LiftList {
-    if list.is_null() {
-        return std::ptr::null_mut();
-    }
-    unsafe {
-        let list_ref = &*list;
-        let mut reversed = list_ref.elements.clone();
-        reversed.reverse();
-
-        let new_list = Box::new(LiftList {
-            elements: reversed,
-            elem_type: list_ref.elem_type, // Preserve element type from original list
-        });
-        Box::into_raw(new_list)
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn lift_list_join(
-    list: *const LiftList,
-    separator: *const c_char,
-) -> *mut c_char {
-    if list.is_null() || separator.is_null() {
-        return std::ptr::null_mut();
-    }
-    unsafe {
-        let list_ref = &*list;
-        let c_sep = std::ffi::CStr::from_ptr(separator);
-        if let Ok(rust_sep) = c_sep.to_str() {
-            let sep_trimmed = rust_sep.trim_matches('\'');
-
-            // Convert i64 elements (which are string pointers) to strings
-            let strings: Vec<String> = list_ref
-                .elements
-                .iter()
-                .map(|&elem| {
-                    let str_ptr = elem as *const c_char;
-                    if !str_ptr.is_null() {
-                        if let Ok(c_str) = std::ffi::CStr::from_ptr(str_ptr).to_str() {
-                            c_str.trim_matches('\'').to_string()
-                        } else {
-                            String::new()
-                        }
-                    } else {
-                        String::new()
-                    }
-                })
-                .collect();
-
-            let joined = strings.join(sep_trimmed);
-            let result = format!("'{}'", joined);
-            if let Ok(c_result) = CString::new(result) {
-                return c_result.into_raw();
+        if let Some(list_ref) = RefCounted::get(list) {
+            if list_ref.elements.is_empty() {
+                panic!("Cannot get first element of empty list");
             }
-        }
-    }
-    std::ptr::null_mut()
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn lift_list_is_empty(list: *const LiftList) -> i8 {
-    if list.is_null() {
-        return 1;
-    }
-    unsafe {
-        let list_ref = &*list;
-        if list_ref.elements.is_empty() {
-            1
+            list_ref.elements[0]
         } else {
             0
         }
     }
 }
 
-// ==================== Map Methods ====================
-
 #[no_mangle]
-pub unsafe extern "C" fn lift_map_keys(map: *const LiftMap) -> *mut LiftList {
-    if map.is_null() {
-        return std::ptr::null_mut();
-    }
-    unsafe {
-        let map_ref = &*map;
-        let mut keys: Vec<&MapKey> = map_ref.entries.keys().collect();
-        keys.sort(); // Sort for consistency
-
-        // Convert MapKey back to i64 for FFI
-        let key_values: Vec<i64> = keys.iter().map(|k| k.to_i64()).collect();
-
-        let list = Box::new(LiftList {
-            elements: key_values,
-            elem_type: map_ref.key_type, // Keys have the map's key type
-        });
-        Box::into_raw(list)
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn lift_map_values(map: *const LiftMap) -> *mut LiftList {
-    if map.is_null() {
-        return std::ptr::null_mut();
-    }
-    unsafe {
-        let map_ref = &*map;
-        let mut key_value_pairs: Vec<(&MapKey, &i64)> = map_ref.entries.iter().collect();
-        key_value_pairs.sort_by_key(|&(k, _)| k); // Sort by key
-
-        let values: Vec<i64> = key_value_pairs.iter().map(|&(_, v)| *v).collect();
-
-        let list = Box::new(LiftList {
-            elements: values,
-            elem_type: map_ref.value_type, // Values have the map's value type
-        });
-        Box::into_raw(list)
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn lift_map_contains_key(map: *const LiftMap, key: i64) -> i8 {
-    if map.is_null() {
+pub unsafe extern "C" fn lift_list_last(list: *const RcList) -> i64 {
+    if list.is_null() {
         return 0;
     }
     unsafe {
-        let map_ref = &*map;
-        if let Some(map_key) = MapKey::from_i64(key, map_ref.key_type) {
-            if map_ref.entries.contains_key(&map_key) {
+        if let Some(list_ref) = RefCounted::get(list) {
+            if list_ref.elements.is_empty() {
+                panic!("Cannot get last element of empty list");
+            }
+            list_ref.elements[list_ref.elements.len() - 1]
+        } else {
+            0
+        }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn lift_list_contains(list: *const RcList, item: i64) -> i8 {
+    if list.is_null() {
+        return 0;
+    }
+    unsafe {
+        if let Some(list_ref) = RefCounted::get(list) {
+            if list_ref.elements.contains(&item) {
                 1
             } else {
                 0
@@ -1354,16 +1372,203 @@ pub unsafe extern "C" fn lift_map_contains_key(map: *const LiftMap, key: i64) ->
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn lift_map_is_empty(map: *const LiftMap) -> i8 {
+pub unsafe extern "C" fn lift_list_slice(
+    list: *const RcList,
+    start: i64,
+    end: i64,
+) -> *mut RcList {
+    if list.is_null() {
+        return std::ptr::null_mut();
+    }
+    unsafe {
+        if let Some(list_ref) = RefCounted::get(list) {
+            let start_idx = start.max(0) as usize;
+            let end_idx = end.min(list_ref.elements.len() as i64) as usize;
+
+            let sliced: Vec<i64> = if start_idx <= end_idx {
+                list_ref.elements[start_idx..end_idx].to_vec()
+            } else {
+                Vec::new()
+            };
+
+            let new_list = LiftList {
+                elements: sliced,
+                elem_type: list_ref.elem_type, // Preserve element type from original list
+            };
+            RefCounted::new(new_list)
+        } else {
+            std::ptr::null_mut()
+        }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn lift_list_reverse(list: *const RcList) -> *mut RcList {
+    if list.is_null() {
+        return std::ptr::null_mut();
+    }
+    unsafe {
+        if let Some(list_ref) = RefCounted::get(list) {
+            let mut reversed = list_ref.elements.clone();
+            reversed.reverse();
+
+            let new_list = LiftList {
+                elements: reversed,
+                elem_type: list_ref.elem_type, // Preserve element type from original list
+            };
+            RefCounted::new(new_list)
+        } else {
+            std::ptr::null_mut()
+        }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn lift_list_join(
+    list: *const RcList,
+    separator: *const c_char,
+) -> *mut c_char {
+    if list.is_null() || separator.is_null() {
+        return std::ptr::null_mut();
+    }
+    unsafe {
+        if let Some(list_ref) = RefCounted::get(list) {
+            let c_sep = std::ffi::CStr::from_ptr(separator);
+            if let Ok(rust_sep) = c_sep.to_str() {
+                let sep_trimmed = rust_sep.trim_matches('\'');
+
+                // Convert i64 elements (which are string pointers) to strings
+                let strings: Vec<String> = list_ref
+                    .elements
+                    .iter()
+                    .map(|&elem| {
+                        let str_ptr = elem as *const c_char;
+                        if !str_ptr.is_null() {
+                            if let Ok(c_str) = std::ffi::CStr::from_ptr(str_ptr).to_str() {
+                                c_str.trim_matches('\'').to_string()
+                            } else {
+                                String::new()
+                            }
+                        } else {
+                            String::new()
+                        }
+                    })
+                    .collect();
+
+                let joined = strings.join(sep_trimmed);
+                let result = format!("'{}'", joined);
+                if let Ok(c_result) = CString::new(result) {
+                    return c_result.into_raw();
+                }
+            }
+        }
+        std::ptr::null_mut()
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn lift_list_is_empty(list: *const RcList) -> i8 {
+    if list.is_null() {
+        return 1;
+    }
+    unsafe {
+        if let Some(list_ref) = RefCounted::get(list) {
+            if list_ref.elements.is_empty() {
+                1
+            } else {
+                0
+            }
+        } else {
+            1
+        }
+    }
+}
+
+// ==================== Map Methods ====================
+
+#[no_mangle]
+pub unsafe extern "C" fn lift_map_keys(map: *const RcMap) -> *mut RcList {
+    if map.is_null() {
+        return std::ptr::null_mut();
+    }
+    unsafe {
+        if let Some(map_ref) = RefCounted::get(map) {
+            let mut keys: Vec<&MapKey> = map_ref.entries.keys().collect();
+            keys.sort(); // Sort for consistency
+
+            // Convert MapKey back to i64 for FFI
+            let key_values: Vec<i64> = keys.iter().map(|k| k.to_i64()).collect();
+
+            let list = LiftList {
+                elements: key_values,
+                elem_type: map_ref.key_type, // Keys have the map's key type
+            };
+            RefCounted::new(list)
+        } else {
+            std::ptr::null_mut()
+        }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn lift_map_values(map: *const RcMap) -> *mut RcList {
+    if map.is_null() {
+        return std::ptr::null_mut();
+    }
+    unsafe {
+        if let Some(map_ref) = RefCounted::get(map) {
+            let mut key_value_pairs: Vec<(&MapKey, &i64)> = map_ref.entries.iter().collect();
+            key_value_pairs.sort_by_key(|&(k, _)| k); // Sort by key
+
+            let values: Vec<i64> = key_value_pairs.iter().map(|&(_, v)| *v).collect();
+
+            let list = LiftList {
+                elements: values,
+                elem_type: map_ref.value_type, // Values have the map's value type
+            };
+            RefCounted::new(list)
+        } else {
+            std::ptr::null_mut()
+        }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn lift_map_contains_key(map: *const RcMap, key: i64) -> i8 {
+    if map.is_null() {
+        return 0;
+    }
+    unsafe {
+        if let Some(map_ref) = RefCounted::get(map) {
+            if let Some(map_key) = MapKey::from_i64(key, map_ref.key_type) {
+                if map_ref.entries.contains_key(&map_key) {
+                    1
+                } else {
+                    0
+                }
+            } else {
+                0
+            }
+        } else {
+            0
+        }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn lift_map_is_empty(map: *const RcMap) -> i8 {
     if map.is_null() {
         return 1;
     }
     unsafe {
-        let map_ref = &*map;
-        if map_ref.entries.is_empty() {
-            1
+        if let Some(map_ref) = RefCounted::get(map) {
+            if map_ref.entries.is_empty() {
+                1
+            } else {
+                0
+            }
         } else {
-            0
+            1
         }
     }
 }
