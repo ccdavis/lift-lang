@@ -1,0 +1,11 @@
+// Test: Accessing Flt field from struct should return Flt type
+{
+    type Point = struct (x: Flt, y: Flt);
+
+    let p = Point(x: 3.5, y: 4.2);
+    let x_val: Flt = p.x;  // Should be Flt, not Int
+
+    output(x_val);  // Should output 3.5
+
+    0
+}

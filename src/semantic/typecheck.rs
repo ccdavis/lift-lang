@@ -333,7 +333,7 @@ pub fn typecheck(
 
             // 4. Verify it's a struct and get field type
             let field_type = match resolved_type {
-                DataType::Struct(params) => params
+                DataType::Struct { fields: params, .. } => params
                     .iter()
                     .find(|p| p.name == *field_name)
                     .map(|p| p.data_type.clone())
@@ -924,7 +924,7 @@ pub fn typecheck(
 
             // Extract field definitions from the struct type
             let expected_fields = match struct_def {
-                DataType::Struct(params) => params,
+                DataType::Struct { fields: params, .. } => params,
                 _ => {
                     return Err(CompileError::typecheck(
                         &format!("{} is not a struct type", type_name),
@@ -1009,7 +1009,7 @@ pub fn typecheck(
 
             // 3. Verify it's a struct and get field type
             match resolved_type {
-                DataType::Struct(params) => {
+                DataType::Struct { fields: params, .. } => {
                     // 4. Find the field and return its type
                     params
                         .iter()
@@ -1062,7 +1062,7 @@ fn types_compatible(t1: &DataType, t2: &DataType) -> bool {
             true
         }
         // Struct compatibility - check field names and types match
-        (DataType::Struct(params1), DataType::Struct(params2)) => {
+        (DataType::Struct { fields: params1, .. }, DataType::Struct { fields: params2, .. }) => {
             if params1.len() != params2.len() {
                 return false;
             }
@@ -1073,6 +1073,9 @@ fn types_compatible(t1: &DataType, t2: &DataType) -> bool {
         }
         // TypeRef compatibility - same name means compatible
         (DataType::TypeRef(name1), DataType::TypeRef(name2)) => name1 == name2,
+        // TypeRef vs Struct compatibility - TypeRef name must match Struct name
+        (DataType::TypeRef(ref_name), DataType::Struct { name: struct_name, .. }) => ref_name == struct_name,
+        (DataType::Struct { name: struct_name, .. }, DataType::TypeRef(ref_name)) => struct_name == ref_name,
         _ => false,
     }
 }

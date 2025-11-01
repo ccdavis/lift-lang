@@ -345,6 +345,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         let receiver_type = Self::resolve_type_alias(&receiver_type_raw, symbols);
 
         // Get type name for method lookup
+        // For user-defined types (TypeRef -> Struct), use the TypeRef name
         let type_name = match &receiver_type {
             DataType::Str => "Str",
             DataType::List { .. } => "List",
@@ -354,6 +355,10 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             DataType::Bool => "Bool",
             DataType::Range(_) => "Range",
             DataType::TypeRef(name) => name.as_str(),
+            DataType::Struct { name, .. } => {
+                // Structs now carry their type name
+                name.as_str()
+            }
             _ => return Err(format!("No methods for type: {:?}", receiver_type)),
         };
 

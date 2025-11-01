@@ -265,8 +265,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         }
 
         // Handle struct comparison (only Eq and Neq supported)
-        let is_struct_op = matches!(left_type, Some(DataType::Struct(_)))
-            || matches!(right_type, Some(DataType::Struct(_)));
+        let is_struct_op = matches!(left_type, Some(DataType::Struct { name: _, fields: _ }))
+            || matches!(right_type, Some(DataType::Struct { name: _, fields: _ }));
         if is_struct_op && matches!(op, Operator::Eq | Operator::Neq) {
             let left_val = Self::compile_expr_static(
                 builder,
@@ -716,7 +716,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 DataType::Range(_) => ("lift_output_range", false),
                 DataType::List { .. } => ("lift_output_list", false),
                 DataType::Map { .. } => ("lift_output_map", false),
-                DataType::Struct(_) => ("lift_output_struct", false),
+                DataType::Struct { name: _, fields: _ } => ("lift_output_struct", false),
                 _ => {
                     return Err(format!(
                         "Output not yet supported for type: {:?}",

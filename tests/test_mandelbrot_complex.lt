@@ -1,0 +1,105 @@
+// Mandelbrot Set Renderer using Complex Struct
+// This tests: structs, methods on structs, memory management, iteration, functions
+
+// Define a Complex number struct
+type Complex = struct (x: Flt, iy: Flt);
+
+// Complex number addition: (a + bi) + (c + di) = (a+c) + (b+d)i
+function Complex.add(cpy other: Complex): Complex {
+    Complex(x: self.x + other.x, iy: self.iy + other.iy)
+};
+
+// Complex number multiplication: (a + bi) * (c + di) = (ac - bd) + (ad + bc)i
+function Complex.multiply(cpy other: Complex): Complex {
+    let real = self.x * other.x - self.iy * other.iy;
+    let imag = self.x * other.iy + self.iy * other.x;
+    Complex(x: real, iy: imag)
+};
+
+// Magnitude squared: |a + bi|^2 = a^2 + b^2
+function Complex.magnitude_squared(): Flt {
+    self.x * self.x + self.iy * self.iy
+};
+
+// Mandelbrot iteration: z_n+1 = z_n^2 + c
+// Returns the iteration count when |z| > 2, or max_iterations if in set
+function mandelbrot_iterations(cpy c: Complex, max_iter: Int): Int {
+    let var z = Complex(x: 0.0, iy: 0.0);
+    let var iteration = 0;
+    let var escape_iter = max_iter;
+
+    while iteration < max_iter {
+        // Check if magnitude squared > 4 (i.e., |z| > 2)
+        if z.magnitude_squared() > 4.0 {
+            escape_iter := iteration;
+            iteration := max_iter  // Break out of loop
+        } else {
+            // z = z^2 + c
+            z := z.multiply(other: z).add(other: c);
+            iteration := iteration + 1
+        }
+    };
+
+    escape_iter
+};
+
+// Map pixel coordinates to complex plane coordinates
+function pixel_to_complex(px: Int, py: Int, width: Int, height: Int): Complex {
+    let x_min = -2.5;
+    let x_max = 1.0;
+    let y_min = -1.0;
+    let y_max = 1.0;
+
+    let x_range = x_max - x_min;
+    let y_range = y_max - y_min;
+
+    // Convert px from Int to Flt for calculation
+    let px_flt = 0.0;  // Will need to manually convert
+    let py_flt = 0.0;  // Will need to manually convert
+
+    // For now, approximate conversion (this will be a limitation to test)
+    let real = x_min + (px_flt * x_range / 60.0);
+    let imag = y_min + (py_flt * y_range / 30.0);
+
+    Complex(x: real, iy: imag)
+};
+
+// Render a character based on iteration count
+function render_pixel(iterations: Int, max_iter: Int): Str {
+    if iterations < max_iter {
+        '*'  // Outside the set
+    } else {
+        '.'  // Inside the set
+    }
+};
+
+// Main rendering function
+{
+    let width = 60;
+    let height = 30;
+    let max_iterations = 50;
+
+    output('Mandelbrot Set Renderer');
+    output('Using Complex struct with methods');
+
+    // Render row by row
+    let var y = 0;
+    while y < height {
+        let var x = 0;
+        let var row = '';
+
+        while x < width {
+            let c = pixel_to_complex(px: x, py: y, width: width, height: height);
+            let iter = mandelbrot_iterations(c: c, max_iter: max_iterations);
+            let pixel = render_pixel(iterations: iter, max_iter: max_iterations);
+            row := row + pixel;
+            x := x + 1
+        };
+
+        output(row);
+        y := y + 1
+    };
+
+    output('Done!');
+    0
+}

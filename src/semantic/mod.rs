@@ -108,8 +108,16 @@ pub(crate) fn resolve_type_alias(data_type: &DataType, symbols: &SymbolTable) ->
             break;
         }
 
-        // Look up the type using lookup_type
-        if let Some(underlying_type) = symbols.lookup_type(name, 0) {
+        // Look up the type in all scopes (start from the deepest scope)
+        let mut found = None;
+        for scope_idx in (0..symbols.scope_count()).rev() {
+            if let Some(underlying_type) = symbols.lookup_type(name, scope_idx) {
+                found = Some(underlying_type);
+                break;
+            }
+        }
+
+        if let Some(underlying_type) = found {
             resolved = underlying_type;
         } else {
             // Type not found, leave as TypeRef
@@ -196,7 +204,7 @@ pub(crate) fn types_compatible(t1: &DataType, t2: &DataType) -> bool {
             true
         }
         // Struct compatibility - check field names and types match
-        (DataType::Struct(params1), DataType::Struct(params2)) => {
+        (DataType::Struct { fields: params1, .. }, DataType::Struct { fields: params2, .. }) => {
             if params1.len() != params2.len() {
                 return false;
             }
@@ -207,6 +215,9 @@ pub(crate) fn types_compatible(t1: &DataType, t2: &DataType) -> bool {
         }
         // TypeRef compatibility - same name means compatible
         (DataType::TypeRef(name1), DataType::TypeRef(name2)) => name1 == name2,
+        // TypeRef vs Struct compatibility - TypeRef name must match Struct name
+        (DataType::TypeRef(ref_name), DataType::Struct { name: struct_name, .. }) => ref_name == struct_name,
+        (DataType::Struct { name: struct_name, .. }, DataType::TypeRef(ref_name)) => struct_name == ref_name,
         _ => false,
     }
 }

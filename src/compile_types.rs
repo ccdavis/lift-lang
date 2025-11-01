@@ -34,7 +34,7 @@ pub fn lift_type_to_cranelift(data_type: &DataType) -> Result<Type, String> {
 
         DataType::Set(_) => Ok(types::I64),
         DataType::Enum(_) => Ok(types::I64),
-        DataType::Struct(_) => Ok(types::I64),
+        DataType::Struct { name: _, fields: _ } => Ok(types::I64),
     }
 }
 
@@ -48,7 +48,7 @@ pub fn is_heap_type(data_type: &DataType) -> bool {
             | DataType::Range { .. }
             | DataType::Set(_)
             | DataType::Enum(_)
-            | DataType::Struct(_)
+            | DataType::Struct { name: _, fields: _ }
     )
 }
 

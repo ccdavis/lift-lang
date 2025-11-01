@@ -130,7 +130,11 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         // Define the function in the module
         self.module
             .define_function(func_id, &mut self.ctx)
-            .map_err(|e| format!("Failed to define main function: {}", e))?;
+            .map_err(|e| {
+                eprintln!("Cranelift IR that failed verification (main):");
+                eprintln!("{}", self.ctx.func.display());
+                format!("Failed to define main function: {}", e)
+            })?;
 
         // Clear the context for future compilations
         self.module.clear_context(&mut self.ctx);

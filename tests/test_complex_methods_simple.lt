@@ -1,0 +1,28 @@
+// Simple test of Complex struct with methods
+{
+    type Complex = struct (x: Flt, iy: Flt);
+
+    function Complex.add(cpy other: Complex): Complex {
+        Complex(x: self.x + other.x, iy: self.iy + other.iy)
+    };
+
+    function Complex.magnitude_squared(): Flt {
+        self.x * self.x + self.iy * self.iy
+    };
+
+    // Test with variables
+    let var z = Complex(x: 3.0, iy: 4.0);
+    output(z.magnitude_squared());  // Should be 25
+
+    // Test add method
+    let c = Complex(x: 1.0, iy: 2.0);
+    z := z.add(other: c);
+    output(z.x);   // Should be 4
+    output(z.iy);  // Should be 6
+
+    // Test magnitude after add
+    let var result = z.magnitude_squared();
+    output(result);  // Should be 52
+
+    0
+}

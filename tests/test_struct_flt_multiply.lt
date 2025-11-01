@@ -1,0 +1,12 @@
+// Test: Multiply Flt field by itself
+{
+    type Point = struct (x: Flt, y: Flt);
+
+    let p = Point(x: 3.0, y: 4.0);
+
+    let x_squared: Flt = p.x * p.x;
+
+    output(x_squared);  // Should output 9.0
+
+    0
+}

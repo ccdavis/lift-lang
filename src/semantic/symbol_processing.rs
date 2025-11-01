@@ -93,7 +93,7 @@ pub fn add_symbols(
         } => {
             // First check if this is actually a struct literal (Type(field: value, ...))
             // rather than a function call
-            if let Some(DataType::Struct(_params)) = symbols.lookup_type(fn_name, _current_scope_id)
+            if let Some(DataType::Struct { fields: _params, .. }) = symbols.lookup_type(fn_name, _current_scope_id)
             {
                 // This is a struct literal! Transform Call → StructLiteral
                 // Process field values
@@ -232,6 +232,9 @@ pub fn add_symbols(
             // First, try with the type alias name if it's a TypeRef
             let mut method_found = false;
 
+            // Save the original unresolved receiver type for later use
+            let receiver_type_original = receiver_type.clone();
+
             // Clone receiver_type for later use in error messages
             let receiver_type_clone = receiver_type.clone();
 
@@ -266,10 +269,12 @@ pub fn add_symbols(
                 let resolved_type = if matches!(&receiver_type, DataType::TypeRef(_)) {
                     resolve_type(&receiver_type, symbols, _current_scope_id)?
                 } else {
+                    // receiver_type is already resolved (e.g., from symbol table)
+                    // Try to get the original TypeRef by checking the receiver expression
                     receiver_type
                 };
 
-                let type_name = match resolved_type {
+                let type_name = match &resolved_type {
                     DataType::Str => "Str",
                     DataType::Int => "Int",
                     DataType::Flt => "Flt",
@@ -277,6 +282,10 @@ pub fn add_symbols(
                     DataType::List { .. } => "List",
                     DataType::Map { .. } => "Map",
                     DataType::Range(_) => "Range",
+                    DataType::Struct { name, .. } => {
+                        // Structs now carry their type name
+                        name.as_str()
+                    }
                     _ => {
                         return Err(CompileError::typecheck(
                             &format!("Cannot call methods on type {:?}", resolved_type),

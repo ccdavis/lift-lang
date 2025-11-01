@@ -68,7 +68,10 @@ pub enum DataType {
     },
     Set(Box<DataType>),
     Enum(Vec<String>),
-    Struct(Vec<Param>),
+    Struct {
+        name: String,
+        fields: Vec<Param>,
+    },
     TypeRef(String), // Reference to a user-defined type
 }
 

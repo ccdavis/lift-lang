@@ -22,7 +22,7 @@ pub(crate) fn data_type_to_type_tag(data_type: &DataType) -> i8 {
         DataType::List { .. } => 4, // TYPE_LIST
         DataType::Map { .. } => 5,  // TYPE_MAP
         DataType::Range(_) => 6,    // TYPE_RANGE
-        DataType::Struct(_) => 7,   // TYPE_STRUCT
+        DataType::Struct { name: _, fields: _ } => 7,   // TYPE_STRUCT
         _ => 0,                     // Fallback to Int for unknown types
     }
 }
@@ -41,7 +41,7 @@ pub(crate) fn data_type_to_cranelift_type(dt: &DataType, pointer_type: Type) -> 
         DataType::Optional(_) => pointer_type, // Optionals treated as pointers
         DataType::Set(_) => pointer_type,
         DataType::Enum(_) => types::I64,     // Enums as integers
-        DataType::Struct(_) => pointer_type, // Structs as pointers
+        DataType::Struct { name: _, fields: _ } => pointer_type, // Structs as pointers
     }
 }
 

@@ -116,7 +116,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 | DataType::List { .. }
                 | DataType::Map { .. }
                 | DataType::Range(_)
-                | DataType::Struct(_) => {
+                | DataType::Struct { name: _, fields: _ } => {
                     // Already I64 (integers, booleans, and pointers)
                     field_val_raw
                 }
@@ -193,8 +193,34 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         let inst = builder.ins().call(*func_ref, &[struct_val, field_name_ptr]);
         let field_val = builder.inst_results(inst)[0];
 
-        // TODO: May need type conversion based on field type (e.g., bitcast for floats)
-        // For now, return as-is (works for Int, Bool, and pointer types)
+        // Type conversion based on field type
+        // Get the type of the struct expression
+        use crate::semantic::determine_type_with_symbols;
+        use crate::syntax::DataType;
+        use super::types::resolve_type_alias;
+
+        let expr_type = determine_type_with_symbols(expr, symbols, 0)
+            .ok_or_else(|| "Cannot determine struct type for field access".to_string())?;
+
+        let resolved_type = resolve_type_alias(&expr_type, symbols);
+
+        // Find the field type in the struct definition
+        if let DataType::Struct { fields, .. } = resolved_type {
+            if let Some(field_param) = fields.iter().find(|p| p.name == field_name) {
+                let field_type = &field_param.data_type;
+                // Resolve the field type in case it's a type alias
+                let resolved_field_type = resolve_type_alias(field_type, symbols);
+
+                // Bitcast i64 to f64 for Flt fields
+                // The runtime returns all values as i64, but Flt values are stored as bit patterns
+                if matches!(resolved_field_type, DataType::Flt) {
+                    let float_val = builder.ins().bitcast(types::F64, MemFlags::new(), field_val);
+                    return Ok(Some(float_val));
+                }
+                // i64 values work as-is for Int, Bool, and pointer types
+            }
+        }
+
         Ok(Some(field_val))
     }
 
@@ -270,7 +296,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             | DataType::List { .. }
             | DataType::Map { .. }
             | DataType::Range(_)
-            | DataType::Struct(_) => new_val_raw,
+            | DataType::Struct { name: _, fields: _ } => new_val_raw,
             _ => new_val_raw,
         };
 

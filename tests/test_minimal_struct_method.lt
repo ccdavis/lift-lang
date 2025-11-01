@@ -1,0 +1,15 @@
+// Minimal test for struct methods in compiler
+{
+    type Point = struct (x: Flt, y: Flt);
+
+    function Point.magnitude(): Flt {
+        self.x * self.x + self.y * self.y
+    };
+
+    let p = Point(x: 3.0, y: 4.0);
+    let mag = p.magnitude();
+
+    output(mag);  // Should output 25.0
+
+    0
+}

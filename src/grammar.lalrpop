@@ -50,7 +50,7 @@ ExprType: Expr = {
     "type" <i:ident> "=" "Map" "of" <k:DataType> "to" <v:DataType> => Expr::DefineType {type_name: i,definition: DataType::Map {key_type: Box::new(k), value_type: Box::new(v)},index: (0,0)}.into(),
     "type" <i:ident> "=" "Set" "of" <d:DataType> => Expr::DefineType { type_name: i, definition: DataType::Set(Box::new(d)), index: (0,0)},
     "type" <i:ident> "=" "(" <e:CommaSeparated<ident>> ")"=> Expr::DefineType {type_name: i, definition: DataType::Enum(e), index: (0,0)},
-    "type" <i:ident> "=" "struct"  "(" <m:CommaSeparated<Param>> ")" =>Expr::DefineType{type_name: i,definition: DataType::Struct(m), index: (0,0)},
+    "type" <i:ident> "=" "struct"  "(" <m:CommaSeparated<Param>> ")" =>Expr::DefineType{type_name: i.clone(),definition: DataType::Struct { name: i, fields: m }, index: (0,0)},
 };
 
 ExprLet: Expr= {
