@@ -390,18 +390,58 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
 
         // Handle built-in vs user-defined methods
         if let Some(builtin) = builtin_opt {
-            // Built-in method - map to runtime function
+            // Check if this is a string method that returns a string (needs dest pointer)
+            let returns_string = matches!(
+                builtin,
+                BuiltinMethod::StrUpper
+                    | BuiltinMethod::StrLower
+                    | BuiltinMethod::StrSubstring
+                    | BuiltinMethod::StrTrim
+                    | BuiltinMethod::StrReplace
+            );
+
+            if returns_string {
+                // String methods that return strings use dest-pointer style
+                // Allocate result LiftString on stack (32 bytes)
+                let result_slot = builder.create_sized_stack_slot(
+                    cranelift_codegen::ir::StackSlotData::new(
+                        cranelift_codegen::ir::StackSlotKind::ExplicitSlot,
+                        32,
+                        8,
+                    ),
+                );
+                let result_ptr = builder.ins().stack_addr(types::I64, result_slot, 0);
+
+                // Build argument list: (dest_ptr, receiver_ptr, ...other_args)
+                let mut call_args = vec![result_ptr];
+                call_args.extend_from_slice(&arg_vals);
+
+                // Get runtime function name
+                let runtime_func_name = match builtin {
+                    BuiltinMethod::StrUpper => "lift_string_upper",
+                    BuiltinMethod::StrLower => "lift_string_lower",
+                    BuiltinMethod::StrSubstring => "lift_string_substring",
+                    BuiltinMethod::StrTrim => "lift_string_trim",
+                    BuiltinMethod::StrReplace => "lift_string_replace",
+                    _ => unreachable!(),
+                };
+
+                let func_ref = runtime_funcs
+                    .get(runtime_func_name)
+                    .ok_or_else(|| format!("Runtime function not found: {}", runtime_func_name))?;
+
+                builder.ins().call(*func_ref, &call_args);
+
+                return Ok(Some(result_ptr));
+            }
+
+            // Other methods use the normal calling convention
             let runtime_func_name = match builtin {
-                BuiltinMethod::StrUpper => "lift_str_upper",
-                BuiltinMethod::StrLower => "lift_str_lower",
-                BuiltinMethod::StrSubstring => "lift_str_substring",
-                BuiltinMethod::StrContains => "lift_str_contains",
-                BuiltinMethod::StrTrim => "lift_str_trim",
-                BuiltinMethod::StrSplit => "lift_str_split",
-                BuiltinMethod::StrReplace => "lift_str_replace",
-                BuiltinMethod::StrStartsWith => "lift_str_starts_with",
-                BuiltinMethod::StrEndsWith => "lift_str_ends_with",
-                BuiltinMethod::StrIsEmpty => "lift_str_is_empty",
+                BuiltinMethod::StrContains => "lift_string_contains",
+                BuiltinMethod::StrSplit => "lift_string_split",
+                BuiltinMethod::StrStartsWith => "lift_string_starts_with",
+                BuiltinMethod::StrEndsWith => "lift_string_ends_with",
+                BuiltinMethod::StrIsEmpty => "lift_string_is_empty",
 
                 BuiltinMethod::ListFirst => "lift_list_first",
                 BuiltinMethod::ListLast => "lift_list_last",
@@ -415,6 +455,10 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 BuiltinMethod::MapValues => "lift_map_values",
                 BuiltinMethod::MapContainsKey => "lift_map_contains_key",
                 BuiltinMethod::MapIsEmpty => "lift_map_is_empty",
+
+                _ => {
+                    return Err(format!("Unsupported builtin method: {:?}", builtin));
+                }
             };
 
             // Call runtime function

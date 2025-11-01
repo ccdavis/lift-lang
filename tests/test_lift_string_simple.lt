@@ -1,0 +1,3 @@
+// Simple test of LiftString in compiled mode
+let s = 'Hello';
+output(s);

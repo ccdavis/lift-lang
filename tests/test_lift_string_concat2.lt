@@ -1,0 +1,3 @@
+// Direct concat test
+let result = 'Hello' + ' World';
+output(result);

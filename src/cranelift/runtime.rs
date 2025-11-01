@@ -117,6 +117,254 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         self.runtime_funcs
             .insert("lift_str_eq".to_string(), func_id);
 
+        // ====================================================================
+        // LiftString Functions (new string type with SSO)
+        // ====================================================================
+
+        // lift_string_init_from_cstr(*mut LiftString, *const c_char)
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(pointer_type));
+        let func_id = self
+            .module
+            .declare_function(
+                "lift_string_init_from_cstr",
+                cranelift_module::Linkage::Import,
+                &sig,
+            )
+            .map_err(|e| format!("Failed to declare lift_string_init_from_cstr: {}", e))?;
+        self.runtime_funcs
+            .insert("lift_string_init_from_cstr".to_string(), func_id);
+
+        // lift_string_concat_to(*mut LiftString, *const LiftString, *const LiftString)
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(pointer_type));
+        let func_id = self
+            .module
+            .declare_function(
+                "lift_string_concat_to",
+                cranelift_module::Linkage::Import,
+                &sig,
+            )
+            .map_err(|e| format!("Failed to declare lift_string_concat_to: {}", e))?;
+        self.runtime_funcs
+            .insert("lift_string_concat_to".to_string(), func_id);
+
+        // lift_string_copy(*mut LiftString, *const LiftString)
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(pointer_type));
+        let func_id = self
+            .module
+            .declare_function(
+                "lift_string_copy",
+                cranelift_module::Linkage::Import,
+                &sig,
+            )
+            .map_err(|e| format!("Failed to declare lift_string_copy: {}", e))?;
+        self.runtime_funcs
+            .insert("lift_string_copy".to_string(), func_id);
+
+        // lift_string_drop(*mut LiftString)
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        let func_id = self
+            .module
+            .declare_function(
+                "lift_string_drop",
+                cranelift_module::Linkage::Import,
+                &sig,
+            )
+            .map_err(|e| format!("Failed to declare lift_string_drop: {}", e))?;
+        self.runtime_funcs
+            .insert("lift_string_drop".to_string(), func_id);
+
+        // lift_output_lift_string_ptr(*const LiftString)
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        let func_id = self
+            .module
+            .declare_function(
+                "lift_output_lift_string_ptr",
+                cranelift_module::Linkage::Import,
+                &sig,
+            )
+            .map_err(|e| format!("Failed to declare lift_output_lift_string_ptr: {}", e))?;
+        self.runtime_funcs
+            .insert("lift_output_lift_string_ptr".to_string(), func_id);
+
+        // LiftString method functions
+        // lift_string_len(*const LiftString) -> i64
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(types::I64));
+        let func_id = self
+            .module
+            .declare_function("lift_string_len", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_string_len: {}", e))?;
+        self.runtime_funcs
+            .insert("lift_string_len".to_string(), func_id);
+
+        // lift_string_eq(*const LiftString, *const LiftString) -> i8
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(types::I8));
+        let func_id = self
+            .module
+            .declare_function("lift_string_eq", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_string_eq: {}", e))?;
+        self.runtime_funcs
+            .insert("lift_string_eq".to_string(), func_id);
+
+        // lift_string_upper(*mut LiftString, *const LiftString)
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(pointer_type));
+        let func_id = self
+            .module
+            .declare_function("lift_string_upper", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_string_upper: {}", e))?;
+        self.runtime_funcs
+            .insert("lift_string_upper".to_string(), func_id);
+
+        // lift_string_lower(*mut LiftString, *const LiftString)
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(pointer_type));
+        let func_id = self
+            .module
+            .declare_function("lift_string_lower", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_string_lower: {}", e))?;
+        self.runtime_funcs
+            .insert("lift_string_lower".to_string(), func_id);
+
+        // lift_string_substring(*mut LiftString, *const LiftString, i64, i64)
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(types::I64));
+        sig.params.push(AbiParam::new(types::I64));
+        let func_id = self
+            .module
+            .declare_function(
+                "lift_string_substring",
+                cranelift_module::Linkage::Import,
+                &sig,
+            )
+            .map_err(|e| format!("Failed to declare lift_string_substring: {}", e))?;
+        self.runtime_funcs
+            .insert("lift_string_substring".to_string(), func_id);
+
+        // lift_string_contains(*const LiftString, *const LiftString) -> i8
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(types::I8));
+        let func_id = self
+            .module
+            .declare_function(
+                "lift_string_contains",
+                cranelift_module::Linkage::Import,
+                &sig,
+            )
+            .map_err(|e| format!("Failed to declare lift_string_contains: {}", e))?;
+        self.runtime_funcs
+            .insert("lift_string_contains".to_string(), func_id);
+
+        // lift_string_trim(*mut LiftString, *const LiftString)
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(pointer_type));
+        let func_id = self
+            .module
+            .declare_function("lift_string_trim", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_string_trim: {}", e))?;
+        self.runtime_funcs
+            .insert("lift_string_trim".to_string(), func_id);
+
+        // lift_string_replace(*mut LiftString, *const LiftString, *const LiftString, *const LiftString)
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(pointer_type));
+        let func_id = self
+            .module
+            .declare_function(
+                "lift_string_replace",
+                cranelift_module::Linkage::Import,
+                &sig,
+            )
+            .map_err(|e| format!("Failed to declare lift_string_replace: {}", e))?;
+        self.runtime_funcs
+            .insert("lift_string_replace".to_string(), func_id);
+
+        // lift_string_starts_with(*const LiftString, *const LiftString) -> i8
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(types::I8));
+        let func_id = self
+            .module
+            .declare_function(
+                "lift_string_starts_with",
+                cranelift_module::Linkage::Import,
+                &sig,
+            )
+            .map_err(|e| format!("Failed to declare lift_string_starts_with: {}", e))?;
+        self.runtime_funcs
+            .insert("lift_string_starts_with".to_string(), func_id);
+
+        // lift_string_ends_with(*const LiftString, *const LiftString) -> i8
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(types::I8));
+        let func_id = self
+            .module
+            .declare_function(
+                "lift_string_ends_with",
+                cranelift_module::Linkage::Import,
+                &sig,
+            )
+            .map_err(|e| format!("Failed to declare lift_string_ends_with: {}", e))?;
+        self.runtime_funcs
+            .insert("lift_string_ends_with".to_string(), func_id);
+
+        // lift_string_is_empty(*const LiftString) -> i8
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(types::I8));
+        let func_id = self
+            .module
+            .declare_function(
+                "lift_string_is_empty",
+                cranelift_module::Linkage::Import,
+                &sig,
+            )
+            .map_err(|e| format!("Failed to declare lift_string_is_empty: {}", e))?;
+        self.runtime_funcs
+            .insert("lift_string_is_empty".to_string(), func_id);
+
+        // lift_string_split(*const LiftString, *const LiftString) -> *mut RcList
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(pointer_type));
+        let func_id = self
+            .module
+            .declare_function(
+                "lift_string_split",
+                cranelift_module::Linkage::Import,
+                &sig,
+            )
+            .map_err(|e| format!("Failed to declare lift_string_split: {}", e))?;
+        self.runtime_funcs
+            .insert("lift_string_split".to_string(), func_id);
+
         // lift_list_new(i64, i8) -> *mut LiftList
         let mut sig = self.module.make_signature();
         sig.params.push(AbiParam::new(types::I64));

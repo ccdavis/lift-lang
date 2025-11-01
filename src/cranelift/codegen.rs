@@ -23,9 +23,8 @@ pub struct CodeGenerator<'a, M: Module> {
     // User-defined function references: maps function names to FuncId
     pub(super) function_refs: HashMap<String, FuncId>,
 
-    // Track heap allocations per scope for cleanup
-    // Maps scope depth to list of (pointer_value, type_name)
-    pub(super) scope_allocations: Vec<Vec<(Value, String)>>,
+    // Note: scope_allocations is now passed as a parameter through compilation functions
+    // rather than stored as a struct field (was never read, only the local variable was used)
 }
 
 impl<'a, M: Module> CodeGenerator<'a, M> {
@@ -39,7 +38,6 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             variables: HashMap::new(),
             runtime_funcs: HashMap::new(),
             function_refs: HashMap::new(),
-            scope_allocations: Vec::new(),
         }
     }
 

@@ -1,0 +1,17 @@
+// Test for recursive function memory leaks
+// Recursive functions create and destroy many stack frames
+// Each frame may have local allocations that must be cleaned up
+
+function recursion_with_lists(n: Int): Int {
+    if n > 0 {
+        let temp: List of Int = [n, n - 1, n - 2];
+        let val = temp.first();
+        recursion_with_lists(n: n - 1)
+    } else {
+        0
+    }
+};
+
+// Run 20 iterations - creates many temporary allocations in recursion
+let result = recursion_with_lists(n: 20);
+output(result);

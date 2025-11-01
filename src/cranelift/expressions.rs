@@ -42,35 +42,46 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
     ) -> Result<Option<Value>, String> {
         match lit {
             LiteralData::Str(s) => {
-                // Create a stack slot big enough for the string + null terminator
+                // Allocate a LiftString on the stack (32 bytes, 8-byte aligned)
+                let lift_str_slot =
+                    builder.create_sized_stack_slot(cranelift_codegen::ir::StackSlotData::new(
+                        cranelift_codegen::ir::StackSlotKind::ExplicitSlot,
+                        32,  // LiftString is exactly 32 bytes
+                        8,   // 8-byte alignment
+                    ));
+
+                // Create a temporary C-string on the stack for initialization
                 let byte_len = s.len() + 1; // +1 for null terminator
-                let slot =
+                let c_str_slot =
                     builder.create_sized_stack_slot(cranelift_codegen::ir::StackSlotData::new(
                         cranelift_codegen::ir::StackSlotKind::ExplicitSlot,
                         byte_len as u32,
-                        0,
+                        1,
                     ));
 
-                // Store each byte of the string in the stack slot
+                // Store each byte of the string in the C-string slot
                 for (i, byte) in s.bytes().enumerate() {
                     let byte_val = builder.ins().iconst(types::I8, byte as i64);
-                    builder.ins().stack_store(byte_val, slot, i as i32);
+                    builder.ins().stack_store(byte_val, c_str_slot, i as i32);
                 }
                 // Store null terminator
                 let null_byte = builder.ins().iconst(types::I8, 0);
-                builder.ins().stack_store(null_byte, slot, s.len() as i32);
+                builder.ins().stack_store(null_byte, c_str_slot, s.len() as i32);
 
-                // Get pointer to the stack slot
-                let str_ptr = builder.ins().stack_addr(types::I64, slot, 0);
+                // Get pointers to both stack slots
+                let c_str_ptr = builder.ins().stack_addr(types::I64, c_str_slot, 0);
+                let lift_str_ptr = builder.ins().stack_addr(types::I64, lift_str_slot, 0);
 
-                // Call lift_str_new to create a heap-allocated string
+                // Call lift_string_init_from_cstr to initialize the LiftString
                 let func_ref = runtime_funcs
-                    .get("lift_str_new")
-                    .ok_or_else(|| "Runtime function lift_str_new not found".to_string())?;
-                let inst = builder.ins().call(*func_ref, &[str_ptr]);
-                let result = builder.inst_results(inst)[0];
+                    .get("lift_string_init_from_cstr")
+                    .ok_or_else(|| {
+                        "Runtime function lift_string_init_from_cstr not found".to_string()
+                    })?;
+                builder.ins().call(*func_ref, &[lift_str_ptr, c_str_ptr]);
 
-                Ok(Some(result))
+                // Return pointer to the LiftString (not the C-string)
+                Ok(Some(lift_str_ptr))
             }
             // For non-string literals, use the simpler version
             _ => Self::compile_literal(builder, lit),
@@ -130,13 +141,26 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
 
             match op {
                 Operator::Add => {
-                    // String concatenation
+                    // String concatenation using LiftString
+                    // Allocate a result LiftString on the stack
+                    let result_slot = builder.create_sized_stack_slot(
+                        cranelift_codegen::ir::StackSlotData::new(
+                            cranelift_codegen::ir::StackSlotKind::ExplicitSlot,
+                            32,  // LiftString is 32 bytes
+                            8,   // 8-byte alignment
+                        ),
+                    );
+                    let result_ptr = builder.ins().stack_addr(types::I64, result_slot, 0);
+
+                    // Call lift_string_concat_to(result_ptr, left_ptr, right_ptr)
                     let func_ref = runtime_funcs
-                        .get("lift_str_concat")
-                        .ok_or_else(|| "Runtime function lift_str_concat not found".to_string())?;
-                    let inst = builder.ins().call(*func_ref, &[left_val, right_val]);
-                    let result = builder.inst_results(inst)[0];
-                    return Ok(Some(result));
+                        .get("lift_string_concat_to")
+                        .ok_or_else(|| {
+                            "Runtime function lift_string_concat_to not found".to_string()
+                        })?;
+                    builder.ins().call(*func_ref, &[result_ptr, left_val, right_val]);
+
+                    return Ok(Some(result_ptr));
                 }
                 Operator::Eq => {
                     // String equality
@@ -688,7 +712,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 DataType::Int => ("lift_output_int", false),
                 DataType::Flt => ("lift_output_float", false),
                 DataType::Bool => ("lift_output_bool", true), // Need to convert I64 to I8
-                DataType::Str => ("lift_output_str", false),
+                DataType::Str => ("lift_output_lift_string_ptr", false), // LiftString pointer
                 DataType::Range(_) => ("lift_output_range", false),
                 DataType::List { .. } => ("lift_output_list", false),
                 DataType::Map { .. } => ("lift_output_map", false),

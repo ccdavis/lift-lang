@@ -1,0 +1,25 @@
+// Test for method chaining memory leaks
+// Method chaining creates intermediate results that must be cleaned up
+
+function chain_test(n: Int): Int {
+    if n > 0 {
+        // Create a list and chain methods
+        let nums = [5, 3, 1, 4, 2];
+        let reversed = nums.reverse();
+        let sliced = reversed.slice(start: 1, end: 4);
+        let first = sliced.first();
+
+        // Create a map and use methods
+        let ages = #{1: 25, 2: 30, 3: 35};
+        let keys = ages.keys();
+        let key_count = len(keys);
+
+        chain_test(n: n - 1)
+    } else {
+        0
+    }
+};
+
+// Run 50 iterations - intermediate method results should be cleaned up
+let result = chain_test(n: 50);
+output(result);

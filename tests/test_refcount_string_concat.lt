@@ -1,0 +1,18 @@
+// Test for string concatenation memory leaks
+// This test creates many strings via concatenation
+// Without proper memory management, this would leak memory
+
+function concat_test(n: Int): Int {
+    if n > 0 {
+        let s1 = 'Hello';
+        let s2 = 'World';
+        let s3 = s1 + ' ' + s2;
+        concat_test(n: n - 1)
+    } else {
+        0
+    }
+};
+
+// Run 100 iterations - would leak significant memory without refcounting
+let result = concat_test(n: 100);
+output(result);

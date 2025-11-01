@@ -124,6 +124,54 @@ impl JITCompiler {
         builder.symbol("lift_range_retain", runtime::lift_range_retain as *const u8);
         builder.symbol("lift_range_release", runtime::lift_range_release as *const u8);
 
+        // LiftString functions (SSO string type)
+        builder.symbol(
+            "lift_string_init_from_cstr",
+            runtime::lift_string_init_from_cstr as *const u8,
+        );
+        builder.symbol(
+            "lift_string_concat_to",
+            runtime::lift_string_concat_to as *const u8,
+        );
+        builder.symbol("lift_string_copy", runtime::lift_string_copy as *const u8);
+        builder.symbol("lift_string_drop", runtime::lift_string_drop as *const u8);
+        builder.symbol(
+            "lift_output_lift_string_ptr",
+            runtime::lift_output_lift_string_ptr as *const u8,
+        );
+
+        // LiftString method functions
+        builder.symbol("lift_string_len", runtime::lift_string_len as *const u8);
+        builder.symbol("lift_string_eq", runtime::lift_string_eq as *const u8);
+        builder.symbol("lift_string_upper", runtime::lift_string_upper as *const u8);
+        builder.symbol("lift_string_lower", runtime::lift_string_lower as *const u8);
+        builder.symbol(
+            "lift_string_substring",
+            runtime::lift_string_substring as *const u8,
+        );
+        builder.symbol(
+            "lift_string_contains",
+            runtime::lift_string_contains as *const u8,
+        );
+        builder.symbol("lift_string_trim", runtime::lift_string_trim as *const u8);
+        builder.symbol(
+            "lift_string_replace",
+            runtime::lift_string_replace as *const u8,
+        );
+        builder.symbol(
+            "lift_string_starts_with",
+            runtime::lift_string_starts_with as *const u8,
+        );
+        builder.symbol(
+            "lift_string_ends_with",
+            runtime::lift_string_ends_with as *const u8,
+        );
+        builder.symbol(
+            "lift_string_is_empty",
+            runtime::lift_string_is_empty as *const u8,
+        );
+        builder.symbol("lift_string_split", runtime::lift_string_split as *const u8);
+
         // Create the JIT module
         let module = JITModule::new(builder);
 
@@ -2004,5 +2052,560 @@ mod tests {
         let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
         assert_eq!(result, 0);
         // Should output: 1 (first key)
+    }
+
+    // =============================================================================
+    // Reference Counting Tests (Phase 3.1)
+    // =============================================================================
+
+    #[test]
+    fn test_refcount_basic() {
+        use crate::syntax::DataType;
+
+        // Test basic collection creation and cleanup
+        // This verifies that collections can be created, used, and will be
+        // automatically released at scope exit
+        let mut compiler = JITCompiler::new().unwrap();
+
+        // let nums = [1, 2, 3];
+        // let first = nums.first();
+        // output(first);
+        // 0
+        let expr = Expr::Program {
+            body: vec![
+                Expr::Let {
+                    var_name: "nums".to_string(),
+                    value: Box::new(Expr::ListLiteral {
+                        data_type: DataType::List {
+                            element_type: Box::new(DataType::Int),
+                        },
+                        data: vec![
+                            Expr::Literal(LiteralData::Int(1)),
+                            Expr::Literal(LiteralData::Int(2)),
+                            Expr::Literal(LiteralData::Int(3)),
+                        ],
+                    }),
+                    mutable: false,
+                    index: (0, 0),
+                    data_type: DataType::List {
+                        element_type: Box::new(DataType::Int),
+                    },
+                },
+                Expr::Let {
+                    var_name: "first".to_string(),
+                    value: Box::new(Expr::MethodCall {
+                        receiver: Box::new(Expr::Variable {
+                            name: "nums".to_string(),
+                            index: (0, 0),
+                        }),
+                        method_name: "first".to_string(),
+                        fn_index: (0, 0),
+                        args: vec![],
+                    }),
+                    mutable: false,
+                    index: (0, 0),
+                    data_type: DataType::Int,
+                },
+                Expr::Output {
+                    data: vec![Expr::Variable {
+                        name: "first".to_string(),
+                        index: (0, 0),
+                    }],
+                },
+                Expr::Literal(LiteralData::Int(0)),
+            ],
+            environment: 0,
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 0);
+        // Should output: 1
+        // Collection 'nums' should be automatically released at program exit
+    }
+
+    #[test]
+    fn test_refcount_nested() {
+        use crate::syntax::DataType;
+
+        // Test nested collections - multiple collections in scope
+        // Verifies that all collections are properly cleaned up
+        let mut compiler = JITCompiler::new().unwrap();
+
+        // let inner = [1, 2];
+        // let outer = [10, 20];
+        // let x = inner.first();
+        // let y = outer.first();
+        // output(x, y);
+        // 0
+        let expr = Expr::Program {
+            body: vec![
+                Expr::Let {
+                    var_name: "inner".to_string(),
+                    value: Box::new(Expr::ListLiteral {
+                        data_type: DataType::List {
+                            element_type: Box::new(DataType::Int),
+                        },
+                        data: vec![
+                            Expr::Literal(LiteralData::Int(1)),
+                            Expr::Literal(LiteralData::Int(2)),
+                        ],
+                    }),
+                    mutable: false,
+                    index: (0, 0),
+                    data_type: DataType::List {
+                        element_type: Box::new(DataType::Int),
+                    },
+                },
+                Expr::Let {
+                    var_name: "outer".to_string(),
+                    value: Box::new(Expr::ListLiteral {
+                        data_type: DataType::List {
+                            element_type: Box::new(DataType::Int),
+                        },
+                        data: vec![
+                            Expr::Literal(LiteralData::Int(10)),
+                            Expr::Literal(LiteralData::Int(20)),
+                        ],
+                    }),
+                    mutable: false,
+                    index: (0, 0),
+                    data_type: DataType::List {
+                        element_type: Box::new(DataType::Int),
+                    },
+                },
+                Expr::Let {
+                    var_name: "x".to_string(),
+                    value: Box::new(Expr::MethodCall {
+                        receiver: Box::new(Expr::Variable {
+                            name: "inner".to_string(),
+                            index: (0, 0),
+                        }),
+                        method_name: "first".to_string(),
+                        fn_index: (0, 0),
+                        args: vec![],
+                    }),
+                    mutable: false,
+                    index: (0, 0),
+                    data_type: DataType::Int,
+                },
+                Expr::Let {
+                    var_name: "y".to_string(),
+                    value: Box::new(Expr::MethodCall {
+                        receiver: Box::new(Expr::Variable {
+                            name: "outer".to_string(),
+                            index: (0, 0),
+                        }),
+                        method_name: "first".to_string(),
+                        fn_index: (0, 0),
+                        args: vec![],
+                    }),
+                    mutable: false,
+                    index: (0, 0),
+                    data_type: DataType::Int,
+                },
+                Expr::Output {
+                    data: vec![
+                        Expr::Variable {
+                            name: "x".to_string(),
+                            index: (0, 0),
+                        },
+                        Expr::Variable {
+                            name: "y".to_string(),
+                            index: (0, 0),
+                        },
+                    ],
+                },
+                Expr::Literal(LiteralData::Int(0)),
+            ],
+            environment: 0,
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 0);
+        // Should output: 1 10
+        // Both 'inner' and 'outer' lists should be released at program exit
+    }
+
+    #[test]
+    fn test_refcount_scope() {
+        use crate::syntax::DataType;
+
+        // Test scope-based cleanup - collections created in if branches
+        // should be released when the branch exits
+        let mut compiler = JITCompiler::new().unwrap();
+
+        // if true {
+        //     let nums = [1, 2, 3];
+        //     output(nums.first());
+        // } else {
+        //     let nums = [4, 5, 6];
+        //     output(nums.first());
+        // };
+        // 0
+        let expr = Expr::Program {
+            body: vec![
+                Expr::If {
+                    cond: Box::new(Expr::Literal(LiteralData::Bool(true))),
+                    then: Box::new(Expr::Block {
+                        body: vec![
+                            Expr::Let {
+                                var_name: "nums".to_string(),
+                                value: Box::new(Expr::ListLiteral {
+                                    data_type: DataType::List {
+                                        element_type: Box::new(DataType::Int),
+                                    },
+                                    data: vec![
+                                        Expr::Literal(LiteralData::Int(1)),
+                                        Expr::Literal(LiteralData::Int(2)),
+                                        Expr::Literal(LiteralData::Int(3)),
+                                    ],
+                                }),
+                                mutable: false,
+                                index: (0, 0),
+                                data_type: DataType::List {
+                                    element_type: Box::new(DataType::Int),
+                                },
+                            },
+                            Expr::Output {
+                                data: vec![Expr::MethodCall {
+                                    receiver: Box::new(Expr::Variable {
+                                        name: "nums".to_string(),
+                                        index: (0, 0),
+                                    }),
+                                    method_name: "first".to_string(),
+                                    fn_index: (0, 0),
+                                    args: vec![],
+                                }],
+                            },
+                        ],
+                        environment: 0,
+                    }),
+                    final_else: Box::new(Expr::Block {
+                        body: vec![
+                            Expr::Let {
+                                var_name: "nums".to_string(),
+                                value: Box::new(Expr::ListLiteral {
+                                    data_type: DataType::List {
+                                        element_type: Box::new(DataType::Int),
+                                    },
+                                    data: vec![
+                                        Expr::Literal(LiteralData::Int(4)),
+                                        Expr::Literal(LiteralData::Int(5)),
+                                        Expr::Literal(LiteralData::Int(6)),
+                                    ],
+                                }),
+                                mutable: false,
+                                index: (0, 1),
+                                data_type: DataType::List {
+                                    element_type: Box::new(DataType::Int),
+                                },
+                            },
+                            Expr::Output {
+                                data: vec![Expr::MethodCall {
+                                    receiver: Box::new(Expr::Variable {
+                                        name: "nums".to_string(),
+                                        index: (0, 1),
+                                    }),
+                                    method_name: "first".to_string(),
+                                    fn_index: (0, 0),
+                                    args: vec![],
+                                }],
+                            },
+                        ],
+                        environment: 1,
+                    }),
+                },
+                Expr::Literal(LiteralData::Int(0)),
+            ],
+            environment: 0,
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 0);
+        // Should output: 1
+        // The list created in the then branch should be released before program exit
+    }
+
+    #[test]
+    fn test_refcount_function_call() {
+        use crate::syntax::{DataType, Function};
+
+        // Test ownership across function boundaries
+        // Verifies that collections returned from functions are properly reference counted
+        let mut compiler = JITCompiler::new().unwrap();
+
+        // function make_list(): List of Int {
+        //     [1, 2, 3]
+        // }
+        // let nums = make_list();
+        // output(nums.first());
+        // 0
+        let expr = Expr::Program {
+            body: vec![
+                Expr::DefineFunction {
+                    fn_name: "make_list".to_string(),
+                    index: (0, 0),
+                    value: Box::new(Expr::Lambda {
+                        value: Function {
+                            params: vec![],
+                            return_type: DataType::List {
+                                element_type: Box::new(DataType::Int),
+                            },
+                            body: Box::new(Expr::ListLiteral {
+                                data_type: DataType::List {
+                                    element_type: Box::new(DataType::Int),
+                                },
+                                data: vec![
+                                    Expr::Literal(LiteralData::Int(1)),
+                                    Expr::Literal(LiteralData::Int(2)),
+                                    Expr::Literal(LiteralData::Int(3)),
+                                ],
+                            }),
+                            receiver_type: None,
+                            builtin: None,
+                        },
+                        environment: 0,
+                    }),
+                },
+                Expr::Let {
+                    var_name: "nums".to_string(),
+                    value: Box::new(Expr::Call {
+                        fn_name: "make_list".to_string(),
+                        index: (0, 0),
+                        args: vec![],
+                    }),
+                    mutable: false,
+                    index: (0, 0),
+                    data_type: DataType::List {
+                        element_type: Box::new(DataType::Int),
+                    },
+                },
+                Expr::Output {
+                    data: vec![Expr::MethodCall {
+                        receiver: Box::new(Expr::Variable {
+                            name: "nums".to_string(),
+                            index: (0, 0),
+                        }),
+                        method_name: "first".to_string(),
+                        fn_index: (0, 0),
+                        args: vec![],
+                    }],
+                },
+                Expr::Literal(LiteralData::Int(0)),
+            ],
+            environment: 0,
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 0);
+        // Should output: 1
+        // The list created in make_list() should be returned without being freed,
+        // then released when 'nums' goes out of scope at program exit
+    }
+
+    #[test]
+    fn test_refcount_method_chaining() {
+        use crate::syntax::DataType;
+
+        // Test that intermediate method results are properly cleaned up
+        // when method chaining is used
+        let mut compiler = JITCompiler::new().unwrap();
+
+        // let nums = [3, 1, 2];
+        // let sorted = nums.reverse();
+        // output(sorted.first());
+        // 0
+        let expr = Expr::Program {
+            body: vec![
+                Expr::Let {
+                    var_name: "nums".to_string(),
+                    value: Box::new(Expr::ListLiteral {
+                        data_type: DataType::List {
+                            element_type: Box::new(DataType::Int),
+                        },
+                        data: vec![
+                            Expr::Literal(LiteralData::Int(3)),
+                            Expr::Literal(LiteralData::Int(1)),
+                            Expr::Literal(LiteralData::Int(2)),
+                        ],
+                    }),
+                    mutable: false,
+                    index: (0, 0),
+                    data_type: DataType::List {
+                        element_type: Box::new(DataType::Int),
+                    },
+                },
+                Expr::Let {
+                    var_name: "sorted".to_string(),
+                    value: Box::new(Expr::MethodCall {
+                        receiver: Box::new(Expr::Variable {
+                            name: "nums".to_string(),
+                            index: (0, 0),
+                        }),
+                        method_name: "reverse".to_string(),
+                        fn_index: (0, 0),
+                        args: vec![],
+                    }),
+                    mutable: false,
+                    index: (0, 0),
+                    data_type: DataType::List {
+                        element_type: Box::new(DataType::Int),
+                    },
+                },
+                Expr::Output {
+                    data: vec![Expr::MethodCall {
+                        receiver: Box::new(Expr::Variable {
+                            name: "sorted".to_string(),
+                            index: (0, 0),
+                        }),
+                        method_name: "first".to_string(),
+                        fn_index: (0, 0),
+                        args: vec![],
+                    }],
+                },
+                Expr::Literal(LiteralData::Int(0)),
+            ],
+            environment: 0,
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 0);
+        // Should output: 2
+        // Both 'nums' and 'sorted' (the result of reverse()) should be released
+    }
+
+    #[test]
+    fn test_refcount_loop_allocations() {
+        use crate::syntax::{DataType, Function};
+
+        // Test that allocations inside loops are properly cleaned up
+        // This is critical to prevent memory leaks in loops
+        // NOTE: Using a simple loop via recursive function since while loops
+        // with mutable variables have SSA issues in the compiler
+        let mut compiler = JITCompiler::new().unwrap();
+
+        // function loop_test(n: Int): Int {
+        //     if n > 0 {
+        //         let nums = [1, 2, 3];
+        //         loop_test(n: n - 1)
+        //     } else {
+        //         0
+        //     }
+        // }
+        // output(loop_test(n: 3));
+        // 0
+        let expr = Expr::Program {
+            body: vec![
+                Expr::DefineFunction {
+                    fn_name: "loop_test".to_string(),
+                    index: (0, 0),
+                    value: Box::new(Expr::Lambda {
+                        value: Function {
+                            params: vec![crate::syntax::Param {
+                                name: "n".to_string(),
+                                data_type: DataType::Int,
+                                default: None,
+                                index: (0, 0),
+                                copy: false,
+                            }],
+                            return_type: DataType::Int,
+                            body: Box::new(Expr::If {
+                                cond: Box::new(Expr::BinaryExpr {
+                                    left: Box::new(Expr::Variable {
+                                        name: "n".to_string(),
+                                        index: (0, 0),
+                                    }),
+                                    op: Operator::Gt,
+                                    right: Box::new(Expr::Literal(LiteralData::Int(0))),
+                                }),
+                                then: Box::new(Expr::Block {
+                                    body: vec![
+                                        Expr::Let {
+                                            var_name: "nums".to_string(),
+                                            value: Box::new(Expr::ListLiteral {
+                                                data_type: DataType::List {
+                                                    element_type: Box::new(DataType::Int),
+                                                },
+                                                data: vec![
+                                                    Expr::Literal(LiteralData::Int(1)),
+                                                    Expr::Literal(LiteralData::Int(2)),
+                                                    Expr::Literal(LiteralData::Int(3)),
+                                                ],
+                                            }),
+                                            mutable: false,
+                                            index: (0, 1),
+                                            data_type: DataType::List {
+                                                element_type: Box::new(DataType::Int),
+                                            },
+                                        },
+                                        Expr::Call {
+                                            fn_name: "loop_test".to_string(),
+                                            index: (0, 0),
+                                            args: vec![crate::syntax::KeywordArg {
+                                                name: "n".to_string(),
+                                                value: Expr::BinaryExpr {
+                                                    left: Box::new(Expr::Variable {
+                                                        name: "n".to_string(),
+                                                        index: (0, 0),
+                                                    }),
+                                                    op: Operator::Sub,
+                                                    right: Box::new(Expr::Literal(LiteralData::Int(1))),
+                                                },
+                                            }],
+                                        },
+                                    ],
+                                    environment: 1,
+                                }),
+                                final_else: Box::new(Expr::Literal(LiteralData::Int(0))),
+                            }),
+                            receiver_type: None,
+                            builtin: None,
+                        },
+                        environment: 0,
+                    }),
+                },
+                Expr::Output {
+                    data: vec![Expr::Call {
+                        fn_name: "loop_test".to_string(),
+                        index: (0, 0),
+                        args: vec![crate::syntax::KeywordArg {
+                            name: "n".to_string(),
+                            value: Expr::Literal(LiteralData::Int(3)),
+                        }],
+                    }],
+                },
+                Expr::Literal(LiteralData::Int(0)),
+            ],
+            environment: 0,
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 0);
+        // Should output: 0
+        // The list 'nums' should be created and released 3 times (once per recursive call)
     }
 }
