@@ -2,7 +2,6 @@
 // This file contains all integration tests moved from src/main.rs
 
 use lift_lang::interpreter::InterpreterResult;
-use lift_lang::semantic;
 use lift_lang::symboltable::SymbolTable;
 use lift_lang::syntax::*;
 use std::fs;

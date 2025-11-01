@@ -16,7 +16,7 @@ pub mod typecheck_structs;
 
 // Re-export main public functions
 pub use symbol_processing::add_symbols;
-pub use type_inference::{determine_type, determine_type_with_symbols};
+pub use type_inference::determine_type_with_symbols;
 pub use typecheck::typecheck;
 
 // Debug flag for semantic analysis
@@ -204,7 +204,14 @@ pub(crate) fn types_compatible(t1: &DataType, t2: &DataType) -> bool {
             true
         }
         // Struct compatibility - check field names and types match
-        (DataType::Struct { fields: params1, .. }, DataType::Struct { fields: params2, .. }) => {
+        (
+            DataType::Struct {
+                fields: params1, ..
+            },
+            DataType::Struct {
+                fields: params2, ..
+            },
+        ) => {
             if params1.len() != params2.len() {
                 return false;
             }
@@ -216,8 +223,18 @@ pub(crate) fn types_compatible(t1: &DataType, t2: &DataType) -> bool {
         // TypeRef compatibility - same name means compatible
         (DataType::TypeRef(name1), DataType::TypeRef(name2)) => name1 == name2,
         // TypeRef vs Struct compatibility - TypeRef name must match Struct name
-        (DataType::TypeRef(ref_name), DataType::Struct { name: struct_name, .. }) => ref_name == struct_name,
-        (DataType::Struct { name: struct_name, .. }, DataType::TypeRef(ref_name)) => struct_name == ref_name,
+        (
+            DataType::TypeRef(ref_name),
+            DataType::Struct {
+                name: struct_name, ..
+            },
+        ) => ref_name == struct_name,
+        (
+            DataType::Struct {
+                name: struct_name, ..
+            },
+            DataType::TypeRef(ref_name),
+        ) => struct_name == ref_name,
         _ => false,
     }
 }

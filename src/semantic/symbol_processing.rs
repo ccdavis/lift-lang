@@ -93,7 +93,9 @@ pub fn add_symbols(
         } => {
             // First check if this is actually a struct literal (Type(field: value, ...))
             // rather than a function call
-            if let Some(DataType::Struct { fields: _params, .. }) = symbols.lookup_type(fn_name, _current_scope_id)
+            if let Some(DataType::Struct {
+                fields: _params, ..
+            }) = symbols.lookup_type(fn_name, _current_scope_id)
             {
                 // This is a struct literal! Transform Call → StructLiteral
                 // Process field values
@@ -231,9 +233,6 @@ pub fn add_symbols(
             // Build the full method name: TypeName.methodName
             // First, try with the type alias name if it's a TypeRef
             let mut method_found = false;
-
-            // Save the original unresolved receiver type for later use
-            let receiver_type_original = receiver_type.clone();
 
             // Clone receiver_type for later use in error messages
             let receiver_type_clone = receiver_type.clone();

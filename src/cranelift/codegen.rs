@@ -22,7 +22,6 @@ pub struct CodeGenerator<'a, M: Module> {
 
     // User-defined function references: maps function names to FuncId
     pub(super) function_refs: HashMap<String, FuncId>,
-
     // Note: scope_allocations is now passed as a parameter through compilation functions
     // rather than stored as a struct field (was never read, only the local variable was used)
 }
@@ -86,18 +85,14 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             // Declare runtime functions in this function's scope
             let mut runtime_refs = HashMap::new();
             for (name, func_id) in &self.runtime_funcs {
-                let func_ref = self
-                    .module
-                    .declare_func_in_func(*func_id, &mut builder.func);
+                let func_ref = self.module.declare_func_in_func(*func_id, builder.func);
                 runtime_refs.insert(name.clone(), func_ref);
             }
 
             // Declare user functions in this function's scope
             let mut user_func_refs = HashMap::new();
             for (name, func_id) in &self.function_refs {
-                let func_ref = self
-                    .module
-                    .declare_func_in_func(*func_id, &mut builder.func);
+                let func_ref = self.module.declare_func_in_func(*func_id, builder.func);
                 user_func_refs.insert(name.clone(), func_ref);
             }
 
@@ -452,7 +447,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
 
     /// Record an allocation in the current scope
     pub(super) fn record_allocation(
-        scope_allocations: &mut Vec<Vec<(Value, String)>>,
+        scope_allocations: &mut [Vec<(Value, String)>],
         ptr: Value,
         type_name: &str,
     ) {
@@ -462,10 +457,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
     }
 
     /// Remove an allocation from tracking (used for return values that escape the scope)
-    pub(super) fn untrack_allocation(
-        scope_allocations: &mut Vec<Vec<(Value, String)>>,
-        ptr: Value,
-    ) {
+    pub(super) fn untrack_allocation(scope_allocations: &mut [Vec<(Value, String)>], ptr: Value) {
         if let Some(current_scope) = scope_allocations.last_mut() {
             current_scope.retain(|(p, _)| *p != ptr);
         }

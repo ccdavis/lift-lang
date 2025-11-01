@@ -116,13 +116,19 @@ impl JITCompiler {
         builder.symbol("lift_list_release", runtime::lift_list_release as *const u8);
         builder.symbol("lift_map_retain", runtime::lift_map_retain as *const u8);
         builder.symbol("lift_map_release", runtime::lift_map_release as *const u8);
-        builder.symbol("lift_struct_retain", runtime::lift_struct_retain as *const u8);
+        builder.symbol(
+            "lift_struct_retain",
+            runtime::lift_struct_retain as *const u8,
+        );
         builder.symbol(
             "lift_struct_release",
             runtime::lift_struct_release as *const u8,
         );
         builder.symbol("lift_range_retain", runtime::lift_range_retain as *const u8);
-        builder.symbol("lift_range_release", runtime::lift_range_release as *const u8);
+        builder.symbol(
+            "lift_range_release",
+            runtime::lift_range_release as *const u8,
+        );
 
         // LiftString functions (SSO string type)
         builder.symbol(
@@ -200,7 +206,7 @@ impl JITCompiler {
         let code = self.module.get_finalized_function(func_id);
 
         // Cast to function pointer and execute
-        let main_fn = unsafe { std::mem::transmute::<_, fn() -> i64>(code) };
+        let main_fn = unsafe { std::mem::transmute::<*const u8, fn() -> i64>(code) };
         let result = main_fn();
 
         Ok(result)
@@ -2569,7 +2575,9 @@ mod tests {
                                                         index: (0, 0),
                                                     }),
                                                     op: Operator::Sub,
-                                                    right: Box::new(Expr::Literal(LiteralData::Int(1))),
+                                                    right: Box::new(Expr::Literal(
+                                                        LiteralData::Int(1),
+                                                    )),
                                                 },
                                             }],
                                         },

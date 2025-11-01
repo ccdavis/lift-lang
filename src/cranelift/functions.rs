@@ -109,18 +109,14 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             // Declare runtime functions in this function's scope
             let mut runtime_refs = HashMap::new();
             for (name, func_id) in &self.runtime_funcs {
-                let func_ref = self
-                    .module
-                    .declare_func_in_func(*func_id, &mut builder.func);
+                let func_ref = self.module.declare_func_in_func(*func_id, builder.func);
                 runtime_refs.insert(name.clone(), func_ref);
             }
 
             // Declare other user functions in this scope (for recursion and mutual recursion)
             let mut user_func_refs = HashMap::new();
             for (name, func_id) in &self.function_refs {
-                let func_ref = self
-                    .module
-                    .declare_func_in_func(*func_id, &mut builder.func);
+                let func_ref = self.module.declare_func_in_func(*func_id, builder.func);
                 user_func_refs.insert(name.clone(), func_ref);
             }
 
@@ -408,13 +404,12 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             if returns_string {
                 // String methods that return strings use dest-pointer style
                 // Allocate result LiftString on stack (32 bytes)
-                let result_slot = builder.create_sized_stack_slot(
-                    cranelift_codegen::ir::StackSlotData::new(
+                let result_slot =
+                    builder.create_sized_stack_slot(cranelift_codegen::ir::StackSlotData::new(
                         cranelift_codegen::ir::StackSlotKind::ExplicitSlot,
                         32,
                         8,
-                    ),
-                );
+                    ));
                 let result_ptr = builder.ins().stack_addr(types::I64, result_slot, 0);
 
                 // Build argument list: (dest_ptr, receiver_ptr, ...other_args)

@@ -15,15 +15,15 @@ pub(crate) struct VarInfo {
 /// Convert DataType to runtime type tag (matches constants in runtime.rs)
 pub(crate) fn data_type_to_type_tag(data_type: &DataType) -> i8 {
     match data_type {
-        DataType::Int => 0,         // TYPE_INT
-        DataType::Flt => 1,         // TYPE_FLT
-        DataType::Bool => 2,        // TYPE_BOOL
-        DataType::Str => 3,         // TYPE_STR
-        DataType::List { .. } => 4, // TYPE_LIST
-        DataType::Map { .. } => 5,  // TYPE_MAP
-        DataType::Range(_) => 6,    // TYPE_RANGE
-        DataType::Struct { name: _, fields: _ } => 7,   // TYPE_STRUCT
-        _ => 0,                     // Fallback to Int for unknown types
+        DataType::Int => 0,                           // TYPE_INT
+        DataType::Flt => 1,                           // TYPE_FLT
+        DataType::Bool => 2,                          // TYPE_BOOL
+        DataType::Str => 3,                           // TYPE_STR
+        DataType::List { .. } => 4,                   // TYPE_LIST
+        DataType::Map { .. } => 5,                    // TYPE_MAP
+        DataType::Range(_) => 6,                      // TYPE_RANGE
+        DataType::Struct { name: _, fields: _ } => 7, // TYPE_STRUCT
+        _ => 0,                                       // Fallback to Int for unknown types
     }
 }
 
@@ -40,7 +40,7 @@ pub(crate) fn data_type_to_cranelift_type(dt: &DataType, pointer_type: Type) -> 
         DataType::TypeRef(_) => pointer_type,  // User-defined types treated as pointers for now
         DataType::Optional(_) => pointer_type, // Optionals treated as pointers
         DataType::Set(_) => pointer_type,
-        DataType::Enum(_) => types::I64,     // Enums as integers
+        DataType::Enum(_) => types::I64, // Enums as integers
         DataType::Struct { name: _, fields: _ } => pointer_type, // Structs as pointers
     }
 }

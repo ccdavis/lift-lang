@@ -46,8 +46,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 let lift_str_slot =
                     builder.create_sized_stack_slot(cranelift_codegen::ir::StackSlotData::new(
                         cranelift_codegen::ir::StackSlotKind::ExplicitSlot,
-                        32,  // LiftString is exactly 32 bytes
-                        8,   // 8-byte alignment
+                        32, // LiftString is exactly 32 bytes
+                        8,  // 8-byte alignment
                     ));
 
                 // Create a temporary C-string on the stack for initialization
@@ -66,18 +66,21 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 }
                 // Store null terminator
                 let null_byte = builder.ins().iconst(types::I8, 0);
-                builder.ins().stack_store(null_byte, c_str_slot, s.len() as i32);
+                builder
+                    .ins()
+                    .stack_store(null_byte, c_str_slot, s.len() as i32);
 
                 // Get pointers to both stack slots
                 let c_str_ptr = builder.ins().stack_addr(types::I64, c_str_slot, 0);
                 let lift_str_ptr = builder.ins().stack_addr(types::I64, lift_str_slot, 0);
 
                 // Call lift_string_init_from_cstr to initialize the LiftString
-                let func_ref = runtime_funcs
-                    .get("lift_string_init_from_cstr")
-                    .ok_or_else(|| {
-                        "Runtime function lift_string_init_from_cstr not found".to_string()
-                    })?;
+                let func_ref =
+                    runtime_funcs
+                        .get("lift_string_init_from_cstr")
+                        .ok_or_else(|| {
+                            "Runtime function lift_string_init_from_cstr not found".to_string()
+                        })?;
                 builder.ins().call(*func_ref, &[lift_str_ptr, c_str_ptr]);
 
                 // Return pointer to the LiftString (not the C-string)
@@ -143,22 +146,21 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 Operator::Add => {
                     // String concatenation using LiftString
                     // Allocate a result LiftString on the stack
-                    let result_slot = builder.create_sized_stack_slot(
-                        cranelift_codegen::ir::StackSlotData::new(
+                    let result_slot =
+                        builder.create_sized_stack_slot(cranelift_codegen::ir::StackSlotData::new(
                             cranelift_codegen::ir::StackSlotKind::ExplicitSlot,
-                            32,  // LiftString is 32 bytes
-                            8,   // 8-byte alignment
-                        ),
-                    );
+                            32, // LiftString is 32 bytes
+                            8,  // 8-byte alignment
+                        ));
                     let result_ptr = builder.ins().stack_addr(types::I64, result_slot, 0);
 
                     // Call lift_string_concat_to(result_ptr, left_ptr, right_ptr)
-                    let func_ref = runtime_funcs
-                        .get("lift_string_concat_to")
-                        .ok_or_else(|| {
-                            "Runtime function lift_string_concat_to not found".to_string()
-                        })?;
-                    builder.ins().call(*func_ref, &[result_ptr, left_val, right_val]);
+                    let func_ref = runtime_funcs.get("lift_string_concat_to").ok_or_else(|| {
+                        "Runtime function lift_string_concat_to not found".to_string()
+                    })?;
+                    builder
+                        .ins()
+                        .call(*func_ref, &[result_ptr, left_val, right_val]);
 
                     return Ok(Some(result_ptr));
                 }
@@ -216,11 +218,13 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
 
             // Promote Int to Flt if necessary
             // If left is Int but right is Flt, convert left to Flt
-            if matches!(left_type, Some(DataType::Int)) && matches!(right_type, Some(DataType::Flt)) {
+            if matches!(left_type, Some(DataType::Int)) && matches!(right_type, Some(DataType::Flt))
+            {
                 left_val = builder.ins().fcvt_from_sint(types::F64, left_val);
             }
             // If right is Int but left is Flt, convert right to Flt
-            if matches!(right_type, Some(DataType::Int)) && matches!(left_type, Some(DataType::Flt)) {
+            if matches!(right_type, Some(DataType::Int)) && matches!(left_type, Some(DataType::Flt))
+            {
                 right_val = builder.ins().fcvt_from_sint(types::F64, right_val);
             }
 
@@ -690,7 +694,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         for expr in data {
             // Determine the type of the expression
             let expr_type_raw = determine_type_with_symbols(expr, symbols, 0)
-                .ok_or_else(|| format!("Cannot determine type for output expression"))?;
+                .ok_or_else(|| "Cannot determine type for output expression".to_string())?;
 
             // Resolve TypeRef to underlying type
             let expr_type = Self::resolve_type_alias(&expr_type_raw, symbols);
@@ -755,7 +759,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         start: &LiteralData,
         end: &LiteralData,
         runtime_funcs: &HashMap<String, FuncRef>,
-        scope_allocations: &mut Vec<Vec<(Value, String)>>,
+        scope_allocations: &mut [Vec<(Value, String)>],
     ) -> Result<Option<Value>, String> {
         // Extract integer values from start and end
         let start_val = match start {

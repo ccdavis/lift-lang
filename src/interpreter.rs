@@ -666,7 +666,7 @@ fn interpret_var(
 
     match stored_value {
         Expr::RuntimeData(d) => Ok(Expr::Literal(d.clone())),
-        _ => Ok(stored_value.clone())
+        _ => Ok(stored_value.clone()),
     }
 }
 
@@ -841,10 +841,10 @@ fn interpret_binary(
             let r_val = symbols.borrow_runtime_value(*r_idx);
 
             match (l_val, r_val) {
-                (Expr::RuntimeData(l_data), Expr::RuntimeData(r_data)) |
-                (Expr::Literal(l_data), Expr::RuntimeData(r_data)) |
-                (Expr::RuntimeData(l_data), Expr::Literal(r_data)) |
-                (Expr::Literal(l_data), Expr::Literal(r_data)) => {
+                (Expr::RuntimeData(l_data), Expr::RuntimeData(r_data))
+                | (Expr::Literal(l_data), Expr::RuntimeData(r_data))
+                | (Expr::RuntimeData(l_data), Expr::Literal(r_data))
+                | (Expr::Literal(l_data), Expr::Literal(r_data)) => {
                     result = l_data.apply_binary_operator(r_data, op);
                 }
                 _ => {

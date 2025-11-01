@@ -39,7 +39,7 @@ impl<T> RefCounted<T> {
 
         let rc = Box::new(RefCounted {
             strong_count: AtomicUsize::new(1),
-            weak_count: AtomicUsize::new(1),  // Always 1 until we implement weak refs
+            weak_count: AtomicUsize::new(1), // Always 1 until we implement weak refs
             data,
         });
         Box::into_raw(rc)
@@ -165,10 +165,8 @@ impl<T> RefCounted<T> {
         let ptr = std::sync::Arc::into_raw(arc);
         // Calculate the offset back to the start of RefCounted
         // ptr points to T, we need to go back by offset_of!(RefCounted, data)
-        let rc_ptr = (ptr as *const u8).offset(
-            -(std::mem::offset_of!(RefCounted<T>, data) as isize)
-        ) as *mut Self;
-        rc_ptr
+        (ptr as *const u8).offset(-(std::mem::offset_of!(RefCounted<T>, data) as isize))
+            as *mut Self
     }
 
     // ==================== Debug Assertions ====================
@@ -185,11 +183,17 @@ impl<T> RefCounted<T> {
     #[cfg(debug_assertions)]
     pub unsafe fn assert_refcount(ptr: *const Self, expected: usize, msg: &str) {
         if ptr.is_null() {
-            panic!("assert_refcount: null pointer (expected {}): {}", expected, msg);
+            panic!(
+                "assert_refcount: null pointer (expected {}): {}",
+                expected, msg
+            );
         }
         let actual = Self::count(ptr);
-        assert_eq!(actual, expected,
-            "Refcount mismatch at '{}': expected {}, got {}", msg, expected, actual);
+        assert_eq!(
+            actual, expected,
+            "Refcount mismatch at '{}': expected {}, got {}",
+            msg, expected, actual
+        );
     }
 
     /// Assert that a RefCounted has at least a minimum reference count (debug builds only)
@@ -203,11 +207,19 @@ impl<T> RefCounted<T> {
     #[cfg(debug_assertions)]
     pub unsafe fn assert_refcount_at_least(ptr: *const Self, min: usize, msg: &str) {
         if ptr.is_null() {
-            panic!("assert_refcount_at_least: null pointer (expected >= {}): {}", min, msg);
+            panic!(
+                "assert_refcount_at_least: null pointer (expected >= {}): {}",
+                min, msg
+            );
         }
         let actual = Self::count(ptr);
-        assert!(actual >= min,
-            "Refcount too low at '{}': expected at least {}, got {}", msg, min, actual);
+        assert!(
+            actual >= min,
+            "Refcount too low at '{}': expected at least {}, got {}",
+            msg,
+            min,
+            actual
+        );
     }
 
     /// No-op in release builds
@@ -288,7 +300,10 @@ pub mod refcount_stats {
 
         if allocs > 0 {
             let elision_rate = 100.0 * (1.0 - retains as f64 / allocs as f64);
-            eprintln!("Elision Rate: {:.1}% (lower retains = better)", elision_rate);
+            eprintln!(
+                "Elision Rate: {:.1}% (lower retains = better)",
+                elision_rate
+            );
 
             let leak_count = allocs - frees;
             if leak_count > 0 {
@@ -577,10 +592,7 @@ pub unsafe extern "C" fn lift_output_lift_string(s: LiftString) {
 /// dest: pointer to uninitialized LiftString (32 bytes)
 /// src: C string to copy from
 #[no_mangle]
-pub unsafe extern "C" fn lift_string_init_from_cstr(
-    dest: *mut LiftString,
-    src: *const c_char,
-) {
+pub unsafe extern "C" fn lift_string_init_from_cstr(dest: *mut LiftString, src: *const c_char) {
     if dest.is_null() {
         return;
     }
@@ -761,7 +773,10 @@ pub unsafe extern "C" fn lift_string_substring(
 
 /// Check if string contains substring
 #[no_mangle]
-pub unsafe extern "C" fn lift_string_contains(s: *const LiftString, needle: *const LiftString) -> i8 {
+pub unsafe extern "C" fn lift_string_contains(
+    s: *const LiftString,
+    needle: *const LiftString,
+) -> i8 {
     if s.is_null() || needle.is_null() {
         return 0;
     }
@@ -1822,8 +1837,12 @@ unsafe fn compare_values_for_equality(val1: i64, type_tag1: i8, val2: i64, type_
                 for (key, val1) in &m1.entries {
                     match m2.entries.get(key) {
                         Some(val2) => {
-                            if !compare_values_for_equality(*val1, m1.value_type, *val2, m2.value_type)
-                            {
+                            if !compare_values_for_equality(
+                                *val1,
+                                m1.value_type,
+                                *val2,
+                                m2.value_type,
+                            ) {
                                 return false;
                             }
                         }
@@ -2004,10 +2023,7 @@ pub unsafe extern "C" fn lift_str_trim(s: *const c_char) -> *mut c_char {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn lift_str_split(
-    s: *const c_char,
-    delimiter: *const c_char,
-) -> *mut RcList {
+pub unsafe extern "C" fn lift_str_split(s: *const c_char, delimiter: *const c_char) -> *mut RcList {
     if s.is_null() || delimiter.is_null() {
         return std::ptr::null_mut();
     }
@@ -2177,11 +2193,7 @@ pub unsafe extern "C" fn lift_list_contains(list: *const RcList, item: i64) -> i
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn lift_list_slice(
-    list: *const RcList,
-    start: i64,
-    end: i64,
-) -> *mut RcList {
+pub unsafe extern "C" fn lift_list_slice(list: *const RcList, start: i64, end: i64) -> *mut RcList {
     if list.is_null() {
         return std::ptr::null_mut();
     }
@@ -2594,8 +2606,7 @@ mod tests {
 
     #[test]
     fn test_arc_compatibility_layout() {
-        use std::mem::{size_of, align_of};
-        use std::sync::Arc;
+        use std::mem::align_of;
 
         // Verify RefCounted has same alignment as Arc's inner structure
         assert_eq!(align_of::<RefCounted<Vec<i64>>>(), align_of::<usize>());
@@ -2607,7 +2618,10 @@ mod tests {
             let weak = RefCounted::weak_count(rc_ptr);
 
             assert_eq!(strong, 1, "Initial strong count should be 1");
-            assert_eq!(weak, 0, "Initial weak count should be 0 (internal weak is hidden)");
+            assert_eq!(
+                weak, 0,
+                "Initial weak count should be 0 (internal weak is hidden)"
+            );
 
             RefCounted::release(rc_ptr);
         }

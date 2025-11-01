@@ -158,11 +158,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         sig.params.push(AbiParam::new(pointer_type));
         let func_id = self
             .module
-            .declare_function(
-                "lift_string_copy",
-                cranelift_module::Linkage::Import,
-                &sig,
-            )
+            .declare_function("lift_string_copy", cranelift_module::Linkage::Import, &sig)
             .map_err(|e| format!("Failed to declare lift_string_copy: {}", e))?;
         self.runtime_funcs
             .insert("lift_string_copy".to_string(), func_id);
@@ -172,11 +168,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         sig.params.push(AbiParam::new(pointer_type));
         let func_id = self
             .module
-            .declare_function(
-                "lift_string_drop",
-                cranelift_module::Linkage::Import,
-                &sig,
-            )
+            .declare_function("lift_string_drop", cranelift_module::Linkage::Import, &sig)
             .map_err(|e| format!("Failed to declare lift_string_drop: {}", e))?;
         self.runtime_funcs
             .insert("lift_string_drop".to_string(), func_id);
@@ -356,11 +348,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         sig.returns.push(AbiParam::new(pointer_type));
         let func_id = self
             .module
-            .declare_function(
-                "lift_string_split",
-                cranelift_module::Linkage::Import,
-                &sig,
-            )
+            .declare_function("lift_string_split", cranelift_module::Linkage::Import, &sig)
             .map_err(|e| format!("Failed to declare lift_string_split: {}", e))?;
         self.runtime_funcs
             .insert("lift_string_split".to_string(), func_id);
@@ -935,7 +923,11 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         sig.params.push(AbiParam::new(pointer_type));
         let func_id = self
             .module
-            .declare_function("lift_struct_retain", cranelift_module::Linkage::Import, &sig)
+            .declare_function(
+                "lift_struct_retain",
+                cranelift_module::Linkage::Import,
+                &sig,
+            )
             .map_err(|e| format!("Failed to declare lift_struct_retain: {}", e))?;
         self.runtime_funcs
             .insert("lift_struct_retain".to_string(), func_id);
@@ -945,7 +937,11 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         sig.params.push(AbiParam::new(pointer_type));
         let func_id = self
             .module
-            .declare_function("lift_struct_release", cranelift_module::Linkage::Import, &sig)
+            .declare_function(
+                "lift_struct_release",
+                cranelift_module::Linkage::Import,
+                &sig,
+            )
             .map_err(|e| format!("Failed to declare lift_struct_release: {}", e))?;
         self.runtime_funcs
             .insert("lift_struct_release".to_string(), func_id);
@@ -965,7 +961,11 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         sig.params.push(AbiParam::new(pointer_type));
         let func_id = self
             .module
-            .declare_function("lift_range_release", cranelift_module::Linkage::Import, &sig)
+            .declare_function(
+                "lift_range_release",
+                cranelift_module::Linkage::Import,
+                &sig,
+            )
             .map_err(|e| format!("Failed to declare lift_range_release: {}", e))?;
         self.runtime_funcs
             .insert("lift_range_release".to_string(), func_id);

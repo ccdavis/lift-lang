@@ -195,9 +195,9 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
 
         // Type conversion based on field type
         // Get the type of the struct expression
+        use super::types::resolve_type_alias;
         use crate::semantic::determine_type_with_symbols;
         use crate::syntax::DataType;
-        use super::types::resolve_type_alias;
 
         let expr_type = determine_type_with_symbols(expr, symbols, 0)
             .ok_or_else(|| "Cannot determine struct type for field access".to_string())?;
@@ -214,7 +214,9 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 // Bitcast i64 to f64 for Flt fields
                 // The runtime returns all values as i64, but Flt values are stored as bit patterns
                 if matches!(resolved_field_type, DataType::Flt) {
-                    let float_val = builder.ins().bitcast(types::F64, MemFlags::new(), field_val);
+                    let float_val = builder
+                        .ins()
+                        .bitcast(types::F64, MemFlags::new(), field_val);
                     return Ok(Some(float_val));
                 }
                 // i64 values work as-is for Int, Bool, and pointer types

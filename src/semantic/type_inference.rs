@@ -273,13 +273,12 @@ pub fn determine_type_with_symbols(
 
             // Extract field type from struct
             match resolved_type {
-                DataType::Struct { fields: params, .. } => params
-                    .iter()
-                    .find(|p| p.name == *field_name)
-                    .map(|p| {
+                DataType::Struct { fields: params, .. } => {
+                    params.iter().find(|p| p.name == *field_name).map(|p| {
                         // Resolve the field type in case it's also a type alias
                         resolve_type_alias(&p.data_type, symbols)
-                    }),
+                    })
+                }
                 _ => None,
             }
         }

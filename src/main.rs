@@ -11,7 +11,6 @@ use lalrpop_util::{lalrpop_mod, ParseError};
 use std::error;
 use std::fs;
 use symboltable::SymbolTable;
-use syntax::*;
 
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
