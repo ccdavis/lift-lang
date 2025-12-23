@@ -22,8 +22,10 @@ for file in tests/*.lt; do
 
     # Skip files that use features not yet in compiler
     # (for loops, match expressions, closures)
+    # Note: use word boundaries to avoid matching "mismatch" when looking for "match"
     if [[ "$filename" == *"for_loop"* ]] || \
-       [[ "$filename" == *"match"* ]] || \
+       [[ "$filename" == *"_match"* ]] || \
+       [[ "$filename" == "test_match"* ]] || \
        [[ "$filename" == *"closure"* ]]; then
         echo "SKIP: $filename (unsupported feature)"
         SKIPPED=$((SKIPPED + 1))
