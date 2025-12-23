@@ -203,9 +203,19 @@ fn main() {
                 eprintln!("Compilation error: {}", e);
             }
         } else {
-            if let Err(e) = interpret_code(&code) {
-                eprintln!("Error: {}", e);
-            }
+            // Run interpreter in a thread with a larger stack to support deep recursion
+            // Default stack is ~8MB, we use 64MB to support recursive algorithms
+            let builder = std::thread::Builder::new().stack_size(64 * 1024 * 1024);
+            let code_clone = code.clone();
+            let handle = builder
+                .spawn(move || {
+                    if let Err(e) = interpret_code(&code_clone) {
+                        eprintln!("Error: {}", e);
+                    }
+                })
+                .expect("Failed to spawn interpreter thread");
+
+            handle.join().expect("Interpreter thread panicked");
         }
     }
 }

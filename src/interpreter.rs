@@ -177,10 +177,14 @@ impl Expr {
                     interpret_call(symbols, current_scope, method_name, *fn_index, &all_args)
                 }
             }
-            Expr::Lambda {
-                ref value,
-                environment,
-            } => interpret_lambda(symbols, value, *environment),
+            Expr::Lambda { value, environment } => {
+                // Lambda expressions are first-class values - return the lambda itself
+                // The lambda is only executed when it's called (indirect call)
+                Ok(Expr::Lambda {
+                    value: value.clone(),
+                    environment: *environment,
+                })
+            }
             Expr::DefineFunction { .. } => Ok(Expr::Unit), // The function got assigned in an earlier compiler pass
             Expr::DefineType { .. } => Ok(Expr::Unit), // The type definition was registered in an earlier compiler pass
             Expr::Unit => Ok(Expr::Unit),
@@ -639,11 +643,52 @@ fn interpret_call(
             }
         }
         _ => {
-            if !args.is_empty() {
-                // TODO this should really be in the compile pass
-                panic!("Interpreter error: function {} called with {} args but it is a simple expression not a lambda. The type checking pass should have caught this.",fn_name, args.len());
+            // Check if there's a Lambda stored at runtime (for Fn type parameters)
+            let runtime_value = symbols.borrow_runtime_value(index).clone();
+            match runtime_value {
+                Expr::Lambda {
+                    value: func,
+                    environment,
+                } => {
+                    // This is an indirect call through a variable holding a Lambda
+                    if args.len() != func.params.len() {
+                        panic!(
+                            "Interpreter error: Function {} called with wrong number of arguments.",
+                            fn_name
+                        );
+                    }
+
+                    // The lambda's parameters were registered in its 'environment' scope during
+                    // semantic analysis. Use positional matching since Fn types don't carry
+                    // parameter names.
+                    for (param, arg) in func.params.iter().zip(args.iter()) {
+                        // Evaluate the argument in the calling scope
+                        let arg_value = arg.value.interpret(symbols, current_scope)?;
+
+                        // Use the lambda's parameter name, not the call site argument name
+                        if let Some(assign_to_index) =
+                            symbols.get_index_in_scope(&param.name, environment)
+                        {
+                            symbols.update_runtime_value(arg_value, &(environment, assign_to_index));
+                        } else {
+                            panic!(
+                                "Interpreter error: Lambda parameter '{}' not found in scope",
+                                param.name
+                            );
+                        }
+                    }
+
+                    // Execute the lambda body in its environment
+                    interpret_lambda(symbols, &func, environment)
+                }
+                _ => {
+                    if !args.is_empty() {
+                        // TODO this should really be in the compile pass
+                        panic!("Interpreter error: function {} called with {} args but it is a simple expression not a lambda. The type checking pass should have caught this.",fn_name, args.len());
+                    }
+                    lm.interpret(symbols, current_scope)
+                }
             }
-            lm.interpret(symbols, current_scope)
         }
     }
 }
@@ -847,6 +892,53 @@ fn interpret_binary(
                 | (Expr::Literal(l_data), Expr::Literal(r_data)) => {
                     result = l_data.apply_binary_operator(r_data, op);
                 }
+                // Handle list concatenation for Variable × Variable
+                (
+                    Expr::RuntimeList { data_type: dt1, data: data1 },
+                    Expr::RuntimeList { data_type: _dt2, data: data2 },
+                ) if matches!(op, Operator::Add) => {
+                    let mut new_data = Vec::with_capacity(data1.len() + data2.len());
+                    new_data.extend(data1.iter().cloned());
+                    new_data.extend(data2.iter().cloned());
+                    result = Ok(Expr::RuntimeList {
+                        data_type: dt1.clone(),
+                        data: new_data,
+                    });
+                }
+                // Handle struct comparison for Variable × Variable
+                (
+                    Expr::RuntimeStruct {
+                        type_name: type1,
+                        fields: fields1,
+                    },
+                    Expr::RuntimeStruct {
+                        type_name: type2,
+                        fields: fields2,
+                    },
+                ) if matches!(op, Operator::Eq | Operator::Neq) => {
+                    // Structs are equal if they have the same type and all fields match
+                    let structs_equal = if type1 != type2 {
+                        false
+                    } else if fields1.len() != fields2.len() {
+                        false
+                    } else {
+                        fields1.iter().all(|(field_name, field_value1)| {
+                            if let Some(field_value2) = fields2.get(field_name) {
+                                compare_exprs_for_equality(field_value1, field_value2)
+                            } else {
+                                false
+                            }
+                        })
+                    };
+
+                    let comparison_result = if matches!(op, Operator::Eq) {
+                        structs_equal
+                    } else {
+                        !structs_equal
+                    };
+
+                    result = Ok(Expr::RuntimeData(LiteralData::Bool(comparison_result)));
+                }
                 _ => {
                     let msg = format!(
                         "Variables must contain literal values for binary operations. Got {:?} and {:?}",
@@ -938,6 +1030,26 @@ fn interpret_binary(
                             error = Some(RuntimeError::new(&msg, None, None));
                         }
                     }
+                }
+                // Handle list concatenation with +
+                (
+                    Expr::RuntimeList {
+                        data_type: dt1,
+                        data: data1,
+                    },
+                    Expr::RuntimeList {
+                        data_type: _dt2,
+                        data: data2,
+                    },
+                ) if matches!(op, Operator::Add) => {
+                    // Concatenate the two lists
+                    let mut new_data = Vec::with_capacity(data1.len() + data2.len());
+                    new_data.extend(data1.iter().cloned());
+                    new_data.extend(data2.iter().cloned());
+                    result = Ok(Expr::RuntimeList {
+                        data_type: dt1.clone(),
+                        data: new_data,
+                    });
                 }
                 _ => {
                     let msg = format!(
