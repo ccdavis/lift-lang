@@ -53,6 +53,7 @@ pub struct Param {
 #[derive(Clone, Debug, PartialEq)]
 pub enum DataType {
     Unsolved,
+    Unit, // The unit type (like void or ())
     Optional(Box<DataType>),
     Range(Box<Expr>),
     Str,
@@ -73,6 +74,12 @@ pub enum DataType {
         fields: Vec<Param>,
     },
     TypeRef(String), // Reference to a user-defined type
+    /// Function type: Fn(ParamTypes): ReturnType
+    /// Used for higher-order functions - passing lambdas as parameters
+    Fn {
+        params: Vec<DataType>,
+        return_type: Box<DataType>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -497,6 +497,18 @@ impl SymbolTable {
             _ => false,
         }
     }
+
+    /// Find a symbol's type by name, searching from the highest scope down
+    /// This is used for captured variables where we need to find the type by name
+    pub fn find_symbol_type_by_name(&self, name: &str) -> Option<DataType> {
+        // Search from the last (highest/innermost) scope backwards
+        for scope_id in (0..self.0.len()).rev() {
+            if let Some(index) = self.get_index_in_scope(name, scope_id) {
+                return self.get_symbol_type(&(scope_id, index));
+            }
+        }
+        None
+    }
 }
 
 impl Scope {

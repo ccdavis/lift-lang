@@ -10,6 +10,7 @@ use cranelift_codegen::ir::StackSlot;
 pub(crate) struct VarInfo {
     pub(crate) slot: StackSlot,
     pub(crate) cranelift_type: Type, // I64, F64, or pointer type
+    pub(crate) is_inline_string: bool, // True if slot contains a 32-byte LiftString (not a pointer)
 }
 
 /// Convert DataType to runtime type tag (matches constants in runtime.rs)
@@ -42,6 +43,8 @@ pub(crate) fn data_type_to_cranelift_type(dt: &DataType, pointer_type: Type) -> 
         DataType::Set(_) => pointer_type,
         DataType::Enum(_) => types::I64, // Enums as integers
         DataType::Struct { name: _, fields: _ } => pointer_type, // Structs as pointers
+        DataType::Unit => types::I64, // Unit type (like void)
+        DataType::Fn { .. } => types::I64, // Function pointers
     }
 }
 

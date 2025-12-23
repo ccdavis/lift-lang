@@ -19,6 +19,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
         scope_allocations: &mut Vec<Vec<(Value, String)>>,
+        function_captures: &std::collections::HashMap<String, Vec<(String, crate::syntax::DataType)>>,
+        anonymous_lambdas: &HashMap<usize, String>,
     ) -> Result<Option<Value>, String> {
         use crate::semantic::determine_type_with_symbols;
         use crate::syntax::DataType;
@@ -66,7 +68,9 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 user_func_refs,
                 variables,
                 scope_allocations,
-            )?
+            
+                function_captures,
+            anonymous_lambdas,)?
             .ok_or_else(|| "List element must produce a value".to_string())?;
 
             // Convert value to i64 for storage (handles all types)
@@ -111,6 +115,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
         scope_allocations: &mut Vec<Vec<(Value, String)>>,
+        function_captures: &HashMap<String, Vec<(String, crate::syntax::DataType)>>,
+        anonymous_lambdas: &HashMap<usize, String>,
     ) -> Result<Option<Value>, String> {
         use crate::semantic::determine_type_with_symbols;
         use crate::syntax::{DataType, KeyData};
@@ -223,7 +229,9 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 user_func_refs,
                 variables,
                 scope_allocations,
-            )?
+            
+                function_captures,
+            anonymous_lambdas,)?
             .ok_or_else(|| "Map value must produce a value".to_string())?;
 
             // Convert value to i64 for storage (handles all types)
@@ -266,6 +274,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
         scope_allocations: &mut Vec<Vec<(Value, String)>>,
+        function_captures: &std::collections::HashMap<String, Vec<(String, crate::syntax::DataType)>>,
+        anonymous_lambdas: &HashMap<usize, String>,
     ) -> Result<Option<Value>, String> {
         use crate::semantic::determine_type_with_symbols;
         use crate::syntax::DataType;
@@ -279,7 +289,9 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             user_func_refs,
             variables,
             scope_allocations,
-        )?
+        
+                function_captures,
+            anonymous_lambdas,)?
         .ok_or("Index requires non-Unit collection")?;
 
         // Compile the index expression
@@ -291,7 +303,9 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             user_func_refs,
             variables,
             scope_allocations,
-        )?
+        
+                function_captures,
+            anonymous_lambdas,)?
         .ok_or("Index requires non-Unit index value")?;
 
         // Determine if this is a list or map based on the type
@@ -370,6 +384,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
         scope_allocations: &mut Vec<Vec<(Value, String)>>,
+        function_captures: &HashMap<String, Vec<(String, crate::syntax::DataType)>>,
+        anonymous_lambdas: &HashMap<usize, String>,
     ) -> Result<Option<Value>, String> {
         use crate::semantic::determine_type_with_symbols;
         use crate::syntax::DataType;
@@ -383,7 +399,9 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             user_func_refs,
             variables,
             scope_allocations,
-        )?
+        
+                function_captures,
+            anonymous_lambdas,)?
         .ok_or("len() requires non-Unit expression")?;
 
         // Determine the type to call the right len function

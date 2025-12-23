@@ -258,8 +258,10 @@ pub DataType : DataType = {
     "Flt" => DataType::Flt,
     "Str" => DataType::Str,
     "Bool" => DataType::Bool,
+    "Unit" => DataType::Unit,
     "List of" <e: DataType> => DataType::List { element_type: Box::new(e)},
     "Map of" <k: DataType> "to" <v: DataType> => DataType::Map { key_type: Box::new(k), value_type: Box::new(v)},
+    "Fn" "(" <params:CommaSeparated<DataType>> ")" ":" <ret:DataType> => DataType::Fn { params, return_type: Box::new(ret) },
     <i:ident> => DataType::TypeRef(i), // Custom type reference
 };
 

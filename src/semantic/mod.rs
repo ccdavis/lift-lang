@@ -235,6 +235,25 @@ pub(crate) fn types_compatible(t1: &DataType, t2: &DataType) -> bool {
             },
             DataType::TypeRef(ref_name),
         ) => struct_name == ref_name,
+        // Function type compatibility - params and return type must match
+        (
+            DataType::Fn {
+                params: params1,
+                return_type: ret1,
+            },
+            DataType::Fn {
+                params: params2,
+                return_type: ret2,
+            },
+        ) => {
+            if params1.len() != params2.len() {
+                return false;
+            }
+            params1.iter().zip(params2.iter()).all(|(p1, p2)| types_compatible(p1, p2))
+                && types_compatible(ret1, ret2)
+        }
+        // Unit type compatibility
+        (DataType::Unit, DataType::Unit) => true,
         _ => false,
     }
 }

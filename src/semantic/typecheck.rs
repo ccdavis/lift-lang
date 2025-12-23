@@ -60,6 +60,12 @@ pub fn typecheck(
                         (DataType::Flt, DataType::Flt) => Ok(DataType::Flt),
                         (DataType::Int, DataType::Flt) | (DataType::Flt, DataType::Int) => Ok(DataType::Flt),
                         (DataType::Str, DataType::Str) if matches!(op, Operator::Add) => Ok(DataType::Str),
+                        // List concatenation: List of T + List of T = List of T
+                        (DataType::List { element_type: et1 }, DataType::List { element_type: et2 })
+                            if matches!(op, Operator::Add) && types_compatible(et1, et2) =>
+                        {
+                            Ok(left_type.clone())
+                        }
                         _ => Err(CompileError::typecheck(
                             &format!("Type mismatch in binary operation {op:?}: {left_type:?} and {right_type:?}"),
                             (0, 0),
@@ -503,7 +509,7 @@ pub fn typecheck(
             index,
             args,
         } => {
-            // Get function type from symbol table
+            // First check if this is a direct function call
             if let Some(fn_expr) = symbols.get_symbol_value(index) {
                 // Extract the function from either DefineFunction or Lambda
                 let func = match fn_expr {
@@ -518,6 +524,43 @@ pub fn typecheck(
                     },
                     Expr::Lambda { value: f, .. } => f,
                     _ => {
+                        // Check if the symbol has a Fn type (indirect call through variable)
+                        if let Some(var_type) = symbols.get_symbol_type(index) {
+                            if let DataType::Fn {
+                                params,
+                                return_type,
+                            } = var_type
+                            {
+                                // Type check indirect call
+                                if args.len() != params.len() {
+                                    return Err(CompileError::typecheck(
+                                        &format!(
+                                            "Function {} expects {} arguments, got {}",
+                                            fn_name,
+                                            params.len(),
+                                            args.len()
+                                        ),
+                                        (0, 0),
+                                    ));
+                                }
+
+                                for (i, arg) in args.iter().enumerate() {
+                                    let arg_type = typecheck(&arg.value, symbols, _current_scope_id)?;
+                                    let expected_type = &params[i];
+                                    if !types_compatible(expected_type, &arg_type) {
+                                        return Err(CompileError::typecheck(
+                                            &format!(
+                                                "Argument {} type mismatch: expected {:?}, got {:?}",
+                                                i + 1, expected_type, arg_type
+                                            ),
+                                            (0, 0),
+                                        ));
+                                    }
+                                }
+
+                                return Ok(return_type.as_ref().clone());
+                            }
+                        }
                         return Err(CompileError::typecheck(
                             &format!("{fn_name} is not a function"),
                             (0, 0),
@@ -581,6 +624,43 @@ pub fn typecheck(
 
                 Ok(func.return_type.clone())
             } else {
+                // Check if this is an indirect call through a variable with Fn type
+                if let Some(var_type) = symbols.get_symbol_type(index) {
+                    if let DataType::Fn {
+                        params,
+                        return_type,
+                    } = var_type
+                    {
+                        // Type check indirect call
+                        if args.len() != params.len() {
+                            return Err(CompileError::typecheck(
+                                &format!(
+                                    "Function {} expects {} arguments, got {}",
+                                    fn_name,
+                                    params.len(),
+                                    args.len()
+                                ),
+                                (0, 0),
+                            ));
+                        }
+
+                        for (i, arg) in args.iter().enumerate() {
+                            let arg_type = typecheck(&arg.value, symbols, _current_scope_id)?;
+                            let expected_type = &params[i];
+                            if !types_compatible(expected_type, &arg_type) {
+                                return Err(CompileError::typecheck(
+                                    &format!(
+                                        "Argument {} type mismatch: expected {:?}, got {:?}",
+                                        i + 1, expected_type, arg_type
+                                    ),
+                                    (0, 0),
+                                ));
+                            }
+                        }
+
+                        return Ok(return_type.as_ref().clone());
+                    }
+                }
                 Err(CompileError::name(
                     &format!("Undefined function: {fn_name}"),
                     (0, 0),
@@ -792,7 +872,17 @@ pub fn typecheck(
                 ));
             }
 
-            Ok(DataType::Unsolved) // Lambda expressions themselves don't have a simple type representation yet
+            // Return a Fn type with the parameter types and return type
+            let param_types: Vec<DataType> = func.params.iter().map(|p| p.data_type.clone()).collect();
+            let return_type = if matches!(func.return_type, DataType::Unsolved) {
+                body_type
+            } else {
+                func.return_type.clone()
+            };
+            Ok(DataType::Fn {
+                params: param_types,
+                return_type: Box::new(return_type),
+            })
         }
 
         Expr::DefineFunction { value, .. } => {
@@ -1093,6 +1183,25 @@ fn types_compatible(t1: &DataType, t2: &DataType) -> bool {
             },
             DataType::TypeRef(ref_name),
         ) => struct_name == ref_name,
+        // Function type compatibility - params and return type must match
+        (
+            DataType::Fn {
+                params: params1,
+                return_type: ret1,
+            },
+            DataType::Fn {
+                params: params2,
+                return_type: ret2,
+            },
+        ) => {
+            if params1.len() != params2.len() {
+                return false;
+            }
+            params1.iter().zip(params2.iter()).all(|(p1, p2)| types_compatible(p1, p2))
+                && types_compatible(ret1, ret2)
+        }
+        // Unit type compatibility
+        (DataType::Unit, DataType::Unit) => true,
         _ => false,
     }
 }

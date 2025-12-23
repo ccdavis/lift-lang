@@ -31,10 +31,14 @@ pub fn lift_type_to_cranelift(data_type: &DataType) -> Result<Type, String> {
         }
 
         DataType::Unsolved => Err("Unsolved type should not reach compilation stage".to_string()),
+        DataType::Unit => Ok(types::I64), // Unit represented as I64 (value 0)
 
         DataType::Set(_) => Ok(types::I64),
         DataType::Enum(_) => Ok(types::I64),
         DataType::Struct { name: _, fields: _ } => Ok(types::I64),
+
+        // Function types are represented as function pointers (I64)
+        DataType::Fn { .. } => Ok(types::I64),
     }
 }
 

@@ -30,8 +30,11 @@ pub fn determine_type_with_symbols(
         }
 
         Expr::BinaryExpr { left, op, right } => {
-            let left_type = determine_type_with_symbols(left, symbols, _scope)?;
-            let right_type = determine_type_with_symbols(right, symbols, _scope)?;
+            let left_type_raw = determine_type_with_symbols(left, symbols, _scope)?;
+            let right_type_raw = determine_type_with_symbols(right, symbols, _scope)?;
+            // Resolve type aliases (e.g., Angle = Flt)
+            let left_type = resolve_type_alias(&left_type_raw, symbols);
+            let right_type = resolve_type_alias(&right_type_raw, symbols);
 
             match op {
                 Operator::Add | Operator::Sub | Operator::Mul | Operator::Div => {
@@ -64,17 +67,35 @@ pub fn determine_type_with_symbols(
             }
         }
 
-        Expr::Call { index, .. } => {
+        Expr::Call { index, args, .. } => {
             // Look up function return type
             if let Some(fn_expr) = symbols.get_symbol_value(index) {
-                match fn_expr {
+                let return_type = match fn_expr {
                     Expr::DefineFunction { value, .. } => match value.as_ref() {
                         Expr::Lambda { value: func, .. } => Some(func.return_type.clone()),
                         _ => None,
                     },
                     Expr::Lambda { value: func, .. } => Some(func.return_type.clone()),
                     _ => None,
+                };
+
+                // Handle UFCS for generic methods (like first, last)
+                // If return type is Unsolved and first arg is "self", infer from receiver
+                if let Some(DataType::Unsolved) = &return_type {
+                    if let Some(first_arg) = args.first() {
+                        if first_arg.name == "self" {
+                            if let Some(receiver_type_raw) =
+                                determine_type_with_symbols(&first_arg.value, symbols, _scope)
+                            {
+                                let receiver_type = resolve_type_alias(&receiver_type_raw, symbols);
+                                if let DataType::List { element_type } = receiver_type {
+                                    return Some(*element_type);
+                                }
+                            }
+                        }
+                    }
                 }
+                return_type
             } else {
                 None
             }

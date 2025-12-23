@@ -22,6 +22,15 @@ pub struct CodeGenerator<'a, M: Module> {
 
     // User-defined function references: maps function names to FuncId
     pub(super) function_refs: HashMap<String, FuncId>,
+
+    /// Captured variables for each function: maps function name to list of (var_name, type)
+    /// These are variables from outer scopes that the function references.
+    /// They are passed as hidden parameters when calling the function.
+    pub(super) function_captures: HashMap<String, Vec<(String, DataType)>>,
+
+    /// Anonymous lambdas: maps lambda environment ID to generated function name
+    /// Used to compile lambdas passed as arguments to higher-order functions
+    pub(super) anonymous_lambdas: HashMap<usize, String>,
     // Note: scope_allocations is now passed as a parameter through compilation functions
     // rather than stored as a struct field (was never read, only the local variable was used)
 }
@@ -37,6 +46,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             variables: HashMap::new(),
             runtime_funcs: HashMap::new(),
             function_refs: HashMap::new(),
+            function_captures: HashMap::new(),
+            anonymous_lambdas: HashMap::new(),
         }
     }
 
@@ -50,9 +61,108 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         let mut function_defs = Vec::new();
         self.collect_function_definitions(expr, &mut function_defs);
 
-        // Compile each function definition
+        // Collect anonymous lambdas (lambdas passed as arguments to HOFs)
+        let mut anonymous_lambda_defs: Vec<(String, &Expr, usize)> = Vec::new();
+        let mut lambda_counter = 0usize;
+        self.collect_anonymous_lambdas(expr, &mut anonymous_lambda_defs, &mut lambda_counter);
+
+        // Store the environment -> name mapping for later lookup
+        for (name, _lambda_expr, env_id) in &anonymous_lambda_defs {
+            self.anonymous_lambdas.insert(*env_id, name.clone());
+        }
+
+        // First pass: collect direct captures for all functions (named + anonymous)
+        let mut all_direct_captures: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+
+        // Named functions
+        for (fn_name, lambda_expr) in &function_defs {
+            if let Expr::Lambda { value: func, .. } = lambda_expr {
+                let captures = Self::find_direct_captured_variables(func);
+                all_direct_captures.insert(fn_name.to_string(), captures);
+            }
+        }
+
+        // Anonymous lambdas
+        for (lambda_name, lambda_expr, _env_id) in &anonymous_lambda_defs {
+            if let Expr::Lambda { value: func, .. } = lambda_expr {
+                let captures = Self::find_direct_captured_variables(func);
+                all_direct_captures.insert(lambda_name.clone(), captures);
+            }
+        }
+
+        // Second pass: compute transitive captures (iterate until fixed point)
+        // We need multiple passes because A might call B which calls C, etc.
+        loop {
+            let mut changed = false;
+
+            // Named functions
+            for (fn_name, lambda_expr) in &function_defs {
+                if let Expr::Lambda { value: func, .. } = lambda_expr {
+                    let new_captures =
+                        Self::find_captured_variables_with_transitive(func, &all_direct_captures);
+                    let old_captures = all_direct_captures.get(*fn_name).cloned().unwrap_or_default();
+
+                    if new_captures.len() != old_captures.len()
+                        || !new_captures.iter().all(|c| old_captures.contains(c))
+                    {
+                        all_direct_captures.insert(fn_name.to_string(), new_captures);
+                        changed = true;
+                    }
+                }
+            }
+
+            // Anonymous lambdas
+            for (lambda_name, lambda_expr, _env_id) in &anonymous_lambda_defs {
+                if let Expr::Lambda { value: func, .. } = lambda_expr {
+                    let new_captures =
+                        Self::find_captured_variables_with_transitive(func, &all_direct_captures);
+                    let old_captures = all_direct_captures.get(lambda_name).cloned().unwrap_or_default();
+
+                    if new_captures.len() != old_captures.len()
+                        || !new_captures.iter().all(|c| old_captures.contains(c))
+                    {
+                        all_direct_captures.insert(lambda_name.clone(), new_captures);
+                        changed = true;
+                    }
+                }
+            }
+
+            if !changed {
+                break;
+            }
+        }
+
+        // Store the final captures for use in compile_user_function
+        self.function_captures = all_direct_captures
+            .into_iter()
+            .filter_map(|(name, caps)| {
+                if caps.is_empty() {
+                    None
+                } else {
+                    // Get types for captured variables
+                    let typed_caps: Vec<(String, DataType)> = caps
+                        .into_iter()
+                        .map(|var_name| {
+                            let var_type = symbols
+                                .find_symbol_type_by_name(&var_name)
+                                .unwrap_or(DataType::Int);
+                            (var_name, var_type)
+                        })
+                        .collect();
+                    Some((name, typed_caps))
+                }
+            })
+            .collect();
+
+        // Compile each named function definition
         for (fn_name, lambda_expr) in function_defs {
             self.compile_user_function(fn_name, lambda_expr, symbols)?;
+        }
+
+        // Compile each anonymous lambda as a function
+        for (lambda_name, lambda_expr, _env_id) in anonymous_lambda_defs {
+            self.compile_user_function(&lambda_name, lambda_expr, symbols)?;
         }
 
         // Create a main function with signature: () -> i64
@@ -109,6 +219,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 &user_func_refs,
                 &mut self.variables,
                 &mut scope_allocations,
+                &self.function_captures,
+                &self.anonymous_lambdas,
             )?;
 
             // Clean up allocations before returning
@@ -146,6 +258,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
         scope_allocations: &mut Vec<Vec<(Value, String)>>,
+        function_captures: &HashMap<String, Vec<(String, DataType)>>,
+        anonymous_lambdas: &HashMap<usize, String>,
     ) -> Result<Option<Value>, String> {
         match expr {
             // Literals
@@ -165,6 +279,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 user_func_refs,
                 variables,
                 scope_allocations,
+                function_captures,
+                anonymous_lambdas,
             ),
 
             // Unary operations
@@ -177,6 +293,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 user_func_refs,
                 variables,
                 scope_allocations,
+                function_captures,
+                anonymous_lambdas,
             ),
 
             // Output
@@ -189,6 +307,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                     user_func_refs,
                     variables,
                     scope_allocations,
+                    function_captures,
+                    anonymous_lambdas,
                 )?;
                 Ok(None) // output returns Unit
             }
@@ -202,6 +322,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 user_func_refs,
                 variables,
                 scope_allocations,
+                function_captures,
+                anonymous_lambdas,
             ),
             Expr::Block { body, .. } => Self::compile_block_body(
                 builder,
@@ -211,6 +333,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 user_func_refs,
                 variables,
                 scope_allocations,
+                function_captures,
+                anonymous_lambdas,
             ),
 
             // Control flow
@@ -228,6 +352,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 user_func_refs,
                 variables,
                 scope_allocations,
+                function_captures,
+                anonymous_lambdas,
             ),
 
             Expr::While { cond, body } => Self::compile_while_expr(
@@ -239,6 +365,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 user_func_refs,
                 variables,
                 scope_allocations,
+                function_captures,
+                anonymous_lambdas,
             ),
 
             // Variables
@@ -257,19 +385,24 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 user_func_refs,
                 variables,
                 scope_allocations,
+                function_captures,
+                anonymous_lambdas,
             ),
 
             Expr::Variable { name, .. } => Self::compile_variable(builder, name, variables),
 
-            Expr::Assign { name, value, .. } => Self::compile_assign(
+            Expr::Assign { name, value, index } => Self::compile_assign(
                 builder,
                 name,
                 value,
+                index,
                 symbols,
                 runtime_funcs,
                 user_func_refs,
                 variables,
                 scope_allocations,
+                function_captures,
+                anonymous_lambdas,
             ),
 
             // Collections
@@ -282,6 +415,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 user_func_refs,
                 variables,
                 scope_allocations,
+                function_captures,
+                anonymous_lambdas,
             ),
 
             Expr::MapLiteral {
@@ -298,6 +433,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 user_func_refs,
                 variables,
                 scope_allocations,
+                function_captures,
+                anonymous_lambdas,
             ),
 
             Expr::Index { expr, index } => Self::compile_index(
@@ -309,6 +446,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 user_func_refs,
                 variables,
                 scope_allocations,
+                function_captures,
+                anonymous_lambdas,
             ),
 
             // Built-in functions
@@ -320,6 +459,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 user_func_refs,
                 variables,
                 scope_allocations,
+                function_captures,
+                anonymous_lambdas,
             ),
 
             Expr::MethodCall {
@@ -337,6 +478,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 user_func_refs,
                 variables,
                 scope_allocations,
+                function_captures,
+                anonymous_lambdas,
             ),
 
             // Range
@@ -354,6 +497,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 user_func_refs,
                 variables,
                 scope_allocations,
+                function_captures,
+                anonymous_lambdas,
             ),
 
             Expr::FieldAccess { expr, field_name } => Self::compile_field_access(
@@ -365,6 +510,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 user_func_refs,
                 variables,
                 scope_allocations,
+                function_captures,
+                anonymous_lambdas,
             ),
 
             Expr::FieldAssign {
@@ -382,6 +529,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 user_func_refs,
                 variables,
                 scope_allocations,
+                function_captures,
+                anonymous_lambdas,
             ),
 
             // Unit
@@ -403,6 +552,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 user_func_refs,
                 variables,
                 scope_allocations,
+                function_captures,
+                anonymous_lambdas,
             ),
 
             // Function definitions (handled in preprocessing, so return Unit here)
@@ -410,6 +561,23 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
 
             // Type definitions (compile-time only, return Unit)
             Expr::DefineType { .. } => Ok(None),
+
+            // Lambda expressions - return function pointer
+            Expr::Lambda { environment, .. } => {
+                // Look up the lambda's compiled function name using its environment ID
+                let fn_name = anonymous_lambdas
+                    .get(environment)
+                    .ok_or_else(|| format!("Anonymous lambda at scope {} not found in compiled functions", environment))?;
+
+                // Get function reference
+                let func_ref = user_func_refs
+                    .get(fn_name)
+                    .ok_or_else(|| format!("Function {} not declared in current scope", fn_name))?;
+
+                // Get function address as i64 (function pointer)
+                let func_addr = builder.ins().func_addr(types::I64, *func_ref);
+                Ok(Some(func_addr))
+            }
 
             _ => Err(format!("Compilation not yet implemented for: {:?}", expr)),
         }
@@ -470,7 +638,31 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         ptr: Value,
         type_name: &str,
     ) {
-        let func_name = format!("lift_{}_release", type_name);
+        // Strings use lift_string_drop (takes pointer), other types use lift_X_release
+        let func_name = if type_name == "string" {
+            "lift_string_drop".to_string()
+        } else {
+            format!("lift_{}_release", type_name)
+        };
+        if let Some(&func_ref) = runtime_funcs.get(&func_name) {
+            builder.ins().call(func_ref, &[ptr]);
+        }
+    }
+
+    /// Emit a call to the appropriate retain function for a heap-allocated value
+    /// This increments the reference count so the value survives when the original scope ends
+    pub(super) fn emit_retain_call(
+        builder: &mut FunctionBuilder,
+        runtime_funcs: &HashMap<String, FuncRef>,
+        ptr: Value,
+        type_name: &str,
+    ) {
+        // Strings use lift_string_retain, other types use lift_X_retain
+        let func_name = if type_name == "string" {
+            "lift_string_retain".to_string()
+        } else {
+            format!("lift_{}_retain", type_name)
+        };
         if let Some(&func_ref) = runtime_funcs.get(&func_name) {
             builder.ins().call(func_ref, &[ptr]);
         }

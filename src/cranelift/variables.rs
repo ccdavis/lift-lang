@@ -15,6 +15,10 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
     /// Like Rust, this supports variable rebinding: if a variable with the same name
     /// already exists, we reuse its stack slot (effectively making it an assignment).
     /// This is essential for `let` declarations inside loop bodies.
+    ///
+    /// For string variables, we use inline storage: the variable's stack slot contains
+    /// the full 32-byte LiftString, not a pointer. This allows proper memory management
+    /// when reassigning strings in loops.
     pub(super) fn compile_let(
         builder: &mut FunctionBuilder,
         var_name: &str,
@@ -25,8 +29,20 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
         scope_allocations: &mut Vec<Vec<(Value, String)>>,
+        function_captures: &std::collections::HashMap<String, Vec<(String, crate::syntax::DataType)>>,
+        anonymous_lambdas: &HashMap<usize, String>,
     ) -> Result<Option<Value>, String> {
         use crate::semantic::determine_type_with_symbols;
+
+        // Determine the Lift type early (needed to know if this is a string)
+        let lift_type_raw = if !matches!(data_type, DataType::Unsolved) {
+            data_type.clone()
+        } else {
+            determine_type_with_symbols(value, symbols, 0)
+                .ok_or_else(|| format!("Cannot determine type for variable '{}'", var_name))?
+        };
+        let lift_type = Self::resolve_type_alias(&lift_type_raw, symbols);
+        let is_string = matches!(lift_type, DataType::Str);
 
         // Compile the value expression
         let val = Self::compile_expr_static(
@@ -37,84 +53,127 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             user_func_refs,
             variables,
             scope_allocations,
-        )?
+        
+                function_captures,
+            anonymous_lambdas,)?
         .ok_or_else(|| format!("Let binding for '{}' requires a value", var_name))?;
 
         // Check if this variable already exists (rebinding case)
-        if let Some(existing_var_info) = variables.get(var_name) {
+        if let Some(existing_var_info) = variables.get(var_name).cloned() {
             // Variable already exists - reuse its stack slot (like Rust shadowing)
             // This is crucial for let declarations inside while loops
 
-            // Determine the type of the new value
-            let lift_type_raw = if !matches!(data_type, DataType::Unsolved) {
-                data_type.clone()
+            if existing_var_info.is_inline_string {
+                // For inline strings: drop old value, then copy new value, then drop temp
+                let slot_addr = builder.ins().stack_addr(types::I64, existing_var_info.slot, 0);
+
+                // Drop the old string's heap data (if any)
+                if let Some(&drop_func) = runtime_funcs.get("lift_string_drop") {
+                    builder.ins().call(drop_func, &[slot_addr]);
+                }
+
+                // Copy new string to the slot (this increments ref count for large strings)
+                if let Some(&copy_func) = runtime_funcs.get("lift_string_copy") {
+                    builder.ins().call(copy_func, &[slot_addr, val]);
+                }
+
+                // Drop the source temp string (decrements ref count back to 1)
+                if let Some(&drop_func) = runtime_funcs.get("lift_string_drop") {
+                    builder.ins().call(drop_func, &[val]);
+                }
             } else {
-                determine_type_with_symbols(value, symbols, 0)
-                    .ok_or_else(|| format!("Cannot determine type for variable '{}'", var_name))?
-            };
-
-            let lift_type = Self::resolve_type_alias(&lift_type_raw, symbols);
-
-            let new_cranelift_type = match lift_type {
-                DataType::Flt => types::F64,
-                DataType::Int | DataType::Bool => types::I64,
-                DataType::Str | DataType::List { .. } | DataType::Map { .. } => types::I64,
-                _ => types::I64,
-            };
-
-            // Check if the type matches the existing variable's type
-            if new_cranelift_type != existing_var_info.cranelift_type {
-                return Err(format!(
-                    "Cannot rebind variable '{}' with a different type. Original type: {:?}, New type: {:?}",
-                    var_name, existing_var_info.cranelift_type, new_cranelift_type
-                ));
+                // For non-string types, just store the value
+                builder.ins().stack_store(val, existing_var_info.slot, 0);
             }
-
-            builder.ins().stack_store(val, existing_var_info.slot, 0);
             return Ok(None);
         }
 
         // New variable - create a new stack slot
 
-        // Determine the Lift type from the Let's data_type if available, otherwise infer from value
-        let lift_type_raw = if !matches!(data_type, DataType::Unsolved) {
-            data_type.clone()
-        } else {
-            determine_type_with_symbols(value, symbols, 0)
-                .ok_or_else(|| format!("Cannot determine type for variable '{}'", var_name))?
-        };
-
-        // Resolve TypeRef to underlying type
-        let lift_type = Self::resolve_type_alias(&lift_type_raw, symbols);
-
-        let cranelift_type = match lift_type {
+        let cranelift_type = match &lift_type {
             DataType::Flt => types::F64,
             DataType::Int | DataType::Bool => types::I64,
             DataType::Str | DataType::List { .. } | DataType::Map { .. } => types::I64, // Pointers
             _ => types::I64, // Default to I64
         };
 
-        // Create a stack slot for this variable (8 bytes for I64/F64/pointers)
-        let slot =
-            builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 0));
+        if is_string {
+            // String variables use inline storage (32 bytes for full LiftString)
+            let slot = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                32, // Full LiftString
+                8,  // 8-byte alignment
+            ));
 
-        // Store the value in the stack slot
-        builder.ins().stack_store(val, slot, 0);
+            // Get address of the slot and copy the string into it
+            let slot_addr = builder.ins().stack_addr(types::I64, slot, 0);
+            if let Some(&copy_func) = runtime_funcs.get("lift_string_copy") {
+                builder.ins().call(copy_func, &[slot_addr, val]);
+            }
 
-        // Remember this variable's stack slot and type
-        variables.insert(
-            var_name.to_string(),
-            VarInfo {
-                slot,
-                cranelift_type,
-            },
-        );
+            // Drop the source temp string (decrements ref count back to 1)
+            if let Some(&drop_func) = runtime_funcs.get("lift_string_drop") {
+                builder.ins().call(drop_func, &[val]);
+            }
+
+            // Track this variable for cleanup at scope exit
+            // Note: We track the slot address, not val, because the variable persists
+            Self::record_allocation(scope_allocations, slot_addr, "string");
+
+            // Remember this variable's stack slot
+            variables.insert(
+                var_name.to_string(),
+                VarInfo {
+                    slot,
+                    cranelift_type,
+                    is_inline_string: true,
+                },
+            );
+        } else {
+            // Non-string variables use pointer storage (8 bytes)
+            let slot = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                8,
+                0,
+            ));
+
+            // Store the value in the stack slot
+            builder.ins().stack_store(val, slot, 0);
+
+            // For heap types stored in variables, UNTRACK from scope_allocations
+            // The variable now owns the value - it will be released via assignment (:=)
+            // or when the function returns. If we don't untrack, scope exit would
+            // double-free values that were already released via assignment.
+            let is_heap_type = matches!(
+                &lift_type,
+                DataType::List { .. }
+                    | DataType::Map { .. }
+                    | DataType::Range(_)
+                    | DataType::Struct { .. }
+            );
+            if is_heap_type {
+                Self::untrack_allocation(scope_allocations, val);
+            }
+
+            // Remember this variable's stack slot and type
+            variables.insert(
+                var_name.to_string(),
+                VarInfo {
+                    slot,
+                    cranelift_type,
+                    is_inline_string: false,
+                },
+            );
+        }
 
         // Let expressions return Unit
         Ok(None)
     }
 
     /// Compile a variable reference
+    ///
+    /// For inline string variables, returns a pointer to the variable's slot (the LiftString).
+    /// For other types, returns the value stored in the slot.
     pub(super) fn compile_variable(
         builder: &mut FunctionBuilder,
         name: &str,
@@ -125,25 +184,45 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             .get(name)
             .ok_or_else(|| format!("Undefined variable: {}", name))?;
 
-        // Load the value from the stack slot with the correct type
-        let val = builder
-            .ins()
-            .stack_load(var_info.cranelift_type, var_info.slot, 0);
-        Ok(Some(val))
+        if var_info.is_inline_string {
+            // For inline strings, return pointer to the slot (which contains the LiftString)
+            let val = builder.ins().stack_addr(types::I64, var_info.slot, 0);
+            Ok(Some(val))
+        } else {
+            // For other types, load the value from the stack slot
+            let val = builder
+                .ins()
+                .stack_load(var_info.cranelift_type, var_info.slot, 0);
+            Ok(Some(val))
+        }
     }
 
     /// Compile an assignment expression
+    ///
+    /// For inline string variables, this:
+    /// 1. Compiles the new value (which may reference the old value)
+    /// 2. Drops the old string's heap data
+    /// 3. Copies the new string into the variable's slot
     pub(super) fn compile_assign(
         builder: &mut FunctionBuilder,
         name: &str,
         value: &Expr,
+        index: &(usize, usize),
         symbols: &SymbolTable,
         runtime_funcs: &HashMap<String, FuncRef>,
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
         scope_allocations: &mut Vec<Vec<(Value, String)>>,
+        function_captures: &HashMap<String, Vec<(String, crate::syntax::DataType)>>,
+        anonymous_lambdas: &HashMap<usize, String>,
     ) -> Result<Option<Value>, String> {
-        // Compile the new value
+        // Look up the variable's stack slot first
+        let var_info = variables
+            .get(name)
+            .ok_or_else(|| format!("Undefined variable: {}", name))?
+            .clone();
+
+        // Compile the new value FIRST (may reference the old value which is still valid)
         let val = Self::compile_expr_static(
             builder,
             value,
@@ -152,16 +231,93 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             user_func_refs,
             variables,
             scope_allocations,
-        )?
+        
+                function_captures,
+            anonymous_lambdas,)?
         .ok_or_else(|| format!("Assignment to '{}' requires a value", name))?;
 
-        // Look up the variable's stack slot
-        let var_info = variables
-            .get(name)
-            .ok_or_else(|| format!("Undefined variable: {}", name))?;
+        if var_info.is_inline_string {
+            // For inline strings: drop old heap data, then copy new value, then drop temp
+            let slot_addr = builder.ins().stack_addr(types::I64, var_info.slot, 0);
 
-        // Store the new value in the stack slot
-        builder.ins().stack_store(val, var_info.slot, 0);
+            // Drop the old string's heap data (if any)
+            // This is safe because we've already compiled the new value
+            if let Some(&drop_func) = runtime_funcs.get("lift_string_drop") {
+                builder.ins().call(drop_func, &[slot_addr]);
+            }
+
+            // Copy new string to the slot (this increments ref count for large strings)
+            if let Some(&copy_func) = runtime_funcs.get("lift_string_copy") {
+                builder.ins().call(copy_func, &[slot_addr, val]);
+            }
+
+            // Drop the source temp string (decrements ref count back to 1)
+            // This is necessary because lift_string_copy increments the ref count,
+            // but the temp slot will be overwritten without being released
+            if let Some(&drop_func) = runtime_funcs.get("lift_string_drop") {
+                builder.ins().call(drop_func, &[val]);
+            }
+        } else {
+            use crate::semantic::determine_type_with_symbols;
+
+            // Determine the variable's type to check if it needs cleanup
+            // First try the symbol table, then fall back to inferring from value
+            let var_type = symbols.get_symbol_type(index);
+            let resolved_type = if let Some(t) = var_type {
+                Self::resolve_type_alias(&t, symbols)
+            } else {
+                // Fall back to inferring type from the value expression
+                determine_type_with_symbols(value, symbols, 0)
+                    .map(|t| Self::resolve_type_alias(&t, symbols))
+                    .unwrap_or(DataType::Unsolved)
+            };
+
+            // Check if this is a heap type that needs the old value released
+            let release_type_name = match &resolved_type {
+                DataType::List { .. } => Some("list"),
+                DataType::Map { .. } => Some("map"),
+                DataType::Range(_) => Some("range"),
+                DataType::Struct { .. } => Some("struct"),
+                DataType::TypeRef(_) => {
+                    let resolved = Self::resolve_type_alias(&resolved_type, symbols);
+                    match resolved {
+                        DataType::List { .. } => Some("list"),
+                        DataType::Map { .. } => Some("map"),
+                        DataType::Range(_) => Some("range"),
+                        DataType::Struct { .. } => Some("struct"),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            };
+
+            // Load the old value for later release (if needed)
+            let old_val = if release_type_name.is_some() {
+                Some(
+                    builder
+                        .ins()
+                        .stack_load(var_info.cranelift_type, var_info.slot, 0),
+                )
+            } else {
+                None
+            };
+
+            // RETAIN the new value before storing (increment refcount)
+            // This is critical: when we assign z := c, both z and c now reference the same object
+            // Without retain, releasing the old z value would leave z's new reference with refcount=1,
+            // and when c's scope ends, releasing c would free the object that z still references!
+            if let Some(type_name) = release_type_name {
+                Self::emit_retain_call(builder, runtime_funcs, val, type_name);
+            }
+
+            // Store the new value in the stack slot
+            builder.ins().stack_store(val, var_info.slot, 0);
+
+            // Release the old value (after new value is stored)
+            if let (Some(type_name), Some(old_val)) = (release_type_name, old_val) {
+                Self::emit_release_call(builder, runtime_funcs, old_val, type_name);
+            }
+        }
 
         // Assignment returns Unit
         Ok(None)

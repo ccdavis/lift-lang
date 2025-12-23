@@ -19,6 +19,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
         scope_allocations: &mut Vec<Vec<(Value, String)>>,
+        function_captures: &HashMap<String, Vec<(String, crate::syntax::DataType)>>,
+        anonymous_lambdas: &HashMap<usize, String>,
     ) -> Result<Option<Value>, String> {
         use crate::syntax::DataType;
 
@@ -93,7 +95,9 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 user_func_refs,
                 variables,
                 scope_allocations,
-            )?
+            
+                function_captures,
+            anonymous_lambdas,)?
             .ok_or_else(|| format!("Struct field '{}' must produce a value", field_name))?;
 
             // Determine field type for type tag
@@ -150,6 +154,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
         scope_allocations: &mut Vec<Vec<(Value, String)>>,
+        function_captures: &std::collections::HashMap<String, Vec<(String, crate::syntax::DataType)>>,
+        anonymous_lambdas: &HashMap<usize, String>,
     ) -> Result<Option<Value>, String> {
         // Compile the struct expression
         let struct_val = Self::compile_expr_static(
@@ -160,7 +166,9 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             user_func_refs,
             variables,
             scope_allocations,
-        )?
+        
+                function_captures,
+            anonymous_lambdas,)?
         .ok_or_else(|| "Field access expression must produce a value".to_string())?;
 
         // Create C string for field name
@@ -236,6 +244,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
         scope_allocations: &mut Vec<Vec<(Value, String)>>,
+        function_captures: &HashMap<String, Vec<(String, crate::syntax::DataType)>>,
+        anonymous_lambdas: &HashMap<usize, String>,
     ) -> Result<Option<Value>, String> {
         use crate::syntax::DataType;
 
@@ -279,7 +289,9 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             user_func_refs,
             variables,
             scope_allocations,
-        )?
+        
+                function_captures,
+            anonymous_lambdas,)?
         .ok_or_else(|| "Field assignment value must produce a value".to_string())?;
 
         // Determine value type for type tag

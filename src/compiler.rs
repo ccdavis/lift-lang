@@ -36,6 +36,9 @@ impl JITCompiler {
         builder.symbol("lift_list_set", runtime::lift_list_set as *const u8);
         builder.symbol("lift_list_get", runtime::lift_list_get as *const u8);
         builder.symbol("lift_list_len", runtime::lift_list_len as *const u8);
+        builder.symbol("lift_list_push", runtime::lift_list_push as *const u8);
+        builder.symbol("lift_list_reserve", runtime::lift_list_reserve as *const u8);
+        builder.symbol("lift_list_concat", runtime::lift_list_concat as *const u8);
         builder.symbol("lift_map_new", runtime::lift_map_new as *const u8);
         builder.symbol("lift_map_set", runtime::lift_map_set as *const u8);
         builder.symbol("lift_map_get", runtime::lift_map_get as *const u8);

@@ -448,6 +448,40 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         self.runtime_funcs
             .insert("lift_list_len".to_string(), func_id);
 
+        // lift_list_push(*mut LiftList, i64)
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(types::I64));
+        let func_id = self
+            .module
+            .declare_function("lift_list_push", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_list_push: {}", e))?;
+        self.runtime_funcs
+            .insert("lift_list_push".to_string(), func_id);
+
+        // lift_list_reserve(*mut LiftList, i64)
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(types::I64));
+        let func_id = self
+            .module
+            .declare_function("lift_list_reserve", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_list_reserve: {}", e))?;
+        self.runtime_funcs
+            .insert("lift_list_reserve".to_string(), func_id);
+
+        // lift_list_concat(*const LiftList, *const LiftList) -> *mut LiftList
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(pointer_type));
+        sig.returns.push(AbiParam::new(pointer_type));
+        let func_id = self
+            .module
+            .declare_function("lift_list_concat", cranelift_module::Linkage::Import, &sig)
+            .map_err(|e| format!("Failed to declare lift_list_concat: {}", e))?;
+        self.runtime_funcs
+            .insert("lift_list_concat".to_string(), func_id);
+
         // lift_map_len(*const LiftMap) -> i64
         let mut sig = self.module.make_signature();
         sig.params.push(AbiParam::new(pointer_type));
@@ -699,11 +733,11 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         self.runtime_funcs
             .insert("lift_list_reverse".to_string(), func_id);
 
-        // lift_list_join(*const LiftList, *const c_char) -> *mut c_char
+        // lift_list_join(dest: *mut LiftString, list: *const RcList, separator: *const LiftString)
         let mut sig = self.module.make_signature();
-        sig.params.push(AbiParam::new(pointer_type));
-        sig.params.push(AbiParam::new(pointer_type));
-        sig.returns.push(AbiParam::new(pointer_type));
+        sig.params.push(AbiParam::new(pointer_type)); // dest
+        sig.params.push(AbiParam::new(pointer_type)); // list
+        sig.params.push(AbiParam::new(pointer_type)); // separator
         let func_id = self
             .module
             .declare_function("lift_list_join", cranelift_module::Linkage::Import, &sig)
