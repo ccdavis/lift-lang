@@ -1,0 +1,13 @@
+# Valgrind suppression file for Lift language
+# Usage: valgrind --suppressions=lift.supp ./target/release/lift-lang ...
+
+# Cranelift JIT memory - intentionally not freed (JIT code storage)
+# This is the only expected leak - all string memory is now properly managed
+{
+   cranelift_jit_memory
+   Memcheck:Leak
+   match-leak-kinds: definite
+   fun:posix_memalign
+   ...
+   fun:*cranelift_jit*
+}
