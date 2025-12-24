@@ -132,14 +132,16 @@ The Cranelift JIT compiler supports **most Lift language features** with native 
 - **Method Syntax**: Both dot notation (`obj.method()`) and UFCS (`method(self: obj)`)
 - **User-Defined Methods**: Define methods on built-in types (`function Str.exclaim(): Str { self + '!' }`)
 - **Method Chaining**: Mix built-in and user methods (`'hello'.upper().exclaim()`)
+- **Structs**: User-defined struct types with fields and methods
+- **Lambda Expressions**: First-class functions (`|x: Int| -> Int { x * 2 }`)
+- **Higher-Order Functions**: Functions can accept and return Fn types
+- **Reference Counting**: Automatic memory management for heap types
 
 #### ❌ Not Yet Supported
 - For loops (only while loops available)
 - Match expressions
-- Closures (functions cannot capture outer variables)
-- User-defined types (structs, enums) - type aliases partially supported
+- Closures (lambdas cannot capture outer variables)
 - Module system (import/export)
-- Typed collection output (lists/maps of strings show pointers instead of values)
 
 #### 🚀 Usage
 
@@ -155,17 +157,21 @@ cargo run -- --compile your_file.lt # Compiler
 
 **Running Tests**:
 ```bash
-# All compiler unit tests (52 tests - 100% passing)
-cargo test test_compile
+# All compiler unit tests (79 tests - 100% passing)
+cargo test --lib
 
 # Specific feature tests
 cargo test test_compile_function    # User functions
 cargo test test_compile_str         # String methods
 cargo test test_compile_list        # List methods
 cargo test test_compile_map         # Map methods
+cargo test test_refcount            # Reference counting
 
-# Integration tests (39/78 tests passing - 50% coverage)
+# Integration tests (92 tests passing - 100% coverage)
 ./scripts/validate_compiler.sh
+
+# Memory leak checking with valgrind
+./scripts/valgrind_check.sh tests/test_refcount_basic.lt
 ```
 
 #### 📊 Performance
@@ -189,9 +195,16 @@ Expected performance improvements over interpreter:
 - **Backend**: Cranelift IR → JIT compilation
 
 **Key Components**:
-- `src/codegen.rs`: AST → Cranelift IR compilation (~1800 lines)
-- `src/compiler.rs`: JIT module setup and execution (~1900 lines, 52 tests)
-- `src/runtime.rs`: Runtime library (21+ method functions, ~800 lines)
+- `src/cranelift/`: AST → Cranelift IR compilation (module directory)
+  - `codegen.rs`: Main compilation logic
+  - `functions.rs`: Function/lambda compilation, indirect calls
+  - `collections.rs`, `structs.rs`, `expressions.rs`, `variables.rs`
+- `src/compiler.rs`: JIT module setup and execution
+- `src/runtime/`: Runtime library (module directory)
+  - `refcount.rs`: Reference counting infrastructure
+  - `string.rs`: LiftString with SSO, string methods
+  - `list.rs`, `map.rs`, `range.rs`, `structs.rs`: Collection types
+  - `output.rs`: Output formatting functions
 
 **Type System**:
 - Cranelift types: I64 (Int/Bool), F64 (Float), Pointer (Str/List/Map/Range)
@@ -200,9 +213,10 @@ Expected performance improvements over interpreter:
 
 **Memory Model**:
 - Stack allocation for primitives
-- Heap allocation for collections (Box-wrapped)
-- C-compatible strings (*const c_char)
-- Note: Currently no GC (acceptable for short programs)
+- Heap allocation for collections with reference counting
+- `RefCounted<T>` wrapper provides automatic memory management
+- Strings use Small String Optimization (SSO) - inline for ≤23 bytes
+- C-compatible strings (*const c_char) for FFI
 
 ### Language Features
 
