@@ -194,8 +194,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 KeyData::Int(k) => builder.ins().iconst(types::I64, *k),
                 KeyData::Bool(b) => builder.ins().iconst(types::I64, if *b { 1 } else { 0 }),
                 KeyData::Str(s) => {
-                    // For string keys, we need to create a string and use its pointer
-                    // This is a simplified approach - in production would need proper string interning
+                    // For string keys, create a stack-allocated C string
+                    // No heap allocation needed - MapKey::from_i64 copies directly from this pointer
                     let byte_len = s.len() + 1;
                     let slot =
                         builder.create_sized_stack_slot(cranelift_codegen::ir::StackSlotData::new(
@@ -209,14 +209,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                     }
                     let null_byte = builder.ins().iconst(types::I8, 0);
                     builder.ins().stack_store(null_byte, slot, s.len() as i32);
-                    let str_ptr = builder.ins().stack_addr(types::I64, slot, 0);
-
-                    // Call lift_str_new to create heap string
-                    let str_new_ref = runtime_funcs
-                        .get("lift_str_new")
-                        .ok_or_else(|| "Runtime function lift_str_new not found".to_string())?;
-                    let inst = builder.ins().call(*str_new_ref, &[str_ptr]);
-                    builder.inst_results(inst)[0]
+                    // Return stack address directly - avoids unnecessary heap allocation
+                    builder.ins().stack_addr(types::I64, slot, 0)
                 }
             };
 

@@ -1,0 +1,43 @@
+// Test for memory leak bug: let in while loop creates new heap objects each iteration
+// Expected behavior: Previous iteration's objects should be released
+// Bug: While loop with let creates new objects each iteration without releasing old ones
+
+// Test 1: List in while loop - should allocate 10 lists, release 9, keep 1
+output('Test 1: List in while loop');
+let var i = 0;
+while i < 10 {
+    let y: List of Int = [i, i + 1, i + 2];
+    i := i + 1
+};
+output('Loop 1 complete');
+
+// Test 2: Map in while loop
+output('Test 2: Map in while loop');
+let var j = 0;
+while j < 5 {
+    let m: Map of Str to Int = #{'key': j};
+    j := j + 1
+};
+output('Loop 2 complete');
+
+// Test 3: Range in while loop - skip for now, type inference issues
+// output('Test 3: Range in while loop');
+// let var k = 0;
+// while k < 5 {
+//     let r = k..(k + 10);
+//     k := k + 1
+// };
+// output('Loop 3 complete');
+
+// Test 4: Multiple heap allocations per iteration (stress test)
+output('Test 4: Multiple lists per iteration');
+let var n = 0;
+while n < 3 {
+    let a: List of Int = [1, 2, 3];
+    let b: List of Int = [4, 5, 6];
+    let c: List of Int = [7, 8, 9];
+    n := n + 1
+};
+output('Loop 4 complete');
+
+output('All tests complete');

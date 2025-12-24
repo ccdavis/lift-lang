@@ -1,0 +1,8 @@
+// Test that map string keys don't leak memory in loops
+let var i = 0;
+while i < 100 {
+    let m = #{'alice': 1, 'bob': 2, 'charlie': 3};
+    output(m['alice']);
+    i := i + 1
+};
+output('done')

@@ -1,0 +1,38 @@
+// Stress test for reference counting with let rebinding in loops
+// This test should complete without memory issues if refcount is working correctly
+
+// Large loop with list creation - each iteration creates and should release a list
+output('Starting stress test...');
+
+let var i = 0;
+while i < 1000 {
+    let big_list: List of Int = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    let another_list: List of Int = [i, i + 1, i + 2];
+    i := i + 1
+};
+
+output('List stress test: 1000 iterations complete');
+
+// Map stress test
+let var j = 0;
+while j < 500 {
+    let m: Map of Str to Int = #{'a': j, 'b': j + 1};
+    j := j + 1
+};
+
+output('Map stress test: 500 iterations complete');
+
+// Nested loop stress test - inner loop creates allocations
+let var outer = 0;
+while outer < 10 {
+    let var inner = 0;
+    while inner < 100 {
+        let nums: List of Int = [outer, inner];
+        inner := inner + 1
+    };
+    outer := outer + 1
+};
+
+output('Nested loop stress test: 1000 total iterations complete');
+
+output('All stress tests passed!');

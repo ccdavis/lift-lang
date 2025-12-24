@@ -5,7 +5,7 @@ use super::CodeGenerator;
 use crate::symboltable::SymbolTable;
 use crate::syntax::{DataType, Expr, LiteralData, Operator};
 use cranelift::prelude::*;
-use cranelift_codegen::ir::FuncRef;
+use cranelift_codegen::ir::{FuncRef, StackSlot};
 use cranelift_module::Module;
 use std::collections::HashMap;
 
@@ -705,6 +705,27 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         function_captures: &std::collections::HashMap<String, Vec<(String, crate::syntax::DataType)>>,
         anonymous_lambdas: &HashMap<usize, String>,
     ) -> Result<Option<Value>, String> {
+        use crate::semantic::determine_type_with_symbols;
+
+        // Phase 1: Analyze the body to find heap-type let bindings
+        // These need special handling: pre-initialize to null, release on each iteration
+        let heap_vars = Self::collect_heap_let_bindings(body, symbols);
+
+        // Phase 2: Pre-create and initialize slots for heap variables
+        // This runs ONCE before the loop starts
+        let mut preinitialized_slots: HashMap<String, (StackSlot, String)> = HashMap::new();
+        for (var_name, type_name) in &heap_vars {
+            let slot = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                8,
+                0,
+            ));
+            // Initialize to null (0) - this only runs once before the loop
+            let null_val = builder.ins().iconst(types::I64, 0);
+            builder.ins().stack_store(null_val, slot, 0);
+            preinitialized_slots.insert(var_name.clone(), (slot, type_name.clone()));
+        }
+
         // Create blocks for loop header, body, and exit
         let loop_header = builder.create_block();
         let loop_body = builder.create_block();
@@ -727,7 +748,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             user_func_refs,
             variables,
             scope_allocations,
-        
+
                 function_captures,
             anonymous_lambdas,)?
         .ok_or("While condition must produce a value")?;
@@ -736,6 +757,27 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
 
         // Loop body: execute body and jump back to header
         builder.switch_to_block(loop_body);
+
+        // Phase 3: At start of each iteration, release old values from pre-initialized slots
+        // and reset to null so compile_let's rebinding code doesn't double-release
+        for (var_name, (slot, type_name)) in &preinitialized_slots {
+            let old_val = builder.ins().stack_load(types::I64, *slot, 0);
+            Self::emit_release_call(builder, runtime_funcs, old_val, type_name);
+
+            // Reset slot to null to prevent double-release by compile_let
+            let null_val = builder.ins().iconst(types::I64, 0);
+            builder.ins().stack_store(null_val, *slot, 0);
+
+            // Pre-register the slot in variables map so compile_let reuses it
+            variables.insert(
+                var_name.clone(),
+                VarInfo {
+                    slot: *slot,
+                    cranelift_type: types::I64,
+                    is_inline_string: false,
+                },
+            );
+        }
 
         Self::enter_scope(scope_allocations);
         Self::compile_expr_static(
@@ -746,7 +788,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             user_func_refs,
             variables,
             scope_allocations,
-        
+
                 function_captures,
             anonymous_lambdas,)?;
         Self::exit_scope(builder, runtime_funcs, scope_allocations);
@@ -762,8 +804,118 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         builder.switch_to_block(loop_exit);
         builder.seal_block(loop_exit);
 
+        // Phase 4: After loop exits, release final values in heap var slots
+        for (_var_name, (slot, type_name)) in &preinitialized_slots {
+            let final_val = builder.ins().stack_load(types::I64, *slot, 0);
+            Self::emit_release_call(builder, runtime_funcs, final_val, type_name);
+        }
+
         // While loops return Unit
         Ok(None)
+    }
+
+    /// Collect all Let bindings with heap types (List, Map, Range, Struct) from an expression tree
+    fn collect_heap_let_bindings(
+        expr: &Expr,
+        symbols: &SymbolTable,
+    ) -> Vec<(String, String)> {
+        use crate::semantic::determine_type_with_symbols;
+
+        let mut result = Vec::new();
+
+        fn collect_recursive(
+            expr: &Expr,
+            symbols: &SymbolTable,
+            result: &mut Vec<(String, String)>,
+        ) {
+            match expr {
+                Expr::Let { var_name, value, data_type, .. } => {
+                    // Determine the type
+                    let lift_type = if !matches!(data_type, DataType::Unsolved) {
+                        data_type.clone()
+                    } else {
+                        determine_type_with_symbols(value, symbols, 0)
+                            .unwrap_or(DataType::Unsolved)
+                    };
+
+                    // Check if it's a heap type
+                    let type_name = match &lift_type {
+                        DataType::List { .. } => Some("list"),
+                        DataType::Map { .. } => Some("map"),
+                        DataType::Range(_) => Some("range"),
+                        DataType::Struct { .. } => Some("struct"),
+                        _ => None,
+                    };
+
+                    if let Some(tn) = type_name {
+                        result.push((var_name.clone(), tn.to_string()));
+                    }
+
+                    // Also recurse into the value expression
+                    collect_recursive(value, symbols, result);
+                }
+                Expr::Block { body, .. } | Expr::Program { body, .. } => {
+                    for e in body {
+                        collect_recursive(e, symbols, result);
+                    }
+                }
+                Expr::If { cond, then, final_else, .. } => {
+                    collect_recursive(cond, symbols, result);
+                    collect_recursive(then, symbols, result);
+                    collect_recursive(final_else, symbols, result);
+                }
+                // Note: Don't recurse into nested While loops - they handle their own heap vars
+                Expr::While { .. } => {}
+                Expr::BinaryExpr { left, right, .. } => {
+                    collect_recursive(left, symbols, result);
+                    collect_recursive(right, symbols, result);
+                }
+                Expr::UnaryExpr { expr, .. } => {
+                    collect_recursive(expr, symbols, result);
+                }
+                Expr::Call { args, .. } => {
+                    for arg in args {
+                        collect_recursive(&arg.value, symbols, result);
+                    }
+                }
+                Expr::MethodCall { receiver, args, .. } => {
+                    collect_recursive(receiver, symbols, result);
+                    for arg in args {
+                        collect_recursive(&arg.value, symbols, result);
+                    }
+                }
+                Expr::Assign { value, .. } => {
+                    collect_recursive(value, symbols, result);
+                }
+                Expr::Output { data } => {
+                    for e in data {
+                        collect_recursive(e, symbols, result);
+                    }
+                }
+                Expr::Len { expr } => {
+                    collect_recursive(expr, symbols, result);
+                }
+                Expr::Index { expr, index, .. } => {
+                    collect_recursive(expr, symbols, result);
+                    collect_recursive(index, symbols, result);
+                }
+                Expr::ListLiteral { data, .. } => {
+                    for e in data {
+                        collect_recursive(e, symbols, result);
+                    }
+                }
+                Expr::MapLiteral { data, .. } => {
+                    // Map values are Expr, keys are KeyData (not Expr)
+                    for (_k, v) in data {
+                        collect_recursive(v, symbols, result);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        collect_recursive(expr, symbols, &mut result);
+        result
     }
 
     pub(super) fn compile_output(

@@ -2619,4 +2619,96 @@ mod tests {
         // Should output: 0
         // The list 'nums' should be created and released 3 times (once per recursive call)
     }
+
+    #[test]
+    fn test_refcount_while_loop_rebinding() {
+        use crate::syntax::DataType;
+
+        // Test that let declarations inside while loops properly release old values
+        // when the variable is rebound on subsequent iterations.
+        //
+        // This tests the fix for the memory leak where heap-type variables
+        // in loops were not being released before rebinding.
+        //
+        // Equivalent Lift code:
+        // let var i = 0;
+        // while i < 5 {
+        //     let nums: List of Int = [1, 2, 3];  // Creates new list each iteration
+        //     i := i + 1
+        // };
+        // 0
+        let mut compiler = JITCompiler::new().unwrap();
+
+        let expr = Expr::Program {
+            body: vec![
+                // let var i = 0
+                Expr::Let {
+                    var_name: "i".to_string(),
+                    value: Box::new(Expr::Literal(LiteralData::Int(0))),
+                    mutable: true,
+                    index: (0, 0),
+                    data_type: DataType::Int,
+                },
+                // while i < 5 { let nums = [1,2,3]; i := i + 1 }
+                Expr::While {
+                    cond: Box::new(Expr::BinaryExpr {
+                        left: Box::new(Expr::Variable {
+                            name: "i".to_string(),
+                            index: (0, 0),
+                        }),
+                        op: Operator::Lt,
+                        right: Box::new(Expr::Literal(LiteralData::Int(5))),
+                    }),
+                    body: Box::new(Expr::Block {
+                        body: vec![
+                            Expr::Let {
+                                var_name: "nums".to_string(),
+                                value: Box::new(Expr::ListLiteral {
+                                    data_type: DataType::List {
+                                        element_type: Box::new(DataType::Int),
+                                    },
+                                    data: vec![
+                                        Expr::Literal(LiteralData::Int(1)),
+                                        Expr::Literal(LiteralData::Int(2)),
+                                        Expr::Literal(LiteralData::Int(3)),
+                                    ],
+                                }),
+                                mutable: false,
+                                index: (0, 1),
+                                data_type: DataType::List {
+                                    element_type: Box::new(DataType::Int),
+                                },
+                            },
+                            Expr::Assign {
+                                name: "i".to_string(),
+                                value: Box::new(Expr::BinaryExpr {
+                                    left: Box::new(Expr::Variable {
+                                        name: "i".to_string(),
+                                        index: (0, 0),
+                                    }),
+                                    op: Operator::Add,
+                                    right: Box::new(Expr::Literal(LiteralData::Int(1))),
+                                }),
+                                index: (0, 0),
+                            },
+                        ],
+                        environment: 1,
+                    }),
+                },
+                Expr::Literal(LiteralData::Int(0)),
+            ],
+            environment: 0,
+        };
+
+        let mut symbols = SymbolTable::new();
+        let mut expr_mut = expr.clone();
+        expr_mut.prepare(&mut symbols).unwrap();
+
+        let result = compiler.compile_and_run(&expr_mut, &symbols).unwrap();
+        assert_eq!(result, 0);
+        // This test verifies the fix works without crashing.
+        // Before the fix, the old list values would leak on each iteration.
+        // After the fix, each iteration's list is properly released before
+        // the new one is stored.
+    }
 }

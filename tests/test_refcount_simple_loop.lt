@@ -1,0 +1,8 @@
+// Simple test: 3 iterations with one list per iteration
+let var i = 0;
+while i < 3 {
+    let x: List of Int = [i];
+    output(x);
+    i := i + 1
+};
+output('done');

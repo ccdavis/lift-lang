@@ -82,8 +82,32 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                     builder.ins().call(drop_func, &[val]);
                 }
             } else {
-                // For non-string types, just store the value
-                builder.ins().stack_store(val, existing_var_info.slot, 0);
+                // For non-string heap types, we need to release the old value first
+                // to avoid memory leaks when rebinding variables in loops
+                let release_type_name = match &lift_type {
+                    DataType::List { .. } => Some("list"),
+                    DataType::Map { .. } => Some("map"),
+                    DataType::Range(_) => Some("range"),
+                    DataType::Struct { .. } => Some("struct"),
+                    _ => None,
+                };
+
+                if let Some(type_name) = release_type_name {
+                    // Load the old value before overwriting
+                    let old_val = builder
+                        .ins()
+                        .stack_load(existing_var_info.cranelift_type, existing_var_info.slot, 0);
+                    // Store the new value
+                    builder.ins().stack_store(val, existing_var_info.slot, 0);
+                    // Release the old value (after storing new to preserve memory)
+                    Self::emit_release_call(builder, runtime_funcs, old_val, type_name);
+                    // Untrack the new value - the variable now owns it, so scope exit
+                    // shouldn't release it (it will be released on next rebind or function exit)
+                    Self::untrack_allocation(scope_allocations, val);
+                } else {
+                    // For primitive types, just store the value
+                    builder.ins().stack_store(val, existing_var_info.slot, 0);
+                }
             }
             return Ok(None);
         }
@@ -137,21 +161,25 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 0,
             ));
 
+            // Check if this is a heap type that needs special handling for loops
+            let release_type_name = match &lift_type {
+                DataType::List { .. } => Some("list"),
+                DataType::Map { .. } => Some("map"),
+                DataType::Range(_) => Some("range"),
+                DataType::Struct { .. } => Some("struct"),
+                _ => None,
+            };
+
             // Store the value in the stack slot
             builder.ins().stack_store(val, slot, 0);
 
-            // For heap types stored in variables, UNTRACK from scope_allocations
-            // The variable now owns the value - it will be released via assignment (:=)
-            // or when the function returns. If we don't untrack, scope exit would
-            // double-free values that were already released via assignment.
-            let is_heap_type = matches!(
-                &lift_type,
-                DataType::List { .. }
-                    | DataType::Map { .. }
-                    | DataType::Range(_)
-                    | DataType::Struct { .. }
-            );
-            if is_heap_type {
+            // For heap types, we need to handle cleanup.
+            // The variable now owns the value - untrack from scope_allocations
+            // so scope exit doesn't release it (that would cause issues in loops).
+            //
+            // NOTE: This doesn't handle releasing previous values in loops.
+            // That's handled by the while loop compilation which tracks heap vars.
+            if release_type_name.is_some() {
                 Self::untrack_allocation(scope_allocations, val);
             }
 
