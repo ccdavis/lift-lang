@@ -133,6 +133,13 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                         .ok_or_else(|| "Runtime function lift_str_concat not found".to_string())?;
                     let inst = builder.ins().call(*func_ref, &[left_val, right_val]);
                     let result = builder.inst_results(inst)[0];
+                    // Release temporary string operands (concat borrows, creates new result)
+                    if Self::is_owned_temporary(left) {
+                        Self::emit_release(builder, left_val, &DataType::Str, runtime_funcs)?;
+                    }
+                    if Self::is_owned_temporary(right) {
+                        Self::emit_release(builder, right_val, &DataType::Str, runtime_funcs)?;
+                    }
                     return Ok(Some(result));
                 }
                 Operator::Eq => {
@@ -144,6 +151,13 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                     let result_i8 = builder.inst_results(inst)[0];
                     // Extend I8 to I64
                     let result_i64 = builder.ins().uextend(types::I64, result_i8);
+                    // Release temporary string operands
+                    if Self::is_owned_temporary(left) {
+                        Self::emit_release(builder, left_val, &DataType::Str, runtime_funcs)?;
+                    }
+                    if Self::is_owned_temporary(right) {
+                        Self::emit_release(builder, right_val, &DataType::Str, runtime_funcs)?;
+                    }
                     return Ok(Some(result_i64));
                 }
                 Operator::Neq => {
@@ -158,6 +172,13 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                     // Negate with XOR 1 (0 becomes 1, 1 becomes 0)
                     let one = builder.ins().iconst(types::I64, 1);
                     let neq = builder.ins().bxor(eq_i64, one);
+                    // Release temporary string operands
+                    if Self::is_owned_temporary(left) {
+                        Self::emit_release(builder, left_val, &DataType::Str, runtime_funcs)?;
+                    }
+                    if Self::is_owned_temporary(right) {
+                        Self::emit_release(builder, right_val, &DataType::Str, runtime_funcs)?;
+                    }
                     return Ok(Some(neq));
                 }
                 _ => return Err(format!("Operator {:?} not supported for strings", op)),
@@ -187,11 +208,13 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
 
             // Promote Int to Flt if necessary
             // If left is Int but right is Flt, convert left to Flt
-            if matches!(left_type, Some(DataType::Int)) && matches!(right_type, Some(DataType::Flt)) {
+            if matches!(left_type, Some(DataType::Int)) && matches!(right_type, Some(DataType::Flt))
+            {
                 left_val = builder.ins().fcvt_from_sint(types::F64, left_val);
             }
             // If right is Int but left is Flt, convert right to Flt
-            if matches!(right_type, Some(DataType::Int)) && matches!(left_type, Some(DataType::Flt)) {
+            if matches!(right_type, Some(DataType::Int)) && matches!(left_type, Some(DataType::Flt))
+            {
                 right_val = builder.ins().fcvt_from_sint(types::F64, right_val);
             }
 
@@ -444,9 +467,13 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
     ) -> Result<Option<Value>, String> {
-        let mut last_value = None;
+        use crate::compile_types::is_heap_type;
+        use crate::semantic::determine_type_with_symbols;
 
-        for expr in body {
+        let mut last_value = None;
+        let body_len = body.len();
+
+        for (i, expr) in body.iter().enumerate() {
             last_value = Self::compile_expr_static(
                 builder,
                 expr,
@@ -455,6 +482,20 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 user_func_refs,
                 variables,
             )?;
+
+            // Release discarded heap temporaries from non-last expressions
+            if i < body_len - 1 {
+                if let Some(val) = last_value {
+                    if Self::is_owned_temporary(expr) {
+                        if let Some(expr_type) = determine_type_with_symbols(expr, symbols, 0) {
+                            let resolved = Self::resolve_type_alias(&expr_type, symbols);
+                            if is_heap_type(&resolved) {
+                                Self::emit_release(builder, val, &resolved, runtime_funcs)?;
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         Ok(last_value)
@@ -621,6 +662,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
     ) -> Result<(), String> {
+        use crate::compile_types::is_heap_type;
         use crate::semantic::determine_type_with_symbols;
         use crate::syntax::DataType;
 
@@ -675,6 +717,11 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
 
             // Call the function
             builder.ins().call(*func_ref, &[call_val]);
+
+            // Release temporary heap values after output (output borrows, doesn't own)
+            if is_heap_type(&expr_type) && Self::is_owned_temporary(expr) {
+                Self::emit_release(builder, val, &expr_type, runtime_funcs)?;
+            }
         }
 
         // Print newline after all output items (to match interpreter behavior)

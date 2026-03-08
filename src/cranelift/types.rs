@@ -6,10 +6,12 @@ use cranelift::prelude::*;
 use cranelift_codegen::ir::StackSlot;
 
 /// Information about a variable in the compiled code
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(crate) struct VarInfo {
     pub(crate) slot: StackSlot,
     pub(crate) cranelift_type: Type, // I64, F64, or pointer type
+    pub(crate) lift_type: Option<DataType>, // Lift type for refcount management
+    pub(crate) is_param: bool,       // Function parameters are not owned
 }
 
 /// Convert DataType to runtime type tag (matches constants in runtime.rs)

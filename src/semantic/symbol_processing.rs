@@ -153,8 +153,8 @@ pub fn add_symbols(
                             let method_name = format!("{}.{}", type_name, fn_name);
 
                             // Check if it's a built-in method
-                            let is_builtin =
-                                matches!(fn_name.as_str(), "upper" | "lower" | "first" | "last");
+                            use crate::syntax::BuiltinMethod;
+                            let is_builtin = BuiltinMethod::from_name(type_name, fn_name).is_some();
 
                             if let Some(found_index) =
                                 symbols.find_index_reachable_from(&method_name, _current_scope_id)

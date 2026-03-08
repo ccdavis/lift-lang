@@ -86,6 +86,11 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 _ => elem_val_raw,
             };
 
+            // Retain variable references stored in collections (collection takes ownership)
+            if !Self::is_owned_temporary(elem) && crate::compile_types::is_heap_type(&elem_type) {
+                Self::emit_retain(builder, elem_val, &elem_type, runtime_funcs)?;
+            }
+
             // Call lift_list_set(list, index, value)
             let index = builder.ins().iconst(types::I64, i as i64);
             builder
@@ -238,10 +243,22 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 _ => value_val_raw,
             };
 
+            // Retain variable references stored in maps (map takes ownership)
+            if !Self::is_owned_temporary(value_expr)
+                && crate::compile_types::is_heap_type(&actual_value_type)
+            {
+                Self::emit_retain(builder, value_val, &actual_value_type, runtime_funcs)?;
+            }
+
             // Call lift_map_set(map, key, value)
             builder
                 .ins()
                 .call(*set_func_ref, &[map_ptr, key_val, value_val]);
+
+            // Release temporary string keys (map copies key content via MapKey::from_i64)
+            if matches!(key_data, KeyData::Str(_)) {
+                Self::emit_release(builder, key_val, &DataType::Str, runtime_funcs)?;
+            }
         }
 
         Ok(Some(map_ptr))
@@ -317,13 +334,22 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 };
                 Ok(Some(result))
             }
-            DataType::Map { value_type, .. } => {
+            DataType::Map {
+                key_type,
+                value_type,
+            } => {
                 // Call lift_map_get(map, key) -> i64
                 let func_ref = runtime_funcs
                     .get("lift_map_get")
                     .ok_or_else(|| "Runtime function lift_map_get not found".to_string())?;
                 let inst = builder.ins().call(*func_ref, &[collection, index_val]);
                 let result_i64 = builder.inst_results(inst)[0];
+
+                // Release temporary string key after lookup (map copies key content)
+                if crate::compile_types::is_heap_type(&key_type) && Self::is_owned_temporary(index)
+                {
+                    Self::emit_release(builder, index_val, &key_type, runtime_funcs)?;
+                }
 
                 // Convert i64 back to the proper value type
                 let result = match *value_type {

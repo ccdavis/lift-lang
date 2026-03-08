@@ -1,8 +1,61 @@
 // Runtime library for Lift compiler
 // These functions are called from JIT-compiled code to handle heap-allocated types
 
-use std::ffi::CString;
 use std::os::raw::c_char;
+
+use std::alloc::{self, Layout};
+
+// ============================================================================
+// Reference Counting Infrastructure for Strings
+// ============================================================================
+//
+// String memory layout: [refcount: i64][string bytes with null terminator]
+// The pointer returned to JIT code points to the string data (after the header).
+// All existing functions continue to see *const c_char as before.
+
+/// Allocate a refcounted string. Returns pointer to string data (after refcount header).
+unsafe fn alloc_rc_string(s: &str) -> *mut c_char {
+    let bytes = s.as_bytes();
+    let total = 8 + bytes.len() + 1; // refcount + data + null terminator
+    let layout = Layout::from_size_align(total, 8).unwrap();
+    let ptr = alloc::alloc(layout);
+    if ptr.is_null() {
+        return std::ptr::null_mut();
+    }
+    *(ptr as *mut i64) = 1; // refcount = 1
+    std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr.add(8), bytes.len());
+    *ptr.add(8 + bytes.len()) = 0; // null terminator
+    ptr.add(8) as *mut c_char
+}
+
+/// Get pointer to the refcount of a refcounted string (8 bytes before the data).
+unsafe fn rc_string_header(ptr: *const c_char) -> *mut i64 {
+    (ptr as *mut u8).sub(8) as *mut i64
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn lift_str_retain(ptr: *mut c_char) {
+    if ptr.is_null() {
+        return;
+    }
+    *rc_string_header(ptr) += 1;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn lift_str_release(ptr: *mut c_char) {
+    if ptr.is_null() {
+        return;
+    }
+    let rc = rc_string_header(ptr);
+    *rc -= 1;
+    if *rc <= 0 {
+        let c_str = std::ffi::CStr::from_ptr(ptr);
+        let len = c_str.to_bytes_with_nul().len();
+        let total = 8 + len;
+        let layout = Layout::from_size_align(total, 8).unwrap();
+        alloc::dealloc((ptr as *mut u8).sub(8), layout);
+    }
+}
 
 // Type tags for collection elements
 // These correspond to Lift DataType variants
@@ -14,6 +67,35 @@ pub const TYPE_LIST: i8 = 4;
 pub const TYPE_MAP: i8 = 5;
 pub const TYPE_RANGE: i8 = 6;
 pub const TYPE_STRUCT: i8 = 7;
+
+/// Returns true if the type tag represents a heap-allocated type
+fn is_heap_type_tag(tag: i8) -> bool {
+    tag >= TYPE_STR
+}
+
+/// Retain a heap-allocated value based on its type tag
+unsafe fn retain_heap_value(val: i64, type_tag: i8) {
+    match type_tag {
+        TYPE_STR => lift_str_retain(val as *mut c_char),
+        TYPE_LIST => lift_list_retain(val as *mut LiftList),
+        TYPE_MAP => lift_map_retain(val as *mut LiftMap),
+        TYPE_RANGE => lift_range_retain(val as *mut LiftRange),
+        TYPE_STRUCT => lift_struct_retain(val as *mut LiftStruct),
+        _ => {}
+    }
+}
+
+/// Release a heap-allocated value based on its type tag
+unsafe fn release_heap_value(val: i64, type_tag: i8) {
+    match type_tag {
+        TYPE_STR => lift_str_release(val as *mut c_char),
+        TYPE_LIST => lift_list_release(val as *mut LiftList),
+        TYPE_MAP => lift_map_release(val as *mut LiftMap),
+        TYPE_RANGE => lift_range_release(val as *mut LiftRange),
+        TYPE_STRUCT => lift_struct_release(val as *mut LiftStruct),
+        _ => {}
+    }
+}
 
 // ============================================================================
 // Output Functions
@@ -236,13 +318,9 @@ pub unsafe extern "C" fn lift_str_new(ptr: *const c_char) -> *mut c_char {
     if ptr.is_null() {
         return std::ptr::null_mut();
     }
-    unsafe {
-        let c_str = std::ffi::CStr::from_ptr(ptr);
-        if let Ok(s) = c_str.to_str() {
-            if let Ok(new_cstr) = CString::new(s) {
-                return new_cstr.into_raw();
-            }
-        }
+    let c_str = std::ffi::CStr::from_ptr(ptr);
+    if let Ok(s) = c_str.to_str() {
+        return alloc_rc_string(s);
     }
     std::ptr::null_mut()
 }
@@ -253,22 +331,14 @@ pub unsafe extern "C" fn lift_str_concat(s1: *const c_char, s2: *const c_char) -
         return std::ptr::null_mut();
     }
 
-    unsafe {
-        let str1 = std::ffi::CStr::from_ptr(s1);
-        let str2 = std::ffi::CStr::from_ptr(s2);
+    let str1 = std::ffi::CStr::from_ptr(s1);
+    let str2 = std::ffi::CStr::from_ptr(s2);
 
-        if let (Ok(s1), Ok(s2)) = (str1.to_str(), str2.to_str()) {
-            // Remove quotes from both strings
-            let s1_trimmed = s1.trim_matches('\'');
-            let s2_trimmed = s2.trim_matches('\'');
-
-            // Concatenate and add quotes back
-            let result = format!("'{}{}'", s1_trimmed, s2_trimmed);
-
-            if let Ok(c_result) = CString::new(result) {
-                return c_result.into_raw();
-            }
-        }
+    if let (Ok(s1), Ok(s2)) = (str1.to_str(), str2.to_str()) {
+        let s1_trimmed = s1.trim_matches('\'');
+        let s2_trimmed = s2.trim_matches('\'');
+        let result = format!("'{}{}'", s1_trimmed, s2_trimmed);
+        return alloc_rc_string(&result);
     }
     std::ptr::null_mut()
 }
@@ -291,11 +361,7 @@ pub unsafe extern "C" fn lift_str_len(ptr: *const c_char) -> i64 {
 
 #[no_mangle]
 pub unsafe extern "C" fn lift_str_free(ptr: *mut c_char) {
-    if !ptr.is_null() {
-        unsafe {
-            let _ = CString::from_raw(ptr);
-        }
-    }
+    lift_str_release(ptr);
 }
 
 // ============================================================================
@@ -330,16 +396,12 @@ pub unsafe extern "C" fn lift_str_eq(s1: *const c_char, s2: *const c_char) -> i8
 /// Create a Lift string from a Rust string (for testing)
 pub unsafe fn make_lift_string(s: &str) -> *mut c_char {
     let with_quotes = format!("'{}'", s);
-    if let Ok(c_str) = CString::new(with_quotes) {
-        c_str.into_raw()
-    } else {
-        std::ptr::null_mut()
-    }
+    alloc_rc_string(&with_quotes)
 }
 
 /// Free a Lift string (for testing)
 pub unsafe fn free_lift_string(ptr: *mut c_char) {
-    lift_str_free(ptr);
+    lift_str_release(ptr);
 }
 
 // ============================================================================
@@ -349,6 +411,7 @@ pub unsafe fn free_lift_string(ptr: *mut c_char) {
 /// Runtime representation of a list
 #[repr(C)]
 pub struct LiftList {
+    pub refcount: i64,
     pub elements: Vec<i64>,
     pub elem_type: i8, // Type tag for elements (TYPE_INT, TYPE_STR, etc.)
 }
@@ -358,6 +421,7 @@ pub struct LiftList {
 pub unsafe extern "C" fn lift_list_new(capacity: i64, elem_type: i8) -> *mut LiftList {
     let cap = capacity.max(0) as usize;
     let list = Box::new(LiftList {
+        refcount: 1,
         elements: Vec::with_capacity(cap),
         elem_type,
     });
@@ -391,7 +455,12 @@ pub unsafe extern "C" fn lift_list_get(list: *const LiftList, index: i64) -> i64
         let list_ref = &*list;
         let idx = index as usize;
         if idx < list_ref.elements.len() {
-            list_ref.elements[idx]
+            let val = list_ref.elements[idx];
+            // Retain heap elements so the caller owns a reference
+            if is_heap_type_tag(list_ref.elem_type) {
+                retain_heap_value(val, list_ref.elem_type);
+            }
+            val
         } else {
             0
         }
@@ -410,15 +479,35 @@ pub unsafe extern "C" fn lift_list_len(list: *const LiftList) -> i64 {
     }
 }
 
-/// Free a list
+/// Free a list (decrements refcount)
 #[no_mangle]
 pub unsafe extern "C" fn lift_list_free(list: *mut LiftList) {
+    lift_list_release(list);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn lift_list_retain(list: *mut LiftList) {
     if list.is_null() {
         return;
     }
-    unsafe {
-        let _list_box = Box::from_raw(list);
-        // Vec will be automatically dropped
+    (*list).refcount += 1;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn lift_list_release(list: *mut LiftList) {
+    if list.is_null() {
+        return;
+    }
+    (*list).refcount -= 1;
+    if (*list).refcount <= 0 {
+        // Release heap-typed elements before dropping the list
+        if is_heap_type_tag((*list).elem_type) {
+            let elem_type = (*list).elem_type;
+            for &val in &(*list).elements {
+                release_heap_value(val, elem_type);
+            }
+        }
+        let _ = Box::from_raw(list);
     }
 }
 
@@ -470,13 +559,8 @@ impl MapKey {
                 }
             }
             MapKey::Str(s) => {
-                // Need to allocate a new C string
-                let with_quotes = s.clone(); // String already has quotes
-                if let Ok(c_str) = CString::new(with_quotes) {
-                    c_str.into_raw() as i64
-                } else {
-                    0
-                }
+                // Allocate a refcounted string for the key
+                unsafe { alloc_rc_string(s) as i64 }
             }
         }
     }
@@ -485,6 +569,7 @@ impl MapKey {
 /// Runtime representation of a map
 #[repr(C)]
 pub struct LiftMap {
+    pub refcount: i64,
     pub entries: HashMap<MapKey, i64>,
     pub key_type: i8,   // Type tag for keys (TYPE_INT, TYPE_STR, etc.)
     pub value_type: i8, // Type tag for values
@@ -495,6 +580,7 @@ pub struct LiftMap {
 pub unsafe extern "C" fn lift_map_new(capacity: i64, key_type: i8, value_type: i8) -> *mut LiftMap {
     let cap = capacity.max(0) as usize;
     let map = Box::new(LiftMap {
+        refcount: 1,
         entries: HashMap::with_capacity(cap),
         key_type,
         value_type,
@@ -511,6 +597,12 @@ pub unsafe extern "C" fn lift_map_set(map: *mut LiftMap, key: i64, value: i64) {
     unsafe {
         let map_ref = &mut *map;
         if let Some(map_key) = MapKey::from_i64(key, map_ref.key_type) {
+            // Release old heap-typed value if overwriting an existing key
+            if is_heap_type_tag(map_ref.value_type) {
+                if let Some(&old_val) = map_ref.entries.get(&map_key) {
+                    release_heap_value(old_val, map_ref.value_type);
+                }
+            }
             map_ref.entries.insert(map_key, value);
         }
     }
@@ -525,7 +617,12 @@ pub unsafe extern "C" fn lift_map_get(map: *const LiftMap, key: i64) -> i64 {
     unsafe {
         let map_ref = &*map;
         if let Some(map_key) = MapKey::from_i64(key, map_ref.key_type) {
-            map_ref.entries.get(&map_key).copied().unwrap_or(0)
+            let val = map_ref.entries.get(&map_key).copied().unwrap_or(0);
+            // Retain heap values so the caller owns a reference
+            if val != 0 && is_heap_type_tag(map_ref.value_type) {
+                retain_heap_value(val, map_ref.value_type);
+            }
+            val
         } else {
             0
         }
@@ -544,15 +641,36 @@ pub unsafe extern "C" fn lift_map_len(map: *const LiftMap) -> i64 {
     }
 }
 
-/// Free a map
+/// Free a map (decrements refcount)
 #[no_mangle]
 pub unsafe extern "C" fn lift_map_free(map: *mut LiftMap) {
+    lift_map_release(map);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn lift_map_retain(map: *mut LiftMap) {
     if map.is_null() {
         return;
     }
-    unsafe {
-        let _map_box = Box::from_raw(map);
-        // HashMap will be automatically dropped
+    (*map).refcount += 1;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn lift_map_release(map: *mut LiftMap) {
+    if map.is_null() {
+        return;
+    }
+    (*map).refcount -= 1;
+    if (*map).refcount <= 0 {
+        // Release heap-typed values before dropping the map
+        // (MapKey::Str stores Rust Strings, dropped automatically with the HashMap)
+        if is_heap_type_tag((*map).value_type) {
+            let value_type = (*map).value_type;
+            for &val in (*map).entries.values() {
+                release_heap_value(val, value_type);
+            }
+        }
+        let _ = Box::from_raw(map);
     }
 }
 
@@ -563,6 +681,7 @@ pub unsafe extern "C" fn lift_map_free(map: *mut LiftMap) {
 /// Runtime representation of a range
 #[repr(C)]
 pub struct LiftRange {
+    pub refcount: i64,
     start: i64,
     end: i64,
 }
@@ -570,7 +689,11 @@ pub struct LiftRange {
 /// Create a new range
 #[no_mangle]
 pub unsafe extern "C" fn lift_range_new(start: i64, end: i64) -> *mut LiftRange {
-    let range = Box::new(LiftRange { start, end });
+    let range = Box::new(LiftRange {
+        refcount: 1,
+        start,
+        end,
+    });
     Box::into_raw(range)
 }
 
@@ -598,13 +721,28 @@ pub unsafe extern "C" fn lift_range_end(range: *const LiftRange) -> i64 {
     }
 }
 
-/// Free a range
+/// Free a range (decrements refcount)
 #[no_mangle]
 pub unsafe extern "C" fn lift_range_free(range: *mut LiftRange) {
-    if !range.is_null() {
-        unsafe {
-            let _ = Box::from_raw(range);
-        }
+    lift_range_release(range);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn lift_range_retain(range: *mut LiftRange) {
+    if range.is_null() {
+        return;
+    }
+    (*range).refcount += 1;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn lift_range_release(range: *mut LiftRange) {
+    if range.is_null() {
+        return;
+    }
+    (*range).refcount -= 1;
+    if (*range).refcount <= 0 {
+        let _ = Box::from_raw(range);
     }
 }
 
@@ -635,6 +773,7 @@ pub struct StructFieldValue {
 /// Runtime representation of a struct
 #[repr(C)]
 pub struct LiftStruct {
+    pub refcount: i64,
     pub type_name: String,
     pub fields: HashMap<String, StructFieldValue>,
 }
@@ -654,6 +793,7 @@ pub unsafe extern "C" fn lift_struct_new(
         if let Ok(name_str) = c_str.to_str() {
             let cap = field_count.max(0) as usize;
             let lift_struct = Box::new(LiftStruct {
+                refcount: 1,
                 type_name: name_str.to_string(),
                 fields: HashMap::with_capacity(cap),
             });
@@ -679,6 +819,12 @@ pub unsafe extern "C" fn lift_struct_set_field(
         let struct_ref = &mut *s;
         let c_str = std::ffi::CStr::from_ptr(field_name);
         if let Ok(name_str) = c_str.to_str() {
+            // Release old heap-typed field value if overwriting
+            if let Some(old_field) = struct_ref.fields.get(name_str) {
+                if is_heap_type_tag(old_field.type_tag) {
+                    release_heap_value(old_field.value, old_field.type_tag);
+                }
+            }
             struct_ref
                 .fields
                 .insert(name_str.to_string(), StructFieldValue { type_tag, value });
@@ -701,6 +847,10 @@ pub unsafe extern "C" fn lift_struct_get_field(
         let c_str = std::ffi::CStr::from_ptr(field_name);
         if let Ok(name_str) = c_str.to_str() {
             if let Some(field_value) = struct_ref.fields.get(name_str) {
+                // Retain heap fields so the caller owns a reference
+                if is_heap_type_tag(field_value.type_tag) {
+                    retain_heap_value(field_value.value, field_value.type_tag);
+                }
                 return field_value.value;
             }
         }
@@ -730,14 +880,34 @@ pub unsafe extern "C" fn lift_struct_get_field_type(
     -1
 }
 
-/// Free a struct
+/// Free a struct (decrements refcount)
 #[no_mangle]
 pub unsafe extern "C" fn lift_struct_free(s: *mut LiftStruct) {
-    if !s.is_null() {
-        unsafe {
-            let _ = Box::from_raw(s);
-            // HashMap and String will be automatically dropped
+    lift_struct_release(s);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn lift_struct_retain(s: *mut LiftStruct) {
+    if s.is_null() {
+        return;
+    }
+    (*s).refcount += 1;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn lift_struct_release(s: *mut LiftStruct) {
+    if s.is_null() {
+        return;
+    }
+    (*s).refcount -= 1;
+    if (*s).refcount <= 0 {
+        // Release heap-typed fields before dropping the struct
+        for field in (*s).fields.values() {
+            if is_heap_type_tag(field.type_tag) {
+                release_heap_value(field.value, field.type_tag);
+            }
         }
+        let _ = Box::from_raw(s);
     }
 }
 
@@ -928,16 +1098,11 @@ pub unsafe extern "C" fn lift_str_upper(s: *const c_char) -> *mut c_char {
     if s.is_null() {
         return std::ptr::null_mut();
     }
-    unsafe {
-        let c_str = std::ffi::CStr::from_ptr(s);
-        if let Ok(rust_str) = c_str.to_str() {
-            let trimmed = rust_str.trim_matches('\'');
-            let upper = trimmed.to_uppercase();
-            let result = format!("'{}'", upper);
-            if let Ok(c_result) = CString::new(result) {
-                return c_result.into_raw();
-            }
-        }
+    let c_str = std::ffi::CStr::from_ptr(s);
+    if let Ok(rust_str) = c_str.to_str() {
+        let trimmed = rust_str.trim_matches('\'');
+        let result = format!("'{}'", trimmed.to_uppercase());
+        return alloc_rc_string(&result);
     }
     std::ptr::null_mut()
 }
@@ -947,16 +1112,11 @@ pub unsafe extern "C" fn lift_str_lower(s: *const c_char) -> *mut c_char {
     if s.is_null() {
         return std::ptr::null_mut();
     }
-    unsafe {
-        let c_str = std::ffi::CStr::from_ptr(s);
-        if let Ok(rust_str) = c_str.to_str() {
-            let trimmed = rust_str.trim_matches('\'');
-            let lower = trimmed.to_lowercase();
-            let result = format!("'{}'", lower);
-            if let Ok(c_result) = CString::new(result) {
-                return c_result.into_raw();
-            }
-        }
+    let c_str = std::ffi::CStr::from_ptr(s);
+    if let Ok(rust_str) = c_str.to_str() {
+        let trimmed = rust_str.trim_matches('\'');
+        let result = format!("'{}'", trimmed.to_lowercase());
+        return alloc_rc_string(&result);
     }
     std::ptr::null_mut()
 }
@@ -966,19 +1126,14 @@ pub unsafe extern "C" fn lift_str_substring(s: *const c_char, start: i64, end: i
     if s.is_null() {
         return std::ptr::null_mut();
     }
-    unsafe {
-        let c_str = std::ffi::CStr::from_ptr(s);
-        if let Ok(rust_str) = c_str.to_str() {
-            let trimmed = rust_str.trim_matches('\'');
-            let start_idx = start.max(0) as usize;
-            let end_idx = end.min(trimmed.len() as i64) as usize;
-            if start_idx <= end_idx && end_idx <= trimmed.len() {
-                let substring = &trimmed[start_idx..end_idx];
-                let result = format!("'{}'", substring);
-                if let Ok(c_result) = CString::new(result) {
-                    return c_result.into_raw();
-                }
-            }
+    let c_str = std::ffi::CStr::from_ptr(s);
+    if let Ok(rust_str) = c_str.to_str() {
+        let trimmed = rust_str.trim_matches('\'');
+        let start_idx = start.max(0) as usize;
+        let end_idx = end.min(trimmed.len() as i64) as usize;
+        if start_idx <= end_idx && end_idx <= trimmed.len() {
+            let result = format!("'{}'", &trimmed[start_idx..end_idx]);
+            return alloc_rc_string(&result);
         }
     }
     std::ptr::null_mut()
@@ -1010,16 +1165,11 @@ pub unsafe extern "C" fn lift_str_trim(s: *const c_char) -> *mut c_char {
     if s.is_null() {
         return std::ptr::null_mut();
     }
-    unsafe {
-        let c_str = std::ffi::CStr::from_ptr(s);
-        if let Ok(rust_str) = c_str.to_str() {
-            let trimmed_quotes = rust_str.trim_matches('\'');
-            let trimmed = trimmed_quotes.trim();
-            let result = format!("'{}'", trimmed);
-            if let Ok(c_result) = CString::new(result) {
-                return c_result.into_raw();
-            }
-        }
+    let c_str = std::ffi::CStr::from_ptr(s);
+    if let Ok(rust_str) = c_str.to_str() {
+        let trimmed = rust_str.trim_matches('\'').trim();
+        let result = format!("'{}'", trimmed);
+        return alloc_rc_string(&result);
     }
     std::ptr::null_mut()
 }
@@ -1032,27 +1182,25 @@ pub unsafe extern "C" fn lift_str_split(
     if s.is_null() || delimiter.is_null() {
         return std::ptr::null_mut();
     }
-    unsafe {
-        let c_str = std::ffi::CStr::from_ptr(s);
-        let c_delim = std::ffi::CStr::from_ptr(delimiter);
-        if let (Ok(rust_str), Ok(rust_delim)) = (c_str.to_str(), c_delim.to_str()) {
-            let trimmed = rust_str.trim_matches('\'');
-            let delim_trimmed = rust_delim.trim_matches('\'');
-            let parts: Vec<i64> = trimmed
-                .split(delim_trimmed)
-                .map(|part| {
-                    let formatted = format!("'{}'", part);
-                    let c_string = CString::new(formatted).unwrap();
-                    c_string.into_raw() as i64
-                })
-                .collect();
+    let c_str = std::ffi::CStr::from_ptr(s);
+    let c_delim = std::ffi::CStr::from_ptr(delimiter);
+    if let (Ok(rust_str), Ok(rust_delim)) = (c_str.to_str(), c_delim.to_str()) {
+        let trimmed = rust_str.trim_matches('\'');
+        let delim_trimmed = rust_delim.trim_matches('\'');
+        let parts: Vec<i64> = trimmed
+            .split(delim_trimmed)
+            .map(|part| {
+                let formatted = format!("'{}'", part);
+                alloc_rc_string(&formatted) as i64
+            })
+            .collect();
 
-            let list = Box::new(LiftList {
-                elements: parts,
-                elem_type: TYPE_STR,
-            });
-            return Box::into_raw(list);
-        }
+        let list = Box::new(LiftList {
+            refcount: 1,
+            elements: parts,
+            elem_type: TYPE_STR,
+        });
+        return Box::into_raw(list);
     }
     std::ptr::null_mut()
 }
@@ -1066,22 +1214,17 @@ pub unsafe extern "C" fn lift_str_replace(
     if s.is_null() || old.is_null() || new.is_null() {
         return std::ptr::null_mut();
     }
-    unsafe {
-        let c_str = std::ffi::CStr::from_ptr(s);
-        let c_old = std::ffi::CStr::from_ptr(old);
-        let c_new = std::ffi::CStr::from_ptr(new);
-        if let (Ok(rust_str), Ok(rust_old), Ok(rust_new)) =
-            (c_str.to_str(), c_old.to_str(), c_new.to_str())
-        {
-            let trimmed = rust_str.trim_matches('\'');
-            let old_trimmed = rust_old.trim_matches('\'');
-            let new_trimmed = rust_new.trim_matches('\'');
-            let replaced = trimmed.replace(old_trimmed, new_trimmed);
-            let result = format!("'{}'", replaced);
-            if let Ok(c_result) = CString::new(result) {
-                return c_result.into_raw();
-            }
-        }
+    let c_str = std::ffi::CStr::from_ptr(s);
+    let c_old = std::ffi::CStr::from_ptr(old);
+    let c_new = std::ffi::CStr::from_ptr(new);
+    if let (Ok(rust_str), Ok(rust_old), Ok(rust_new)) =
+        (c_str.to_str(), c_old.to_str(), c_new.to_str())
+    {
+        let trimmed = rust_str.trim_matches('\'');
+        let old_trimmed = rust_old.trim_matches('\'');
+        let new_trimmed = rust_new.trim_matches('\'');
+        let result = format!("'{}'", trimmed.replace(old_trimmed, new_trimmed));
+        return alloc_rc_string(&result);
     }
     std::ptr::null_mut()
 }
@@ -1155,7 +1298,12 @@ pub unsafe extern "C" fn lift_list_first(list: *const LiftList) -> i64 {
         if list_ref.elements.is_empty() {
             panic!("Cannot get first element of empty list");
         }
-        list_ref.elements[0]
+        let val = list_ref.elements[0];
+        // Retain heap elements so the caller owns a reference
+        if is_heap_type_tag(list_ref.elem_type) {
+            retain_heap_value(val, list_ref.elem_type);
+        }
+        val
     }
 }
 
@@ -1169,7 +1317,12 @@ pub unsafe extern "C" fn lift_list_last(list: *const LiftList) -> i64 {
         if list_ref.elements.is_empty() {
             panic!("Cannot get last element of empty list");
         }
-        list_ref.elements[list_ref.elements.len() - 1]
+        let val = list_ref.elements[list_ref.elements.len() - 1];
+        // Retain heap elements so the caller owns a reference
+        if is_heap_type_tag(list_ref.elem_type) {
+            retain_heap_value(val, list_ref.elem_type);
+        }
+        val
     }
 }
 
@@ -1180,10 +1333,32 @@ pub unsafe extern "C" fn lift_list_contains(list: *const LiftList, item: i64) ->
     }
     unsafe {
         let list_ref = &*list;
-        if list_ref.elements.contains(&item) {
-            1
-        } else {
+        // For strings, compare content not pointer addresses
+        if list_ref.elem_type == TYPE_STR {
+            let needle_ptr = item as *const c_char;
+            if needle_ptr.is_null() {
+                return 0;
+            }
+            for &elem in &list_ref.elements {
+                if lift_str_eq(elem as *const c_char, needle_ptr) != 0 {
+                    return 1;
+                }
+            }
             0
+        } else if list_ref.elem_type == TYPE_FLT {
+            // For floats, compare bit patterns (i64 values are bitcast f64)
+            if list_ref.elements.contains(&item) {
+                1
+            } else {
+                0
+            }
+        } else {
+            // For Int, Bool, and pointer types (List, Map, etc.), direct comparison
+            if list_ref.elements.contains(&item) {
+                1
+            } else {
+                0
+            }
         }
     }
 }
@@ -1208,9 +1383,17 @@ pub unsafe extern "C" fn lift_list_slice(
             Vec::new()
         };
 
+        // Retain heap-typed elements so the new list owns references
+        if is_heap_type_tag(list_ref.elem_type) {
+            for &val in &sliced {
+                retain_heap_value(val, list_ref.elem_type);
+            }
+        }
+
         let new_list = Box::new(LiftList {
+            refcount: 1,
             elements: sliced,
-            elem_type: list_ref.elem_type, // Preserve element type from original list
+            elem_type: list_ref.elem_type,
         });
         Box::into_raw(new_list)
     }
@@ -1226,9 +1409,17 @@ pub unsafe extern "C" fn lift_list_reverse(list: *const LiftList) -> *mut LiftLi
         let mut reversed = list_ref.elements.clone();
         reversed.reverse();
 
+        // Retain heap-typed elements so the new list owns references
+        if is_heap_type_tag(list_ref.elem_type) {
+            for &val in &reversed {
+                retain_heap_value(val, list_ref.elem_type);
+            }
+        }
+
         let new_list = Box::new(LiftList {
+            refcount: 1,
             elements: reversed,
-            elem_type: list_ref.elem_type, // Preserve element type from original list
+            elem_type: list_ref.elem_type,
         });
         Box::into_raw(new_list)
     }
@@ -1268,9 +1459,7 @@ pub unsafe extern "C" fn lift_list_join(
 
             let joined = strings.join(sep_trimmed);
             let result = format!("'{}'", joined);
-            if let Ok(c_result) = CString::new(result) {
-                return c_result.into_raw();
-            }
+            return alloc_rc_string(&result);
         }
     }
     std::ptr::null_mut()
@@ -1307,8 +1496,9 @@ pub unsafe extern "C" fn lift_map_keys(map: *const LiftMap) -> *mut LiftList {
         let key_values: Vec<i64> = keys.iter().map(|k| k.to_i64()).collect();
 
         let list = Box::new(LiftList {
+            refcount: 1,
             elements: key_values,
-            elem_type: map_ref.key_type, // Keys have the map's key type
+            elem_type: map_ref.key_type,
         });
         Box::into_raw(list)
     }
@@ -1326,9 +1516,17 @@ pub unsafe extern "C" fn lift_map_values(map: *const LiftMap) -> *mut LiftList {
 
         let values: Vec<i64> = key_value_pairs.iter().map(|&(_, v)| *v).collect();
 
+        // Retain heap-typed values so the new list owns references
+        if is_heap_type_tag(map_ref.value_type) {
+            for &val in &values {
+                retain_heap_value(val, map_ref.value_type);
+            }
+        }
+
         let list = Box::new(LiftList {
+            refcount: 1,
             elements: values,
-            elem_type: map_ref.value_type, // Values have the map's value type
+            elem_type: map_ref.value_type,
         });
         Box::into_raw(list)
     }

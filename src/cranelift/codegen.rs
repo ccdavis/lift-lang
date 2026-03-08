@@ -108,6 +108,14 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 &mut self.variables,
             )?;
 
+            // Release all owned heap variables before returning
+            Self::emit_scope_releases(
+                &mut builder,
+                &self.variables,
+                &runtime_refs,
+                None, // Main doesn't skip any variable
+            )?;
+
             // Return the result (or 0 if Unit)
             let return_value = result.unwrap_or_else(|| builder.ins().iconst(types::I64, 0));
             builder.ins().return_(&[return_value]);
@@ -384,6 +392,16 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         }
     }
 
+    /// Returns true if the expression produces an owned heap value that the consumer
+    /// is responsible for releasing. Variable loads are borrowed (tracked by the variable).
+    /// Index and FieldAccess return retained values from runtime (retain-on-borrow).
+    /// Everything else that produces a heap type creates a fresh owned allocation.
+    pub(super) fn is_owned_temporary(expr: &Expr) -> bool {
+        // Only Variable expressions are borrowed from tracked variables.
+        // Index, FieldAccess, MethodCall, Call, etc. all return owned values.
+        !matches!(expr, Expr::Variable { .. })
+    }
+
     /// Resolve type aliases to their underlying types (re-exported from types module)
     pub(super) fn resolve_type_alias(data_type: &DataType, symbols: &SymbolTable) -> DataType {
         resolve_type_alias(data_type, symbols)
@@ -392,5 +410,98 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
     /// Convert Lift DataType to Cranelift Type (re-exported from types module)
     pub(super) fn data_type_to_cranelift_type(dt: &DataType, pointer_type: Type) -> Type {
         super::types::data_type_to_cranelift_type(dt, pointer_type)
+    }
+
+    /// Emit a retain call for a heap-typed value
+    pub(super) fn emit_retain(
+        builder: &mut FunctionBuilder,
+        val: Value,
+        lift_type: &DataType,
+        runtime_funcs: &HashMap<String, FuncRef>,
+    ) -> Result<(), String> {
+        let func_name = match lift_type {
+            DataType::Str => "lift_str_retain",
+            DataType::List { .. } => "lift_list_retain",
+            DataType::Map { .. } => "lift_map_retain",
+            DataType::Range(_) => "lift_range_retain",
+            DataType::Struct(_) => "lift_struct_retain",
+            _ => return Ok(()), // Not a heap type
+        };
+        if let Some(func_ref) = runtime_funcs.get(func_name) {
+            builder.ins().call(*func_ref, &[val]);
+        }
+        Ok(())
+    }
+
+    /// Emit a release call for a heap-typed value
+    pub(super) fn emit_release(
+        builder: &mut FunctionBuilder,
+        val: Value,
+        lift_type: &DataType,
+        runtime_funcs: &HashMap<String, FuncRef>,
+    ) -> Result<(), String> {
+        let func_name = match lift_type {
+            DataType::Str => "lift_str_release",
+            DataType::List { .. } => "lift_list_release",
+            DataType::Map { .. } => "lift_map_release",
+            DataType::Range(_) => "lift_range_release",
+            DataType::Struct(_) => "lift_struct_release",
+            _ => return Ok(()), // Not a heap type
+        };
+        if let Some(func_ref) = runtime_funcs.get(func_name) {
+            builder.ins().call(*func_ref, &[val]);
+        }
+        Ok(())
+    }
+
+    /// Emit release calls for all owned heap variables at scope exit.
+    /// `skip_var` is the variable whose value is being returned (don't release it).
+    pub(super) fn emit_scope_releases(
+        builder: &mut FunctionBuilder,
+        variables: &HashMap<String, VarInfo>,
+        runtime_funcs: &HashMap<String, FuncRef>,
+        skip_var: Option<&str>,
+    ) -> Result<(), String> {
+        use crate::compile_types::is_heap_type;
+
+        for (name, var_info) in variables {
+            if var_info.is_param {
+                continue; // Don't release function parameters
+            }
+            if let Some(skip) = skip_var {
+                if name == skip {
+                    continue; // Don't release the return value
+                }
+            }
+            if let Some(ref lt) = var_info.lift_type {
+                if is_heap_type(lt) {
+                    let val = builder
+                        .ins()
+                        .stack_load(var_info.cranelift_type, var_info.slot, 0);
+                    Self::emit_release(builder, val, lt, runtime_funcs)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Find the name of the variable being returned (last expression in body).
+    pub(super) fn find_return_variable(expr: &Expr) -> Option<String> {
+        match expr {
+            Expr::Block { body, .. } | Expr::Program { body, .. } => {
+                body.iter().rev().find_map(|e| {
+                    if matches!(
+                        e,
+                        Expr::Unit | Expr::DefineFunction { .. } | Expr::DefineType { .. }
+                    ) {
+                        None
+                    } else {
+                        Self::find_return_variable(e)
+                    }
+                })
+            }
+            Expr::Variable { name, .. } => Some(name.clone()),
+            _ => None,
+        }
     }
 }

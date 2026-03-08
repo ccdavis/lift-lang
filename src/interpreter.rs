@@ -348,10 +348,13 @@ impl Expr {
                         ))),
                     }
                 }
-                _ => panic!(
-                    "Interpreter error: UnaryExpr operator {:?} not implemented",
-                    op
-                ),
+                _ => {
+                    return Err(Box::new(RuntimeError::new(
+                        &format!("UnaryExpr operator {:?} not implemented", op),
+                        None,
+                        None,
+                    )));
+                }
             },
             Expr::Len { expr } => {
                 let evaluated = expr.interpret(symbols, current_scope)?;
@@ -427,7 +430,11 @@ impl Expr {
                     ))),
                 }
             }
-            _ => panic!("Interpreter error: interpret() not implemented for '{self:?}'"),
+            _ => Err(Box::new(RuntimeError::new(
+                &format!("interpret() not implemented for '{self:?}'"),
+                None,
+                None,
+            ))),
         }
     }
 } // impl
@@ -493,16 +500,19 @@ fn interpret_call(
     args: &[KeywordArg],
 ) -> InterpreterResult {
     // Get the lambda for this function
-    let maybe_lambda = symbols.get_compiletime_value(&index);
-    if maybe_lambda.is_none() {
-        symbols.print_debug();
-        panic!(
-            "Compiler Error: Can't find function definition for '{}' at index '{},{}', in scope {}",
-            &fn_name, &index.0, &index.1, current_scope
-        );
-    }
-
-    let lm = maybe_lambda.unwrap();
+    let lm = match symbols.get_compiletime_value(&index) {
+        Some(expr) => expr,
+        None => {
+            return Err(Box::new(RuntimeError::new(
+                &format!(
+                    "Can't find function definition for '{}' at index '{},{}'",
+                    fn_name, index.0, index.1
+                ),
+                None,
+                None,
+            )));
+        }
+    };
 
     // If the call has any arguments we have to  evaluate them in the current scope before passing to the
     // lambda  (by updating the lambda's  environment with their values.)
@@ -519,9 +529,13 @@ fn interpret_call(
                     // Check if this is a built-in method
                     if let Some(ref builtin) = func.builtin {
                         if args.len() != func.params.len() {
-                            panic!(
-                                "Interpreter error: Function {fn_name} called with wrong number of arguments."
-                            );
+                            return Err(Box::new(RuntimeError::new(
+                                &format!(
+                                    "Function {fn_name} called with wrong number of arguments"
+                                ),
+                                None,
+                                None,
+                            )));
                         }
 
                         // Evaluate all arguments
@@ -546,14 +560,24 @@ fn interpret_call(
                                     as Box<dyn std::error::Error>
                             })
                         } else {
-                            panic!("Interpreter error: Built-in method {fn_name} called without 'self' argument");
+                            Err(Box::new(RuntimeError::new(
+                                &format!(
+                                    "Built-in method {fn_name} called without 'self' argument"
+                                ),
+                                None,
+                                None,
+                            )))
                         }
                     } else {
                         // Regular user-defined function
                         if args.len() != func.params.len() {
-                            panic!(
-                                "Interpreter error: Function {fn_name} called with wrong number of arguments."
-                            );
+                            return Err(Box::new(RuntimeError::new(
+                                &format!(
+                                    "Function {fn_name} called with wrong number of arguments"
+                                ),
+                                None,
+                                None,
+                            )));
                         }
 
                         for a in args {
@@ -567,27 +591,36 @@ fn interpret_call(
                                     &(*environment, assign_to_index),
                                 );
                             } else {
-                                panic!("Interpreter error: Keyword arg names must match the function definition parameters.");
+                                return Err(Box::new(RuntimeError::new(
+                                    &format!(
+                                        "Argument '{}' does not match any function parameter",
+                                        a.name
+                                    ),
+                                    None,
+                                    None,
+                                )));
                             }
                         }
 
                         interpret_lambda(symbols, func, *environment)
                     }
                 }
-                _ => {
-                    panic!(
-                        "Interpreter error: Expected Lambda inside DefineFunction for {fn_name}"
-                    );
-                }
+                _ => Err(Box::new(RuntimeError::new(
+                    &format!("Expected Lambda inside DefineFunction for {fn_name}"),
+                    None,
+                    None,
+                ))),
             }
         }
         Expr::Lambda { value, environment } => {
             // Check if this is a built-in method
             if let Some(ref builtin) = value.builtin {
                 if args.len() != value.params.len() {
-                    panic!(
-                        "Interpreter error: Function {fn_name} called with wrong number of arguments."
-                    );
+                    return Err(Box::new(RuntimeError::new(
+                        &format!("Function {fn_name} called with wrong number of arguments"),
+                        None,
+                        None,
+                    )));
                 }
 
                 // Evaluate all arguments
@@ -612,26 +645,37 @@ fn interpret_call(
                             as Box<dyn std::error::Error>
                     })
                 } else {
-                    panic!("Interpreter error: Built-in method {fn_name} called without 'self' argument");
+                    Err(Box::new(RuntimeError::new(
+                        &format!("Built-in method {fn_name} called without 'self' argument"),
+                        None,
+                        None,
+                    )))
                 }
             } else {
                 // Regular user-defined function
                 if args.len() != value.params.len() {
-                    // TODO this should be in the compile pass
-                    panic!(
-                        "Interpreter error: Function {fn_name} called with wrong number of arguments."
-                    );
+                    return Err(Box::new(RuntimeError::new(
+                        &format!("Function {fn_name} called with wrong number of arguments"),
+                        None,
+                        None,
+                    )));
                 }
 
                 for a in args {
                     let arg_value = a.value.interpret(symbols, current_scope)?;
 
-                    // TODO this part should be done in a compiler pass, it's sort of slow this way.
                     if let Some(assign_to_index) = symbols.get_index_in_scope(&a.name, environment)
                     {
                         symbols.update_runtime_value(arg_value, &(environment, assign_to_index));
                     } else {
-                        panic!("Interpreter error: Keyword arg names must match the function definition parameters.");
+                        return Err(Box::new(RuntimeError::new(
+                            &format!(
+                                "Argument '{}' does not match any function parameter",
+                                a.name
+                            ),
+                            None,
+                            None,
+                        )));
                     }
                 }
 
@@ -640,8 +684,15 @@ fn interpret_call(
         }
         _ => {
             if !args.is_empty() {
-                // TODO this should really be in the compile pass
-                panic!("Interpreter error: function {} called with {} args but it is a simple expression not a lambda. The type checking pass should have caught this.",fn_name, args.len());
+                return Err(Box::new(RuntimeError::new(
+                    &format!(
+                        "Function {} called with {} args but is not a lambda",
+                        fn_name,
+                        args.len()
+                    ),
+                    None,
+                    None,
+                )));
             }
             lm.interpret(symbols, current_scope)
         }
@@ -666,7 +717,7 @@ fn interpret_var(
 
     match stored_value {
         Expr::RuntimeData(d) => Ok(Expr::Literal(d.clone())),
-        _ => Ok(stored_value.clone())
+        _ => Ok(stored_value.clone()),
     }
 }
 
@@ -678,9 +729,11 @@ fn interprets_as_true(
 ) -> Result<bool, Box<dyn Error>> {
     match cond.interpret(symbols, current_scope)? {
         Expr::Literal(LiteralData::Bool(b)) | Expr::RuntimeData(LiteralData::Bool(b)) => Ok(b),
-        other => {
-            panic!("Can't use expression '{other:?}' as boolean. This is an interpreter bug. The type checker should have caught this.");
-        }
+        other => Err(Box::new(RuntimeError::new(
+            &format!("Can't use expression '{other:?}' as boolean"),
+            None,
+            None,
+        ))),
     }
 }
 
@@ -742,6 +795,9 @@ impl LiteralData {
             // Int→Flt promotion for Mul
             (Mul, Flt(l), Int(r)) => Flt(l * (*r as f64)),
             (Mul, Int(l), Flt(r)) => Flt((*l as f64) * r),
+            (Div, Int(_), Int(r)) if *r == 0 => {
+                return Err(RuntimeError::new("Division by zero", None, None).into());
+            }
             (Div, Int(l), Int(r)) => Int(l / r),
             (Div, Flt(l), Flt(r)) => Flt(l / r),
             // Int→Flt promotion for Div
@@ -841,10 +897,10 @@ fn interpret_binary(
             let r_val = symbols.borrow_runtime_value(*r_idx);
 
             match (l_val, r_val) {
-                (Expr::RuntimeData(l_data), Expr::RuntimeData(r_data)) |
-                (Expr::Literal(l_data), Expr::RuntimeData(r_data)) |
-                (Expr::RuntimeData(l_data), Expr::Literal(r_data)) |
-                (Expr::Literal(l_data), Expr::Literal(r_data)) => {
+                (Expr::RuntimeData(l_data), Expr::RuntimeData(r_data))
+                | (Expr::Literal(l_data), Expr::RuntimeData(r_data))
+                | (Expr::RuntimeData(l_data), Expr::Literal(r_data))
+                | (Expr::Literal(l_data), Expr::Literal(r_data)) => {
                     result = l_data.apply_binary_operator(r_data, op);
                 }
                 _ => {

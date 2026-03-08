@@ -614,56 +614,77 @@ pub fn typecheck(
             };
 
             // Check if it's a built-in method
-            let is_builtin = matches!(method_name.as_str(), "upper" | "lower" | "first" | "last");
+            let type_name = match &resolved_receiver_type {
+                DataType::Str => "Str",
+                DataType::List { .. } => "List",
+                DataType::Map { .. } => "Map",
+                DataType::Int => "Int",
+                DataType::Flt => "Flt",
+                DataType::Bool => "Bool",
+                DataType::Range(_) => "Range",
+                _ => "",
+            };
+            let builtin_opt = if !type_name.is_empty() {
+                crate::syntax::BuiltinMethod::from_name(type_name, method_name)
+            } else {
+                None
+            };
 
-            if is_builtin {
-                // Type check built-in methods using resolved type
-                match method_name.as_str() {
-                    "upper" | "lower" => {
-                        if !matches!(resolved_receiver_type, DataType::Str) {
-                            return Err(CompileError::typecheck(
+            if let Some(builtin) = builtin_opt {
+                use crate::syntax::BuiltinMethod;
+                // Type check built-in methods and return their result type
+                match builtin {
+                    // String methods returning Str
+                    BuiltinMethod::StrUpper | BuiltinMethod::StrLower | BuiltinMethod::StrTrim => {
+                        Ok(DataType::Str)
+                    }
+                    BuiltinMethod::StrSubstring | BuiltinMethod::StrReplace => Ok(DataType::Str),
+                    // String methods returning Bool
+                    BuiltinMethod::StrContains
+                    | BuiltinMethod::StrStartsWith
+                    | BuiltinMethod::StrEndsWith
+                    | BuiltinMethod::StrIsEmpty => Ok(DataType::Bool),
+                    // String split returns List of Str
+                    BuiltinMethod::StrSplit => Ok(DataType::List {
+                        element_type: Box::new(DataType::Str),
+                    }),
+                    // List first/last return element type
+                    BuiltinMethod::ListFirst | BuiltinMethod::ListLast => {
+                        match resolved_receiver_type {
+                            DataType::List { element_type } => Ok(*element_type),
+                            _ => Err(CompileError::typecheck(
                                 &format!(
-                                    "{} can only be called on Str, got {:?}",
+                                    "{} can only be called on List, got {:?}",
                                     method_name, receiver_type
                                 ),
                                 (0, 0),
-                            ));
+                            )),
                         }
-                        if !args.is_empty() {
-                            return Err(CompileError::typecheck(
-                                &format!(
-                                    "{} expects no arguments, got {}",
-                                    method_name,
-                                    args.len()
-                                ),
-                                (0, 0),
-                            ));
-                        }
-                        Ok(DataType::Str)
                     }
-                    "first" | "last" => match resolved_receiver_type {
-                        DataType::List { element_type } => {
-                            if !args.is_empty() {
-                                return Err(CompileError::typecheck(
-                                    &format!(
-                                        "{} expects no arguments, got {}",
-                                        method_name,
-                                        args.len()
-                                    ),
-                                    (0, 0),
-                                ));
-                            }
-                            Ok(*element_type)
-                        }
-                        _ => Err(CompileError::typecheck(
-                            &format!(
-                                "{} can only be called on List, got {:?}",
-                                method_name, receiver_type
-                            ),
-                            (0, 0),
-                        )),
+                    // List methods returning Bool
+                    BuiltinMethod::ListContains | BuiltinMethod::ListIsEmpty => Ok(DataType::Bool),
+                    // List slice/reverse return same list type
+                    BuiltinMethod::ListSlice | BuiltinMethod::ListReverse => {
+                        Ok(resolved_receiver_type)
+                    }
+                    // List join returns Str
+                    BuiltinMethod::ListJoin => Ok(DataType::Str),
+                    // Map keys returns List of key_type
+                    BuiltinMethod::MapKeys => match resolved_receiver_type {
+                        DataType::Map { key_type, .. } => Ok(DataType::List {
+                            element_type: key_type,
+                        }),
+                        _ => Ok(DataType::Unsolved),
                     },
-                    _ => Ok(DataType::Unsolved),
+                    // Map values returns List of value_type
+                    BuiltinMethod::MapValues => match resolved_receiver_type {
+                        DataType::Map { value_type, .. } => Ok(DataType::List {
+                            element_type: value_type,
+                        }),
+                        _ => Ok(DataType::Unsolved),
+                    },
+                    // Map methods returning Bool
+                    BuiltinMethod::MapContainsKey | BuiltinMethod::MapIsEmpty => Ok(DataType::Bool),
                 }
             } else if let Some(fn_expr) = symbols.get_symbol_value(fn_index) {
                 // Extract the function from either DefineFunction or Lambda

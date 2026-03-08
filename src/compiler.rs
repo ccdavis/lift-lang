@@ -111,6 +111,27 @@ impl JITCompiler {
         );
         builder.symbol("lift_struct_free", runtime::lift_struct_free as *const u8);
 
+        // Retain/Release symbols for reference counting
+        builder.symbol("lift_str_retain", runtime::lift_str_retain as *const u8);
+        builder.symbol("lift_str_release", runtime::lift_str_release as *const u8);
+        builder.symbol("lift_list_retain", runtime::lift_list_retain as *const u8);
+        builder.symbol("lift_list_release", runtime::lift_list_release as *const u8);
+        builder.symbol("lift_map_retain", runtime::lift_map_retain as *const u8);
+        builder.symbol("lift_map_release", runtime::lift_map_release as *const u8);
+        builder.symbol("lift_range_retain", runtime::lift_range_retain as *const u8);
+        builder.symbol(
+            "lift_range_release",
+            runtime::lift_range_release as *const u8,
+        );
+        builder.symbol(
+            "lift_struct_retain",
+            runtime::lift_struct_retain as *const u8,
+        );
+        builder.symbol(
+            "lift_struct_release",
+            runtime::lift_struct_release as *const u8,
+        );
+
         // Create the JIT module
         let module = JITModule::new(builder);
 

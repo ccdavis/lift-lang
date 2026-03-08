@@ -136,24 +136,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 let param_type =
                     Self::data_type_to_cranelift_type(&resolved_param_type, pointer_type);
 
-                if param.copy {
-                    // cpy parameter: allocate stack slot and store value
-                    let slot = builder.create_sized_stack_slot(StackSlotData::new(
-                        StackSlotKind::ExplicitSlot,
-                        8, // 8 bytes for i64/f64/pointer
-                        0,
-                    ));
-                    builder.ins().stack_store(param_value, slot, 0);
-                    variables.insert(
-                        param.name.clone(),
-                        VarInfo {
-                            slot,
-                            cranelift_type: param_type,
-                        },
-                    );
-                } else {
-                    // Regular parameter: create stack slot for immutable access
-                    // (we can't reassign to block params, so we store them)
+                {
                     let slot = builder.create_sized_stack_slot(StackSlotData::new(
                         StackSlotKind::ExplicitSlot,
                         8,
@@ -165,6 +148,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                         VarInfo {
                             slot,
                             cranelift_type: param_type,
+                            lift_type: Some(resolved_param_type.clone()),
+                            is_param: true, // Parameters are not owned by this function
                         },
                     );
                 }
@@ -183,6 +168,16 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             // Handle return value - all functions must return a value
             let return_value =
                 result.ok_or_else(|| format!("Function '{}' must return a value", fn_name))?;
+
+            // Release all owned heap variables before returning (skip the return variable)
+            let return_var = Self::find_return_variable(&function.body);
+            Self::emit_scope_releases(
+                &mut builder,
+                &variables,
+                &runtime_refs,
+                return_var.as_deref(),
+            )?;
+
             builder.ins().return_(&[return_value]);
 
             // Finalize
@@ -319,6 +314,7 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         user_func_refs: &HashMap<String, FuncRef>,
         variables: &mut HashMap<String, VarInfo>,
     ) -> Result<Option<Value>, String> {
+        use crate::compile_types::is_heap_type;
         use crate::semantic::determine_type_with_symbols;
         use crate::syntax::{BuiltinMethod, DataType};
 
@@ -409,8 +405,8 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
 
             // Handle return value (some methods return i8 booleans that need extending to i64)
             let results = builder.inst_results(inst);
-            if results.is_empty() {
-                Ok(None)
+            let method_result = if results.is_empty() {
+                None
             } else {
                 let result = results[0];
                 // Convert i8 bool to i64 if needed
@@ -427,12 +423,35 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 );
 
                 if needs_extension {
-                    let extended = builder.ins().uextend(types::I64, result);
-                    Ok(Some(extended))
+                    Some(builder.ins().uextend(types::I64, result))
                 } else {
-                    Ok(Some(result))
+                    Some(result)
+                }
+            };
+
+            // Release temporary receiver for built-in methods (they borrow, don't own)
+            if is_heap_type(&receiver_type) && Self::is_owned_temporary(receiver) {
+                Self::emit_release(builder, receiver_val, &receiver_type, runtime_funcs)?;
+            }
+
+            // Release temporary heap args for built-in methods
+            for (i, arg) in args.iter().enumerate() {
+                if Self::is_owned_temporary(&arg.value) {
+                    if let Some(arg_type) = determine_type_with_symbols(&arg.value, symbols, 0) {
+                        let resolved = Self::resolve_type_alias(&arg_type, symbols);
+                        if is_heap_type(&resolved) {
+                            Self::emit_release(
+                                builder,
+                                arg_vals[i + 1], // +1 because arg_vals[0] is receiver
+                                &resolved,
+                                runtime_funcs,
+                            )?;
+                        }
+                    }
                 }
             }
+
+            Ok(method_result)
         } else {
             // User-defined method - look it up and call as function
             // Try the original type name first (for methods defined on type aliases)

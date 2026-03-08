@@ -640,6 +640,32 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         self.runtime_funcs
             .insert("lift_struct_free".to_string(), func_id);
 
+        // ==================== Retain/Release Declarations ====================
+
+        // For each heap type: retain(ptr) and release(ptr)
+        let rc_types = [
+            "lift_str_retain",
+            "lift_str_release",
+            "lift_list_retain",
+            "lift_list_release",
+            "lift_map_retain",
+            "lift_map_release",
+            "lift_range_retain",
+            "lift_range_release",
+            "lift_struct_retain",
+            "lift_struct_release",
+        ];
+
+        for name in &rc_types {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type));
+            let func_id = self
+                .module
+                .declare_function(name, cranelift_module::Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare {}: {}", name, e))?;
+            self.runtime_funcs.insert(name.to_string(), func_id);
+        }
+
         Ok(())
     }
 }

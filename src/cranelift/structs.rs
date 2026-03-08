@@ -126,6 +126,13 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
                 data_type_to_type_tag(&field_type_resolved) as i64,
             );
 
+            // Retain variable references stored in structs (struct takes ownership)
+            if !Self::is_owned_temporary(field_expr)
+                && crate::compile_types::is_heap_type(&field_type_resolved)
+            {
+                Self::emit_retain(builder, field_val, &field_type_resolved, runtime_funcs)?;
+            }
+
             // Call lift_struct_set_field(struct, field_name, type_tag, value)
             builder.ins().call(
                 *set_field_ref,
@@ -186,8 +193,25 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
         let inst = builder.ins().call(*func_ref, &[struct_val, field_name_ptr]);
         let field_val = builder.inst_results(inst)[0];
 
-        // TODO: May need type conversion based on field type (e.g., bitcast for floats)
-        // For now, return as-is (works for Int, Bool, and pointer types)
+        // Determine field type to apply necessary conversions
+        let expr_type = crate::semantic::determine_type_with_symbols(expr, symbols, 0);
+        if let Some(ref et) = expr_type {
+            let resolved = Self::resolve_type_alias(et, symbols);
+            if let crate::syntax::DataType::Struct(params) = resolved {
+                if let Some(param) = params.iter().find(|p| p.name == field_name) {
+                    let field_type = Self::resolve_type_alias(&param.data_type, symbols);
+                    if matches!(field_type, crate::syntax::DataType::Flt) {
+                        // Bitcast i64 back to f64 for float fields
+                        let float_val =
+                            builder
+                                .ins()
+                                .bitcast(types::F64, MemFlags::new(), field_val);
+                        return Ok(Some(float_val));
+                    }
+                }
+            }
+        }
+
         Ok(Some(field_val))
     }
 
@@ -270,7 +294,15 @@ impl<'a, M: Module> CodeGenerator<'a, M> {
             data_type_to_type_tag(&value_type_resolved) as i64,
         );
 
+        // Retain variable references stored in struct fields (struct takes ownership)
+        if !Self::is_owned_temporary(value)
+            && crate::compile_types::is_heap_type(&value_type_resolved)
+        {
+            Self::emit_retain(builder, new_val, &value_type_resolved, runtime_funcs)?;
+        }
+
         // Call lift_struct_set_field(struct, field_name, type_tag, new_value)
+        // The runtime releases the old field value if it's a heap type
         let func_ref = runtime_funcs
             .get("lift_struct_set_field")
             .ok_or_else(|| "Runtime function lift_struct_set_field not found".to_string())?;
